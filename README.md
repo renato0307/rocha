@@ -15,6 +15,8 @@ rocha
 
 Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to the list.
 
+For all available commands and options, run `rocha --help`.
+
 ## What You Can Do
 
 - **Switch between Claude sessions** - Keep multiple conversations organized
