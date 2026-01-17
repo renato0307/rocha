@@ -226,12 +226,12 @@ func applyEvent(state *SessionState, event StateEvent) error {
 			existing.LastUpdated = event.Timestamp
 			state.Sessions[event.SessionName] = existing
 		} else {
-			state.Sessions[event.SessionName] = SessionInfo{
-				Name:        event.SessionName,
-				State:       event.State,
-				ExecutionID: event.ExecutionID,
-				LastUpdated: event.Timestamp,
-			}
+			// Don't create new sessions from update events - sessions should only be created
+			// via UpdateSessionWithGit() or git detection during startup. This prevents
+			// race conditions where hook events arrive before git metadata is saved.
+			logging.Logger.Warn("Ignoring update event for non-existent session",
+				"session", event.SessionName,
+				"state", event.State)
 		}
 
 	case "sync_running":
