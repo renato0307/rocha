@@ -11,6 +11,8 @@ import (
 
 // IsGitRepo checks if the given path is within a git repository
 // Returns true and the repository root path if it is, false and empty string otherwise
+// NOTE: For worktrees, this returns the worktree path, not the main repo path
+// Use GetMainRepoPath to get the main repository path for worktrees
 func IsGitRepo(path string) (bool, string) {
 	logging.Logger.Debug("Checking if directory is git repo", "path", path)
 
@@ -26,6 +28,39 @@ func IsGitRepo(path string) (bool, string) {
 	repoRoot := strings.TrimSpace(string(output))
 	logging.Logger.Info("Found git repository", "repo_root", repoRoot)
 	return true, repoRoot
+}
+
+// GetMainRepoPath gets the main repository path, even for worktrees
+// For regular repos, returns the same as IsGitRepo
+// For worktrees, returns the path to the main repository
+func GetMainRepoPath(path string) (string, error) {
+	logging.Logger.Debug("Getting main repo path", "path", path)
+
+	// Get the git common directory (points to main repo for worktrees)
+	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
+	cmd.Dir = path
+
+	output, err := cmd.Output()
+	if err != nil {
+		logging.Logger.Debug("Failed to get git common dir", "error", err)
+		return "", fmt.Errorf("failed to get git common dir: %w", err)
+	}
+
+	gitCommonDir := strings.TrimSpace(string(output))
+
+	// If it's a relative path (like ".git"), resolve it relative to path
+	if !filepath.IsAbs(gitCommonDir) {
+		gitCommonDir = filepath.Join(path, gitCommonDir)
+	}
+
+	// The main repo path is the parent of the .git directory
+	mainRepoPath := filepath.Dir(gitCommonDir)
+
+	// Clean the path to resolve any .. or .
+	mainRepoPath = filepath.Clean(mainRepoPath)
+
+	logging.Logger.Info("Found main repo path", "main_repo_path", mainRepoPath)
+	return mainRepoPath, nil
 }
 
 // CreateWorktree creates a new git worktree at the specified path with a new branch

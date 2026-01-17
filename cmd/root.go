@@ -23,6 +23,7 @@ type CLI struct {
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
 	Status      StatusCmd      `cmd:"status" help:"Show session state counts for tmux status bar"`
+	Attach      AttachCmd      `cmd:"attach" help:"Attach to tmux session (creates if needed)"`
 	StartClaude StartClaudeCmd `cmd:"start-claude" help:"Start Claude Code with hooks configured" hidden:""`
 	PlaySound   PlaySoundCmd   `cmd:"play-sound" help:"Play notification sound (cross-platform)" hidden:""`
 	Notify      NotifyCmd      `cmd:"notify" help:"Handle notification event from Claude hooks" hidden:""`
