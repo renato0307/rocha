@@ -66,6 +66,7 @@ Or add manually to `~/.tmux.conf`:
 ```bash
 set -g status-right "Claude: #(rocha status) | %H:%M"
 set -g status-interval 1
+set -g mouse on  # Enable mouse support
 ```
 
 ## Requirements

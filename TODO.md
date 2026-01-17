@@ -30,7 +30,7 @@
 - [ ] Allow mouse selection on the session list
 - [ ] Implement copy/paste functionality
 - [ ] Allow filtering session list with sticky filters
-- [ ] Configure tmux to allow mouse scroll
+- [x] Configure tmux to allow mouse scroll
 
 ## Configuration and State Management
 
