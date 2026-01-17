@@ -7,6 +7,7 @@ import (
 	"rocha/logging"
 	"rocha/state"
 	"rocha/tmux"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -65,7 +66,7 @@ type Model struct {
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
 }
 
-func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
+func NewModel(tmuxClient tmux.Client, worktreePath string) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := state.Load()
 	var errMsg error
@@ -78,7 +79,7 @@ func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
 	// Create session list component
 	sessionList := NewSessionList(tmuxClient)
 
-	return Model{
+	return &Model{
 		tmuxClient:   tmuxClient,
 		sessionList:  sessionList,
 		sessionState: sessionState,
@@ -88,12 +89,12 @@ func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd {
+func (m *Model) Init() tea.Cmd {
 	// Delegate to session list component (starts auto-refresh polling)
 	return m.sessionList.Init()
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateList:
 		return m.updateList(msg)
@@ -105,7 +106,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle clear error message
+	if _, ok := msg.(clearErrorMsg); ok {
+		m.err = nil
+		return m, nil
+	}
+
 	// Handle window size updates
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
@@ -152,7 +159,7 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateConfirmingWorktreeRemoval
 			return m, m.form.Init()
 		} else {
-			m.killSession(session)
+			return m, m.killSession(session)
 		}
 	}
 
@@ -166,7 +173,7 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
@@ -193,7 +200,7 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if session creation failed
 		if result.Error != nil {
 			m.err = fmt.Errorf("failed to create session: %w", result.Error)
-			return m, m.sessionList.Init()
+			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
 		}
 
 		if !result.Cancelled {
@@ -202,6 +209,8 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 				log.Printf("Warning: failed to reload session state: %v", err)
+				m.sessionList.RefreshFromState()
+				return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
 			} else {
 				m.sessionState = sessionState
 			}
@@ -216,6 +225,15 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 type detachedMsg struct{}
+
+type clearErrorMsg struct{}
+
+// clearErrorAfterDelay returns a command that sends clearErrorMsg after a delay
+func clearErrorAfterDelay() tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+		return clearErrorMsg{}
+	})
+}
 
 // attachToSession suspends Bubble Tea, attaches to a tmux session via the abstraction layer,
 // and returns a detachedMsg when the user detaches
@@ -237,12 +255,12 @@ func (m *Model) attachToSession(sessionName string) tea.Cmd {
 }
 
 // killSession kills a session and removes it from state
-func (m *Model) killSession(session *tmux.Session) {
+func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	logging.Logger.Info("Killing session", "name", session.Name)
 
 	if err := m.tmuxClient.Kill(session.Name); err != nil {
-		m.err = err
-		return
+		m.err = fmt.Errorf("failed to kill session '%s': %w", session.Name, err)
+		return tea.Batch(m.sessionList.Init(), clearErrorAfterDelay()) // Continue polling and clear error after delay
 	}
 
 	// Check if session has worktree and remove it from state
@@ -263,9 +281,10 @@ func (m *Model) killSession(session *tmux.Session) {
 
 	// Refresh session list component
 	m.sessionList.RefreshFromState()
+	return m.sessionList.Init() // Continue polling
 }
 
-func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
@@ -303,11 +322,13 @@ func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd)
 		repoPath := sessionInfo.RepoPath
 
 		// Remove worktree if requested
+		var worktreeErr bool
 		if removeWorktree {
 			logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
 			if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
 				m.err = fmt.Errorf("failed to remove worktree: %w", err)
 				logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
+				worktreeErr = true
 			} else {
 				logging.Logger.Info("Worktree removed successfully", "path", worktreePath)
 			}
@@ -316,7 +337,7 @@ func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd)
 		}
 
 		// Kill the session
-		m.killSession(session)
+		killCmd := m.killSession(session)
 
 		// Reset state
 		m.state = stateList
@@ -324,7 +345,11 @@ func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd)
 		m.sessionToKill = nil
 		m.formRemoveWorktree = nil
 
-		return m, nil
+		// If there was a worktree error, add clearErrorAfterDelay to the batch
+		if worktreeErr {
+			return m, tea.Batch(killCmd, clearErrorAfterDelay())
+		}
+		return m, killCmd
 	}
 
 	return m, cmd
@@ -346,10 +371,18 @@ func (m *Model) createWorktreeRemovalForm(worktreePath string) *huh.Form {
 	return form
 }
 
-func (m Model) View() string {
+func (m *Model) View() string {
 	switch m.state {
 	case stateList:
-		return m.sessionList.View()
+		view := m.sessionList.View()
+
+		// Display model-level errors (e.g., from killSession failures)
+		if m.err != nil {
+			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+			view += "\n" + errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
+		}
+
+		return view
 	case stateCreatingSession:
 		if m.sessionForm != nil {
 			return m.sessionForm.View()
