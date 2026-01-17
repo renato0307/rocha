@@ -242,6 +242,9 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if index >= 0 && index < len(displaySessions) {
 				session := displaySessions[index]
 
+				// Update cursor to selected session so it's highlighted when we return
+				m.cursor = index
+
 				// Ensure session exists (recreate if needed for race condition protection)
 				if !m.ensureSessionExists(session) {
 					return m, nil
@@ -343,6 +346,10 @@ func (m Model) updateFiltering(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if index >= 0 && index < len(m.filteredSessions) {
 				session := m.filteredSessions[index]
+
+				// Update cursor to selected session so it's highlighted when we return
+				m.cursor = index
+
 				c := exec.Command("tmux", "attach-session", "-t", session.Name)
 				return m, tea.ExecProcess(c, func(err error) tea.Msg {
 					if err != nil {
