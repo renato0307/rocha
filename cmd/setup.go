@@ -19,6 +19,7 @@ const (
 set -g status-left-length 50  # Allow longer session names
 set -g status-right "Claude: #(rocha status) | %H:%M"
 set -g status-interval 1  # Update every 1 second
+set -g mouse on  # Enable mouse support (scrolling, pane selection, resizing)
 `
 	pathMarker = "# Added by rocha setup"
 )
@@ -129,6 +130,7 @@ func (s *SetupCmd) setupTmux(tmuxClient tmux.Client, homeDir string) error {
 		{"status-left-length", "set -g status-left-length 50  # Allow longer session names\n"},
 		{"rocha status", "set -g status-right \"Claude: #(rocha status) | %H:%M\"\n"},
 		{"status-interval", "set -g status-interval 1  # Update every 1 second\n"},
+		{"mouse on", "set -g mouse on  # Enable mouse support (scrolling, pane selection, resizing)\n"},
 	}
 
 	var missingSettings []string
