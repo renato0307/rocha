@@ -20,7 +20,7 @@ func main() {
 		kong.Name("rocha"),
 		kong.Description(version.Tagline),
 		kong.UsageOnError(),
-		kong.Bind(tmuxClient),
+		kong.BindTo(tmuxClient, (*tmux.Client)(nil)),
 	)
 
 	// Execute the selected command

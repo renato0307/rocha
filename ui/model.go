@@ -9,6 +9,7 @@ import (
 	"rocha/state"
 	"rocha/tmux"
 	"rocha/version"
+	"sort"
 	"strings"
 	"time"
 
@@ -76,19 +77,17 @@ type Model struct {
 }
 
 func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
-	sessions, err := tmuxClient.List()
-	var errMsg error
-	if err != nil {
-		errMsg = fmt.Errorf("failed to load sessions: %w", err)
-		sessions = []*tmux.Session{}
-	}
-
-	// Load session state for git metadata
+	// Load session state - this is the source of truth
 	sessionState, stateErr := state.Load()
+	var errMsg error
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
+		errMsg = fmt.Errorf("failed to load state: %w", stateErr)
 		sessionState = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
 	}
+
+	// Create session list from state (source of truth)
+	sessions := sessionsFromState(sessionState)
 
 	// Initialize filter input
 	filterInput := textinput.New()
@@ -186,8 +185,14 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if len(displaySessions) > 0 && m.cursor < len(displaySessions) {
-				// Use tea.ExecProcess to suspend Bubble Tea and attach to tmux
 				session := displaySessions[m.cursor]
+
+				// Ensure session exists (recreate if needed for race condition protection)
+				if !m.ensureSessionExists(session) {
+					return m, nil
+				}
+
+				// Use tea.ExecProcess to suspend Bubble Tea and attach to tmux
 				c := exec.Command("tmux", "attach-session", "-t", session.Name)
 				return m, tea.ExecProcess(c, func(err error) tea.Msg {
 					if err != nil {
@@ -236,6 +241,12 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if index >= 0 && index < len(displaySessions) {
 				session := displaySessions[index]
+
+				// Ensure session exists (recreate if needed for race condition protection)
+				if !m.ensureSessionExists(session) {
+					return m, nil
+				}
+
 				c := exec.Command("tmux", "attach-session", "-t", session.Name)
 				return m, tea.ExecProcess(c, func(err error) tea.Msg {
 					if err != nil {
@@ -253,18 +264,19 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case detachedMsg:
 		// Returned from attached state
 		m.state = stateList
-		// Refresh session list after detaching
-		sessions, err := m.tmuxClient.List()
+		// Refresh session list from state (source of truth)
+		sessionState, err := state.Load()
 		if err != nil {
 			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		} else {
-			m.sessions = sessions
+			m.sessionState = sessionState
+			m.sessions = sessionsFromState(sessionState)
 
 			// Recompute filtered sessions
 			if m.filterText != "" {
 				m.filteredSessions = m.filterSessions()
 			} else {
-				m.filteredSessions = sessions
+				m.filteredSessions = m.sessions
 			}
 
 			// Adjust cursor with filtered sessions
@@ -378,23 +390,18 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionForm = nil
 
 		if !result.Cancelled {
-			// Refresh session list
-			sessions, err := m.tmuxClient.List()
+			// Reload session state (source of truth)
+			sessionState, err := state.Load()
 			if err != nil {
 				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
+				log.Printf("Warning: failed to reload session state: %v", err)
 			} else {
-				m.sessions = sessions
+				m.sessionState = sessionState
+				m.sessions = sessionsFromState(sessionState)
 				m.cursor = len(m.sessions) - 1 // Jump to newly created session
 				if m.cursor < 0 {
 					m.cursor = 0
 				}
-			}
-			// Reload session state
-			sessionState, err := state.Load()
-			if err != nil {
-				log.Printf("Warning: failed to reload session state: %v", err)
-			} else {
-				m.sessionState = sessionState
 			}
 		}
 
@@ -505,6 +512,48 @@ func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd)
 	}
 
 	return m, cmd
+}
+
+// sessionsFromState rebuilds the session list from state.json
+func sessionsFromState(sessionState *state.SessionState) []*tmux.Session {
+	var sessions []*tmux.Session
+	for name, info := range sessionState.Sessions {
+		sessions = append(sessions, &tmux.Session{
+			Name:      name,
+			CreatedAt: info.LastUpdated,
+		})
+	}
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].Name < sessions[j].Name
+	})
+	return sessions
+}
+
+// ensureSessionExists checks if a session exists and recreates it if needed
+// Returns true if session is ready to attach, false if recreation failed
+func (m *Model) ensureSessionExists(session *tmux.Session) bool {
+	if m.tmuxClient.Exists(session.Name) {
+		return true
+	}
+
+	logging.Logger.Info("Session no longer exists, recreating", "name", session.Name)
+
+	// Try to get stored metadata to recreate with same worktree
+	var worktreePath string
+	if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
+		worktreePath = sessionInfo.WorktreePath
+		logging.Logger.Info("Recreating session with stored worktree", "name", session.Name, "worktree", worktreePath)
+	} else {
+		logging.Logger.Warn("No stored metadata for session, creating without worktree", "name", session.Name)
+	}
+
+	// Recreate the session
+	if _, err := m.tmuxClient.Create(session.Name, worktreePath); err != nil {
+		m.err = fmt.Errorf("failed to recreate session: %w", err)
+		return false
+	}
+
+	return true
 }
 
 // createWorktreeRemovalForm creates a confirmation form for removing a worktree

@@ -16,15 +16,14 @@ import (
 
 // AttachCmd attaches to a tmux session, creating it if needed
 type AttachCmd struct {
-	SessionName string      `help:"Override session name (default: auto-detect from branch/directory)"`
-	Repo        string      `help:"Override repository path (default: auto-detect)"`
-	Branch      string      `help:"Override branch name (default: auto-detect from git)"`
-	Worktree    string      `help:"Override worktree path (default: current directory)"`
-	TmuxClient  tmux.Client `kong:"-"`
+	SessionName string `help:"Override session name (default: auto-detect from branch/directory)"`
+	Repo        string `help:"Override repository path (default: auto-detect)"`
+	Branch      string `help:"Override branch name (default: auto-detect from git)"`
+	Worktree    string `help:"Override worktree path (default: current directory)"`
 }
 
 // Run executes the attach command
-func (a *AttachCmd) Run() error {
+func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 	logging.Logger.Info("Attach command started")
 
 	// Step 1: Auto-detect parameters from current directory
@@ -107,9 +106,9 @@ func (a *AttachCmd) Run() error {
 	}
 
 	// Step 4: Check if tmux session exists, create if needed
-	if !a.TmuxClient.Exists(sessionName) {
+	if !tmuxClient.Exists(sessionName) {
 		logging.Logger.Info("Session does not exist, creating", "name", sessionName)
-		_, err := a.TmuxClient.Create(sessionName, worktreePath)
+		_, err := tmuxClient.Create(sessionName, worktreePath)
 		if err != nil {
 			return fmt.Errorf("failed to create tmux session: %w", err)
 		}

@@ -16,10 +16,10 @@
 
 ## attach - Session Attachment
 
-- [ ] Create attach command
-- [ ] Implement session existence check in attach
-- [ ] Implement tmux session running check in attach
-- [ ] Implement tmux session start/attach logic in attach
+- [x] Create attach command
+- [x] Implement session existence check in attach
+- [x] Implement tmux session running check in attach
+- [x] Implement tmux session start/attach logic in attach
 
 ## Auto-refresh Feature
 

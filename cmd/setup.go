@@ -11,7 +11,6 @@ import (
 
 // SetupCmd configures tmux automatically
 type SetupCmd struct {
-	TmuxClient tmux.Configurator `kong:"-"`
 }
 
 const (
@@ -25,7 +24,7 @@ set -g status-interval 1  # Update every 1 second
 )
 
 // Run executes the setup command
-func (s *SetupCmd) Run() error {
+func (s *SetupCmd) Run(tmuxClient tmux.Client) error {
 	// Verify required dependencies
 	if err := s.verifyDependencies(); err != nil {
 		return err
@@ -49,7 +48,7 @@ func (s *SetupCmd) Run() error {
 	}
 
 	// Setup tmux configuration
-	if err := s.setupTmux(homeDir); err != nil {
+	if err := s.setupTmux(tmuxClient, homeDir); err != nil {
 		return err
 	}
 
@@ -111,7 +110,7 @@ func (s *SetupCmd) setupPath(homeDir, rochaDir string) error {
 }
 
 // setupTmux configures tmux status bar (idempotent)
-func (s *SetupCmd) setupTmux(homeDir string) error {
+func (s *SetupCmd) setupTmux(tmuxClient tmux.Client, homeDir string) error {
 	tmuxConfPath := filepath.Join(homeDir, ".tmux.conf")
 
 	// Read existing config
@@ -177,7 +176,7 @@ func (s *SetupCmd) setupTmux(homeDir string) error {
 	fmt.Printf("✓ Added %d missing setting(s) to ~/.tmux.conf\n", len(missingSettings))
 
 	// Reload tmux configuration if tmux is running
-	if err := s.TmuxClient.SourceFile(tmuxConfPath); err != nil {
+	if err := tmuxClient.SourceFile(tmuxConfPath); err != nil {
 		// It's OK if this fails (tmux might not be running)
 		fmt.Println("  Note: tmux is not currently running. Configuration will be loaded when you start tmux.")
 	} else {
