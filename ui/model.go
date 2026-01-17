@@ -8,6 +8,7 @@ import (
 	"rocha/logging"
 	"rocha/state"
 	"rocha/tmux"
+	"rocha/version"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -378,7 +379,9 @@ func (m Model) View() string {
 func (m Model) viewList() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Rocha - Claude Code Session Manager"))
+	b.WriteString(titleStyle.Render("Rocha"))
+	b.WriteString("\n")
+	b.WriteString(normalStyle.Render(version.Tagline))
 	b.WriteString("\n\n")
 
 	if len(m.sessions) == 0 {
