@@ -5,11 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"rocha/tmux"
 	"strings"
 )
 
 // SetupCmd configures tmux automatically
-type SetupCmd struct{}
+type SetupCmd struct {
+	TmuxClient tmux.Configurator `kong:"-"`
+}
 
 const (
 	tmuxConfig = `
@@ -174,8 +177,7 @@ func (s *SetupCmd) setupTmux(homeDir string) error {
 	fmt.Printf("✓ Added %d missing setting(s) to ~/.tmux.conf\n", len(missingSettings))
 
 	// Reload tmux configuration if tmux is running
-	cmd := exec.Command("tmux", "source-file", tmuxConfPath)
-	if err := cmd.Run(); err != nil {
+	if err := s.TmuxClient.SourceFile(tmuxConfPath); err != nil {
 		// It's OK if this fails (tmux might not be running)
 		fmt.Println("  Note: tmux is not currently running. Configuration will be loaded when you start tmux.")
 	} else {

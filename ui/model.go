@@ -53,6 +53,7 @@ const (
 const escTimeout = 500 * time.Millisecond
 
 type Model struct {
+	tmuxClient         tmux.Client
 	sessions           []*tmux.Session
 	sessionState       *state.SessionState // State data for git metadata and status
 	cursor             int
@@ -74,8 +75,8 @@ type Model struct {
 	escPressTime     time.Time
 }
 
-func NewModel(worktreePath string) Model {
-	sessions, err := tmux.List()
+func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
+	sessions, err := tmuxClient.List()
 	var errMsg error
 	if err != nil {
 		errMsg = fmt.Errorf("failed to load sessions: %w", err)
@@ -96,6 +97,7 @@ func NewModel(worktreePath string) Model {
 	filterInput.Width = 50
 
 	return Model{
+		tmuxClient:       tmuxClient,
 		sessions:         sessions,
 		sessionState:     sessionState,
 		cursor:           0,
@@ -167,7 +169,7 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "n":
 			// Create session creation form
-			m.sessionForm = NewSessionForm(m.worktreePath, m.sessionState)
+			m.sessionForm = NewSessionForm(m.tmuxClient, m.worktreePath, m.sessionState)
 			m.state = stateCreatingSession
 			return m, m.sessionForm.Init()
 
@@ -252,7 +254,7 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Returned from attached state
 		m.state = stateList
 		// Refresh session list after detaching
-		sessions, err := tmux.List()
+		sessions, err := m.tmuxClient.List()
 		if err != nil {
 			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		} else {
@@ -377,7 +379,7 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Refresh session list
-			sessions, err := tmux.List()
+			sessions, err := m.tmuxClient.List()
 			if err != nil {
 				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 			} else {
@@ -408,7 +410,7 @@ type detachedMsg struct{}
 func (m *Model) killSession(session *tmux.Session) {
 	logging.Logger.Info("Killing session", "name", session.Name)
 
-	if err := session.Kill(); err != nil {
+	if err := m.tmuxClient.Kill(session.Name); err != nil {
 		m.err = err
 		return
 	}
