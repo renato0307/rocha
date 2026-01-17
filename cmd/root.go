@@ -59,7 +59,7 @@ type RunCmd struct {
 }
 
 // Run executes the TUI
-func (r *RunCmd) Run() error {
+func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 	logging.Logger.Info("Starting rocha TUI")
 
 	// Generate new execution ID for this TUI run
@@ -78,7 +78,7 @@ func (r *RunCmd) Run() error {
 
 	// Sync with running tmux sessions
 	// Update execution ID for sessions that are currently running
-	runningSessions, err := tmux.List()
+	runningSessions, err := tmuxClient.List()
 	if err != nil {
 		logging.Logger.Warn("Failed to list tmux sessions", "error", err)
 	} else {
@@ -151,7 +151,7 @@ func (r *RunCmd) Run() error {
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	p := tea.NewProgram(
-		ui.NewModel(r.WorktreePath),
+		ui.NewModel(tmuxClient, r.WorktreePath),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)

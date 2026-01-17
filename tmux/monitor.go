@@ -10,7 +10,8 @@ import (
 
 // Monitor watches a tmux session for Claude prompts
 type Monitor struct {
-	session      *Session
+	client       Client
+	sessionName  string
 	stopCh       chan struct{}
 	notifyCh     chan string
 	lastContent  string
@@ -18,12 +19,13 @@ type Monitor struct {
 }
 
 // NewMonitor creates a new session monitor
-func NewMonitor(session *Session, notifyCh chan string) *Monitor {
+func NewMonitor(client Client, sessionName string, notifyCh chan string) *Monitor {
 	return &Monitor{
-		session:   session,
-		stopCh:    make(chan struct{}),
-		notifyCh:  notifyCh,
-		isWaiting: false,
+		client:      client,
+		sessionName: sessionName,
+		stopCh:      make(chan struct{}),
+		notifyCh:    notifyCh,
+		isWaiting:   false,
 	}
 }
 
@@ -54,7 +56,7 @@ func (m *Monitor) monitorLoop() {
 
 // checkForPrompt captures the pane content and looks for Claude prompts
 func (m *Monitor) checkForPrompt() {
-	if !m.session.Exists() {
+	if !m.client.Exists(m.sessionName) {
 		return
 	}
 
@@ -78,7 +80,7 @@ func (m *Monitor) checkForPrompt() {
 		m.isWaiting = true
 		// Send notification with session name
 		select {
-		case m.notifyCh <- m.session.Name:
+		case m.notifyCh <- m.sessionName:
 		default:
 			// Channel full, skip notification
 		}
@@ -90,12 +92,7 @@ func (m *Monitor) checkForPrompt() {
 
 // capturePane gets the current content of the tmux pane
 func (m *Monitor) capturePane() (string, error) {
-	cmd := exec.Command("tmux", "capture-pane", "-p", "-t", m.session.Name, "-S", "-30")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(output), nil
+	return m.client.CapturePane(m.sessionName, -30)
 }
 
 // detectPrompt checks if the content shows Claude waiting for input

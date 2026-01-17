@@ -24,6 +24,7 @@ type SessionFormResult struct {
 
 // SessionForm is a Bubble Tea component for creating sessions
 type SessionForm struct {
+	sessionManager tmux.SessionManager
 	form           *huh.Form
 	worktreePath   string
 	sessionState   *state.SessionState
@@ -33,10 +34,11 @@ type SessionForm struct {
 }
 
 // NewSessionForm creates a new session creation form
-func NewSessionForm(worktreePath string, sessionState *state.SessionState) *SessionForm {
+func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, sessionState *state.SessionState) *SessionForm {
 	sf := &SessionForm{
-		worktreePath: worktreePath,
-		sessionState: sessionState,
+		sessionManager: sessionManager,
+		worktreePath:   worktreePath,
+		sessionState:   sessionState,
 		result: SessionFormResult{
 			CreateWorktree: true, // Default to true
 		},
@@ -181,7 +183,7 @@ func (sf *SessionForm) createSession() error {
 	}
 
 	// Create tmux session
-	session, err := tmux.NewSession(tmuxName, worktreePath)
+	session, err := sf.sessionManager.Create(tmuxName, worktreePath)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}

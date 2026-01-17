@@ -23,7 +23,7 @@ type AttachCmd struct {
 }
 
 // Run executes the attach command
-func (a *AttachCmd) Run() error {
+func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 	logging.Logger.Info("Attach command started")
 
 	// Step 1: Auto-detect parameters from current directory
@@ -106,11 +106,9 @@ func (a *AttachCmd) Run() error {
 	}
 
 	// Step 4: Check if tmux session exists, create if needed
-	session := &tmux.Session{Name: sessionName}
-
-	if !session.Exists() {
+	if !tmuxClient.Exists(sessionName) {
 		logging.Logger.Info("Session does not exist, creating", "name", sessionName)
-		_, err := tmux.NewSession(sessionName, worktreePath)
+		_, err := tmuxClient.Create(sessionName, worktreePath)
 		if err != nil {
 			return fmt.Errorf("failed to create tmux session: %w", err)
 		}
