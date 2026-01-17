@@ -176,16 +176,23 @@ sequenceDiagram
     participant State
     participant TUI
 
-    Note over Claude,TUI: User submits prompt
-    Claude->>Hook: UserPromptSubmit event
-    Hook->>State: rocha notify prompt
-    State->>State: Set StateWorking (●)
+    Note over Claude,TUI: Session starts
+    Claude->>Hook: SessionStart event
+    Hook->>State: rocha notify start
+    State->>State: Set StateIdle (○)
 
     loop Every 2 seconds
         TUI->>State: Check state.json timestamp
         State-->>TUI: UpdatedAt changed
-        TUI->>TUI: Reload & display ● (green)
+        TUI->>TUI: Reload & display ○ (yellow)
     end
+
+    Note over Claude,TUI: User submits prompt
+    Claude->>Hook: UserPromptSubmit event
+    Hook->>State: rocha notify prompt
+    State->>State: Set StateWorking (●)
+    TUI->>State: Poll detects change
+    TUI->>TUI: Display ● (green)
 
     Note over Claude,TUI: Claude finishes task
     Claude->>Hook: Stop event
@@ -200,6 +207,13 @@ sequenceDiagram
     State->>State: Set StateWaitingUser (◐)
     TUI->>State: Poll detects change
     TUI->>TUI: Display ◐ (red)
+
+    Note over Claude,TUI: Claude exits
+    Claude->>Hook: SessionEnd event
+    Hook->>State: rocha notify end
+    State->>State: Set StateExited (■)
+    TUI->>State: Poll detects change
+    TUI->>TUI: Display ■ (gray)
 ```
 
 ### Hook Event Mapping
@@ -208,10 +222,11 @@ Claude Code hooks trigger state transitions:
 
 | Hook Event | Command | New State | Symbol | Meaning |
 |------------|---------|-----------|--------|---------|
-| `SessionStart` | `rocha notify start` | `StateWorking` | ● (green) | Session initialized |
+| `SessionStart` | `rocha notify start` | `StateIdle` | ○ (yellow) | Session initialized and ready |
 | `UserPromptSubmit` | `rocha notify prompt` | `StateWorking` | ● (green) | User submitted prompt |
 | `Stop` | `rocha notify stop` | `StateIdle` | ○ (yellow) | Claude finished working |
 | `Notification` | `rocha notify notification` | `StateWaitingUser` | ◐ (red) | Claude needs user input |
+| `SessionEnd` | `rocha notify end` | `StateExited` | ■ (gray) | Claude has exited |
 
 ## Packages
 
@@ -221,7 +236,7 @@ Claude Code hooks trigger state transitions:
 CLI command handlers using Kong framework.
 - `RunCmd` - Start TUI
 - `AttachCmd` - Attach to session
-- `StatusCmd` - Status bar (`◐:N ○:N ●:N`)
+- `StatusCmd` - Status bar (`◐:N ○:N ●:N ■:N`)
 - `SetupCmd` - Shell integration
 - `StartClaudeCmd` - Bootstrap Claude Code with hooks (hidden)
 - `NotifyCmd` - Handle Claude hook events (hidden)
@@ -229,7 +244,7 @@ CLI command handlers using Kong framework.
 
 #### ui/
 Bubble Tea TUI with component architecture.
-- **SessionList** - Auto-refresh (2s poll), filtering, status symbols (●○◐)
+- **SessionList** - Uses bubbles/list component, auto-refresh (2s poll), fuzzy filtering, status symbols (●○◐■)
 - **SessionForm** - Session creation forms
 - **Model** - Orchestrates states (list, creating, confirming)
 
@@ -243,7 +258,7 @@ Tmux abstraction layer with dependency injection.
 Persistent session state management.
 - JSON storage with file locking
 - Session metadata (git info, status, timestamps)
-- Three states: `WaitingUser` (◐), `Idle` (○), `Working` (●)
+- Four states: `WaitingUser` (◐), `Idle` (○), `Working` (●), `Exited` (■)
 
 #### git/
 Git worktree operations.
@@ -271,6 +286,7 @@ graph LR
     subgraph "Go Libraries"
         KONG[kong - CLI]
         BT[bubbletea - TUI]
+        BUBBLES[bubbles - Components]
         HUH[huh - Forms]
         LG[lipgloss - Styles]
     end
@@ -283,6 +299,7 @@ graph LR
 
     APP[Rocha] --> KONG
     APP --> BT
+    APP --> BUBBLES
     APP --> HUH
     APP --> LG
     APP --> TMUX
@@ -293,6 +310,7 @@ graph LR
 **Go Libraries:**
 - `kong` - CLI framework with dependency injection
 - `bubbletea` - Terminal UI framework
+- `bubbles` - Pre-built TUI components (list, textinput, etc.)
 - `huh` - Form components
 - `lipgloss` - Styling
 - `uuid` - UUID generation

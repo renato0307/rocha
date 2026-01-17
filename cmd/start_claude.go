@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"rocha/logging"
 	"syscall"
+
+	"rocha/logging"
+	"rocha/state"
 )
 
 // StartClaudeCmd starts Claude Code with hooks configured
@@ -28,6 +30,32 @@ func (s *StartClaudeCmd) Run() error {
 		sessionName = "unknown"
 	}
 
+	// Load current state to get ExecutionID for this session
+	var executionID string
+	st, err := state.Load()
+	if err != nil {
+		logging.Logger.Warn("Failed to load state for execution ID", "error", err)
+		// Fall back to environment variable
+		executionID = os.Getenv("ROCHA_EXECUTION_ID")
+		if executionID == "" {
+			executionID = "unknown"
+		}
+	} else {
+		// Get ExecutionID from session info
+		if session, exists := st.Sessions[sessionName]; exists {
+			executionID = session.ExecutionID
+			logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
+		} else {
+			// Use global execution ID
+			executionID = st.ExecutionID
+			logging.Logger.Info("Using global execution ID", "execution_id", executionID)
+		}
+	}
+
+	logging.Logger.Info("Starting Claude with hooks",
+		"session", sessionName,
+		"execution_id", executionID)
+
 	// Build the hooks configuration with multiple event types
 	hooks := map[string]interface{}{
 		"hooks": map[string]interface{}{
@@ -37,7 +65,7 @@ func (s *StartClaudeCmd) Run() error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s stop", rochaBin, sessionName),
+							"command": fmt.Sprintf("%s notify %s stop --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -48,7 +76,7 @@ func (s *StartClaudeCmd) Run() error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s prompt", rochaBin, sessionName),
+							"command": fmt.Sprintf("%s notify %s prompt --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -59,7 +87,7 @@ func (s *StartClaudeCmd) Run() error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s start", rochaBin, sessionName),
+							"command": fmt.Sprintf("%s notify %s start --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -70,7 +98,18 @@ func (s *StartClaudeCmd) Run() error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s notification", rochaBin, sessionName),
+							"command": fmt.Sprintf("%s notify %s notification --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// SessionEnd: When Claude Code session ends
+			"SessionEnd": []map[string]interface{}{
+				{
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s end --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},

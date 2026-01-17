@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"rocha/git"
 	"rocha/logging"
@@ -64,6 +65,8 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 
 	// Generate new execution ID for this TUI run
 	executionID := state.NewExecutionID()
+	// Set environment variable for child processes (including tmux sessions)
+	// Hooks will also receive it explicitly via --execution-id flag
 	os.Setenv("ROCHA_EXECUTION_ID", executionID)
 	logging.Logger.Info("Generated new execution ID", "execution_id", executionID)
 
@@ -87,10 +90,20 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 			runningNames[i] = sess.Name
 		}
 		logging.Logger.Info("Syncing with running tmux sessions", "count", len(runningNames))
-		if err := st.SyncWithRunning(runningNames, executionID); err != nil {
-			logging.Logger.Error("Failed to sync with running sessions", "error", err)
+		if err := state.QueueSyncRunning(runningNames, executionID); err != nil {
+			logging.Logger.Error("Failed to queue sync with running sessions", "error", err)
 		} else {
-			logging.Logger.Debug("Synced with running sessions")
+			logging.Logger.Debug("Sync with running sessions queued")
+		}
+
+		// Detect sessions where Claude has exited
+		for _, sessionName := range runningNames {
+			if !isClaudeRunningInSession(sessionName) {
+				logging.Logger.Info("Claude has exited from session", "name", sessionName)
+				if err := state.QueueUpdateSession(sessionName, state.StateExited, executionID); err != nil {
+					logging.Logger.Error("Failed to queue exited state", "error", err, "session", sessionName)
+				}
+			}
 		}
 
 		// Detect and update git metadata for running sessions with worktrees
@@ -164,4 +177,11 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 
 	logging.Logger.Info("TUI program exited normally")
 	return nil
+}
+
+// isClaudeRunningInSession checks if Claude Code is running in the given tmux session
+func isClaudeRunningInSession(sessionName string) bool {
+	cmd := exec.Command("pgrep", "-f", fmt.Sprintf("claude.*notify %s", sessionName))
+	err := cmd.Run()
+	return err == nil // Exit code 0 means process found
 }

@@ -149,6 +149,7 @@ func TestGetCounts(t *testing.T) {
 		expectedWaiting int
 		expectedIdle    int
 		expectedWorking int
+		expectedExited  int
 	}{
 		{
 			name:            "empty state",
@@ -157,6 +158,7 @@ func TestGetCounts(t *testing.T) {
 			expectedWaiting: 0,
 			expectedIdle:    0,
 			expectedWorking: 0,
+			expectedExited:  0,
 		},
 		{
 			name: "all waiting",
@@ -168,6 +170,7 @@ func TestGetCounts(t *testing.T) {
 			expectedWaiting: 2,
 			expectedIdle:    0,
 			expectedWorking: 0,
+			expectedExited:  0,
 		},
 		{
 			name: "all idle",
@@ -179,6 +182,7 @@ func TestGetCounts(t *testing.T) {
 			expectedWaiting: 0,
 			expectedIdle:    2,
 			expectedWorking: 0,
+			expectedExited:  0,
 		},
 		{
 			name: "all working",
@@ -190,6 +194,7 @@ func TestGetCounts(t *testing.T) {
 			expectedWaiting: 0,
 			expectedIdle:    0,
 			expectedWorking: 2,
+			expectedExited:  0,
 		},
 		{
 			name: "mixed states",
@@ -202,6 +207,7 @@ func TestGetCounts(t *testing.T) {
 			expectedWaiting: 1,
 			expectedIdle:    1,
 			expectedWorking: 1,
+			expectedExited:  0,
 		},
 		{
 			name: "filter by execution ID",
@@ -214,6 +220,20 @@ func TestGetCounts(t *testing.T) {
 			expectedWaiting: 1,
 			expectedIdle:    1,
 			expectedWorking: 0,
+			expectedExited:  0,
+		},
+		{
+			name: "with exited sessions",
+			sessions: map[string]SessionInfo{
+				"s1": {State: StateExited, ExecutionID: "exec-1"},
+				"s2": {State: StateExited, ExecutionID: "exec-1"},
+				"s3": {State: StateIdle, ExecutionID: "exec-1"},
+			},
+			executionID:     "exec-1",
+			expectedWaiting: 0,
+			expectedIdle:    1,
+			expectedWorking: 0,
+			expectedExited:  2,
 		},
 	}
 
@@ -224,10 +244,11 @@ func TestGetCounts(t *testing.T) {
 				Sessions:    tt.sessions,
 			}
 
-			waiting, idle, working := st.GetCounts(tt.executionID)
+			waiting, idle, working, exited := st.GetCounts(tt.executionID)
 			assert.Equal(t, tt.expectedWaiting, waiting)
 			assert.Equal(t, tt.expectedIdle, idle)
 			assert.Equal(t, tt.expectedWorking, working)
+			assert.Equal(t, tt.expectedExited, exited)
 		})
 	}
 }

@@ -2,14 +2,15 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/tmux"
+	"rocha/version"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -20,25 +21,108 @@ const escTimeout = 500 * time.Millisecond
 type checkStateMsg struct{}          // Triggers state file check
 type sessionListDetachedMsg struct{} // Session list returned from attached state
 
+// SessionItem implements list.Item and list.DefaultItem
+type SessionItem struct {
+	Session     *tmux.Session
+	DisplayName string
+	GitRef      string
+	State       string
+}
+
+// FilterValue implements list.Item
+func (i SessionItem) FilterValue() string {
+	return i.DisplayName + " " + i.GitRef
+}
+
+// Title implements list.DefaultItem
+func (i SessionItem) Title() string {
+	return i.DisplayName
+}
+
+// Description implements list.DefaultItem
+func (i SessionItem) Description() string {
+	return i.GitRef
+}
+
+// SessionDelegate is a custom delegate for rendering session items
+type SessionDelegate struct {
+	sessionState *state.SessionState
+}
+
+func newSessionDelegate(sessionState *state.SessionState) SessionDelegate {
+	return SessionDelegate{sessionState: sessionState}
+}
+
+// Height implements list.ItemDelegate
+func (d SessionDelegate) Height() int {
+	return 2 // Two lines per item (name + git ref)
+}
+
+// Spacing implements list.ItemDelegate
+func (d SessionDelegate) Spacing() int {
+	return 0
+}
+
+// Update implements list.ItemDelegate
+func (d SessionDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
+	return nil
+}
+
+// Render implements list.ItemDelegate
+func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	item, ok := listItem.(SessionItem)
+	if !ok {
+		return
+	}
+
+	// Get current index and check if selected
+	isSelected := index == m.Index()
+	cursor := " "
+	if isSelected {
+		cursor = ">"
+	}
+
+	// Get session state
+	sessionState := item.State
+
+	// Render status icon
+	var statusIcon string
+	switch sessionState {
+	case state.StateWorking:
+		statusIcon = workingIconStyle.Render(state.SymbolWorking)
+	case state.StateIdle:
+		statusIcon = idleIconStyle.Render(state.SymbolIdle)
+	case state.StateWaitingUser:
+		statusIcon = waitingIconStyle.Render(state.SymbolWaitingUser)
+	case state.StateExited:
+		statusIcon = exitedIconStyle.Render(state.SymbolExited)
+	}
+
+	// Build first line: cursor + zero-padded number + status + name
+	line1 := fmt.Sprintf("%s %02d. %s %s", cursor, index+1, statusIcon, item.DisplayName)
+	line1 = normalStyle.Render(line1)
+
+	// Build second line: git ref (indented to align with session name)
+	var line2 string
+	if item.GitRef != "" {
+		indent := "        " // 8 spaces to align with session name (> 01. ● name)
+		line2 = branchStyle.Render(fmt.Sprintf("%s%s", indent, item.GitRef))
+	}
+
+	// Write both lines
+	fmt.Fprint(w, line1+"\n"+line2)
+}
+
 // SessionList is a Bubble Tea component for displaying and managing sessions
 type SessionList struct {
-	tmuxClient       tmux.Client
-	sessions         []*tmux.Session
-	sessionState     *state.SessionState
-	cursor           int
-	err              error
+	list         list.Model
+	tmuxClient   tmux.Client
+	sessionState *state.SessionState
+	err          error
 
-	// Filter fields
-	filterInput      textinput.Model
-	filterText       string
-	filteredSessions []*tmux.Session
-	isFiltering      bool
-	escPressCount    int
-	escPressTime     time.Time
-
-	// Dimensions
-	width  int
-	height int
+	// Escape handling for filter clearing
+	escPressCount int
+	escPressTime  time.Time
 
 	// Result fields - set by component, read by Model
 	SelectedSession   *tmux.Session // Session user wants to attach to
@@ -56,22 +140,25 @@ func NewSessionList(tmuxClient tmux.Client) *SessionList {
 		sessionState = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
 	}
 
-	sessions := sessionsFromState(sessionState)
+	// Build items from state
+	items := buildListItems(sessionState)
 
-	// Initialize filter input
-	filterInput := textinput.New()
-	filterInput.Placeholder = "Type to filter sessions..."
-	filterInput.CharLimit = 100
-	filterInput.Width = 50
+	// Create delegate
+	delegate := newSessionDelegate(sessionState)
+
+	// Create list with reasonable default size (will be resized on WindowSizeMsg)
+	// Initial height: assume 40 line terminal - 12 lines for header/help = 28
+	l := list.New(items, delegate, 80, 28)
+	l.SetShowTitle(false) // We'll render our own title
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.SetShowHelp(false) // We'll render our own help
 
 	return &SessionList{
-		tmuxClient:       tmuxClient,
-		sessions:         sessions,
-		sessionState:     sessionState,
-		cursor:           0,
-		filterInput:      filterInput,
-		filteredSessions: sessions,
-		err:              err,
+		list:         l,
+		tmuxClient:   tmuxClient,
+		sessionState: sessionState,
+		err:          err,
 	}
 }
 
@@ -82,56 +169,6 @@ func (sl *SessionList) Init() tea.Cmd {
 
 // Update handles messages for the session list component
 func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if sl.isFiltering {
-		return sl.updateFiltering(msg)
-	}
-	return sl.updateList(msg)
-}
-
-// View renders the session list component
-func (sl *SessionList) View() string {
-	if sl.isFiltering {
-		return sl.viewFiltering()
-	}
-	return sl.viewList()
-}
-
-// RefreshFromState reloads the session list from state
-func (sl *SessionList) RefreshFromState() {
-	sessionState, err := state.Load()
-	if err != nil {
-		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
-		logging.Logger.Error("Failed to refresh session state", "error", err)
-		return
-	}
-
-	sl.sessionState = sessionState
-	sl.sessions = sessionsFromState(sessionState)
-
-	// Recompute filtered sessions
-	if sl.filterText != "" {
-		sl.filteredSessions = sl.filterSessions()
-	} else {
-		sl.filteredSessions = sl.sessions
-	}
-
-	// Adjust cursor
-	displaySessions := sl.sessions
-	if sl.filterText != "" {
-		displaySessions = sl.filteredSessions
-	}
-	sl.adjustCursor(len(displaySessions))
-}
-
-// pollStateCmd returns a command that waits 2 seconds then sends checkStateMsg
-func pollStateCmd() tea.Cmd {
-	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-		return checkStateMsg{}
-	})
-}
-
-// updateList handles messages when in list mode
-func (sl *SessionList) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case checkStateMsg:
 		// Auto-refresh: Check if state file has changed
@@ -144,16 +181,15 @@ func (sl *SessionList) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only update if state actually changed
 		if !newState.UpdatedAt.Equal(sl.sessionState.UpdatedAt) {
 			sl.sessionState = newState
-			sl.sessions = sessionsFromState(newState)
 
-			// Recompute filtered sessions if filter active
-			if sl.filterText != "" {
-				sl.filteredSessions = sl.filterSessions()
-				sl.adjustCursor(len(sl.filteredSessions))
-			} else {
-				sl.filteredSessions = sl.sessions
-				sl.adjustCursor(len(sl.sessions))
-			}
+			// Update delegate with new state
+			delegate := newSessionDelegate(newState)
+			sl.list.SetDelegate(delegate)
+
+			// Rebuild items
+			items := buildListItems(newState)
+			cmd := sl.list.SetItems(items)
+			return sl, tea.Batch(cmd, pollStateCmd())
 		}
 
 		return sl, pollStateCmd()
@@ -163,444 +199,215 @@ func (sl *SessionList) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return sl, pollStateCmd()
 
 	case tea.KeyMsg:
+		// Handle custom keys before delegating to list
 		switch msg.String() {
 		case "ctrl+c", "q":
 			sl.ShouldQuit = true
 			return sl, nil
 
+		case "n":
+			sl.RequestNewSession = true
+			return sl, nil
+
+		case "enter":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				// Ensure session exists
+				if !sl.ensureSessionExists(item.Session) {
+					return sl, pollStateCmd()
+				}
+				sl.SelectedSession = item.Session
+				return sl, nil
+			}
+
+		case "x":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToKill = item.Session
+				return sl, nil
+			}
+
+		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
+			// Quick attach to session by number
+			numStr := msg.String()[4:] // Skip "alt+"
+			num := int(numStr[0] - '0')
+			index := num - 1
+
+			items := sl.list.VisibleItems()
+			if index >= 0 && index < len(items) {
+				if item, ok := items[index].(SessionItem); ok {
+					// Update list's internal selection state
+					sl.list.Select(index)
+
+					if !sl.ensureSessionExists(item.Session) {
+						return sl, pollStateCmd()
+					}
+					sl.SelectedSession = item.Session
+					return sl, nil
+				}
+			}
+
 		case "esc":
-			// ESC×2 to clear filter when filter is active
-			if sl.filterText != "" {
+			// Handle double-ESC for filter clearing
+			if sl.list.FilterState() != list.Unfiltered {
 				now := time.Now()
 				if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
 					// Second ESC - clear filter
-					sl.clearFilter()
+					sl.list.ResetFilter()
+					sl.escPressCount = 0
 					return sl, pollStateCmd()
 				}
 				// First ESC
 				sl.escPressCount = 1
 				sl.escPressTime = now
 			}
-			return sl, pollStateCmd()
-
-		case "up", "k":
-			if sl.cursor > 0 {
-				sl.cursor--
-			}
-
-		case "down", "j":
-			displaySessions := sl.getDisplaySessions()
-			if sl.cursor < len(displaySessions)-1 {
-				sl.cursor++
-			}
-
-		case "n":
-			sl.RequestNewSession = true
-			return sl, nil
-
-		case "/":
-			sl.isFiltering = true
-			sl.filterInput.Focus()
-			sl.filterInput.SetValue(sl.filterText) // Restore previous filter
-			return sl, textinput.Blink
-
-		case "enter":
-			displaySessions := sl.getDisplaySessions()
-			if len(displaySessions) > 0 && sl.cursor < len(displaySessions) {
-				session := displaySessions[sl.cursor]
-
-				// Ensure session exists (recreate if needed for race condition protection)
-				if !sl.ensureSessionExists(session) {
-					return sl, pollStateCmd()
-				}
-
-				sl.SelectedSession = session
-				return sl, nil
-			}
-
-		case "x":
-			displaySessions := sl.getDisplaySessions()
-			if len(displaySessions) > 0 && sl.cursor < len(displaySessions) {
-				session := displaySessions[sl.cursor]
-				sl.SessionToKill = session
-				return sl, nil
-			}
-
-		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
-			// Quick attach to session by number
-			displaySessions := sl.getDisplaySessions()
-
-			// Extract number from key (alt+1 -> '1' -> 1)
-			numStr := msg.String()[4:] // Skip "alt+"
-			num := int(numStr[0] - '0')
-			index := num - 1 // Convert to 0-based index
-
-			if index >= 0 && index < len(displaySessions) {
-				session := displaySessions[index]
-
-				// Ensure session exists (recreate if needed for race condition protection)
-				if !sl.ensureSessionExists(session) {
-					return sl, pollStateCmd()
-				}
-
-				sl.SelectedSession = session
-				return sl, nil
-			}
 		}
 
 	case tea.WindowSizeMsg:
-		sl.width = msg.Width
-		sl.height = msg.Height
+		// Update list size - reserve space for:
+		// - Header: 2 lines (title + tagline)
+		// - Spacing after header: 2 lines
+		// - Help text: 6 lines
+		// - Spacing before help: 2 lines
+		sl.list.SetSize(msg.Width, msg.Height-12)
 	}
 
-	return sl, pollStateCmd()
-}
-
-// updateFiltering handles messages when in filtering mode
-func (sl *SessionList) updateFiltering(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Delegate to list for normal handling
 	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case checkStateMsg:
-		// Continue polling even in filtering mode
-		newState, err := state.Load()
-		if err != nil {
-			return sl, tea.Batch(textinput.Blink, pollStateCmd())
-		}
-
-		// Only update if state actually changed
-		if !newState.UpdatedAt.Equal(sl.sessionState.UpdatedAt) {
-			sl.sessionState = newState
-			sl.sessions = sessionsFromState(newState)
-			sl.filteredSessions = sl.filterSessions()
-			sl.adjustCursor(len(sl.filteredSessions))
-		}
-
-		return sl, tea.Batch(textinput.Blink, pollStateCmd())
-
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			sl.ShouldQuit = true
-			return sl, nil
-
-		case "esc":
-			// Double-ESC detection
-			now := time.Now()
-			if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
-				// Second ESC - clear filter and exit
-				sl.clearFilter()
-				sl.isFiltering = false
-				return sl, pollStateCmd()
-			}
-			// First ESC
-			sl.escPressCount = 1
-			sl.escPressTime = now
-			return sl, textinput.Blink
-
-		case "enter":
-			// Apply filter and return to list
-			sl.isFiltering = false
-			return sl, pollStateCmd()
-
-		case "up", "k":
-			if sl.cursor > 0 {
-				sl.cursor--
-			}
-
-		case "down", "j":
-			if sl.cursor < len(sl.filteredSessions)-1 {
-				sl.cursor++
-			}
-
-		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
-			// Quick attach to session by number
-			numStr := msg.String()[4:] // Skip "alt+"
-			num := int(numStr[0] - '0')
-			index := num - 1 // Convert to 0-based index
-
-			if index >= 0 && index < len(sl.filteredSessions) {
-				session := sl.filteredSessions[index]
-
-				// Ensure session exists
-				if !sl.ensureSessionExists(session) {
-					return sl, tea.Batch(textinput.Blink, pollStateCmd())
-				}
-
-				sl.SelectedSession = session
-				return sl, nil
-			}
-		}
-
-	case tea.WindowSizeMsg:
-		sl.width = msg.Width
-		sl.height = msg.Height
-	}
-
-	// Update filter input and refilter
-	sl.filterInput, cmd = sl.filterInput.Update(msg)
-	sl.updateFilterText(sl.filterInput.Value())
-
+	sl.list, cmd = sl.list.Update(msg)
 	return sl, tea.Batch(cmd, pollStateCmd())
 }
 
-// viewList renders the session list view
-func (sl *SessionList) viewList() string {
-	var b strings.Builder
+// View renders the session list component
+func (sl *SessionList) View() string {
+	var s string
 
-	b.WriteString(titleStyle.Render("Rocha"))
-	b.WriteString("\n")
-	b.WriteString(normalStyle.Render("Claude Code session manager"))
-	b.WriteString("\n\n")
+	// Add custom header
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Rocha")
+	s += titleText + "\n"
+	s += normalStyle.Render(version.Tagline) + "\n\n"
 
-	displaySessions := sl.getDisplaySessions()
+	// Render list
+	s += sl.list.View()
 
-	if len(displaySessions) == 0 {
-		if sl.filterText != "" {
-			b.WriteString(normalStyle.Render("No sessions match filter. Press ESC twice to clear."))
-		} else {
-			b.WriteString(normalStyle.Render("No Claude Code sessions yet. Press 'n' to create one."))
-		}
-	} else {
-		for i, session := range displaySessions {
-			cursor := " "
-			if i == sl.cursor {
-				cursor = ">"
-			}
-
-			// Get display name from state, fallback to tmux name
-			displayName := session.Name
-			var gitRef string
-			var sessionState string
-
-			if sessionInfo, ok := sl.sessionState.Sessions[session.Name]; ok {
-				if sessionInfo.DisplayName != "" {
-					displayName = sessionInfo.DisplayName
-				}
-				// Build git reference in standard format: owner/repo:branch
-				if sessionInfo.RepoInfo != "" && sessionInfo.BranchName != "" {
-					gitRef = fmt.Sprintf("%s:%s", sessionInfo.RepoInfo, sessionInfo.BranchName)
-				} else if sessionInfo.BranchName != "" {
-					// Fallback to just branch name if no repo info
-					gitRef = sessionInfo.BranchName
-				}
-				sessionState = sessionInfo.State
-			}
-
-			// Build session line with cursor indicator
-			line := fmt.Sprintf("%s %d. %s", cursor, i+1, displayName)
-			b.WriteString(normalStyle.Render(line))
-
-			// Add git reference if available
-			if gitRef != "" {
-				b.WriteString(branchStyle.Render(fmt.Sprintf(" (%s)", gitRef)))
-			}
-
-			// Add status icon
-			switch sessionState {
-			case state.StateWorking:
-				b.WriteString(" " + workingIconStyle.Render(state.SymbolWorking))
-			case state.StateIdle:
-				b.WriteString(" " + idleIconStyle.Render(state.SymbolIdle))
-			case state.StateWaitingUser:
-				b.WriteString(" " + waitingIconStyle.Render(state.SymbolWaitingUser))
-			}
-
-			b.WriteString("\n")
-		}
-	}
-
+	// Show error if any
 	if sl.err != nil {
-		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v", sl.err)))
-		sl.err = nil // Clear error after showing
+		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v", sl.err))
+		sl.err = nil
 	}
 
-	b.WriteString("\n\n")
-
-	var helpText string
-	if sl.filterText != "" {
-		helpText = fmt.Sprintf("🔍 Filter: %s • ESC×2: clear\n", sl.filterText)
-	}
+	// Add custom help (status legend first, then keys)
+	s += "\n\n"
+	helpText := sl.renderStatusLegend() + "\n\n"
 	helpText += "↑/k: up • ↓/j: down • /: filter • n: new\n"
-	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • x: kill • q: quit\n\n"
+	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • x: kill • q: quit"
 
-	// Add legend for status symbols
-	helpText += "Status: "
-	helpText += workingIconStyle.Render(state.SymbolWorking) + " working • "
-	helpText += idleIconStyle.Render(state.SymbolIdle) + " idle • "
-	helpText += waitingIconStyle.Render(state.SymbolWaitingUser) + " waiting for input"
+	s += helpStyle.Render(helpText)
 
-	b.WriteString(helpStyle.Render(helpText))
-
-	return b.String()
+	return s
 }
 
-// viewFiltering renders the filtering view
-func (sl *SessionList) viewFiltering() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render("Rocha - Filter Sessions"))
-	b.WriteString("\n\n")
-	b.WriteString(sl.filterInput.View())
-	b.WriteString("\n\n")
-
-	resultCount := len(sl.filteredSessions)
-	totalCount := len(sl.sessions)
-	countText := fmt.Sprintf("Showing %d of %d sessions", resultCount, totalCount)
-	b.WriteString(branchStyle.Render(countText))
-	b.WriteString("\n\n")
-
-	if resultCount == 0 {
-		b.WriteString(normalStyle.Render("No sessions match filter."))
-	} else {
-		for i, session := range sl.filteredSessions {
-			cursor := " "
-			if i == sl.cursor {
-				cursor = ">"
-			}
-
-			displayName := session.Name
-			var gitRef string
-			var sessionState string
-
-			if sessionInfo, ok := sl.sessionState.Sessions[session.Name]; ok {
-				if sessionInfo.DisplayName != "" {
-					displayName = sessionInfo.DisplayName
-				}
-				if sessionInfo.RepoInfo != "" && sessionInfo.BranchName != "" {
-					gitRef = fmt.Sprintf("%s:%s", sessionInfo.RepoInfo, sessionInfo.BranchName)
-				} else if sessionInfo.BranchName != "" {
-					gitRef = sessionInfo.BranchName
-				}
-				sessionState = sessionInfo.State
-			}
-
-			line := fmt.Sprintf("%s %d. %s", cursor, i+1, displayName)
-			b.WriteString(normalStyle.Render(line))
-
-			if gitRef != "" {
-				b.WriteString(branchStyle.Render(fmt.Sprintf(" (%s)", gitRef)))
-			}
-
-			switch sessionState {
-			case state.StateWorking:
-				b.WriteString(" " + workingIconStyle.Render(state.SymbolWorking))
-			case state.StateIdle:
-				b.WriteString(" " + idleIconStyle.Render(state.SymbolIdle))
-			case state.StateWaitingUser:
-				b.WriteString(" " + waitingIconStyle.Render(state.SymbolWaitingUser))
-			}
-
-			b.WriteString("\n")
-		}
-	}
-
-	b.WriteString("\n\n")
-	helpText := "Type to filter • ↑/↓: navigate • enter/Alt+1-7: apply/attach\n"
-	helpText += "ESC×2: clear • Ctrl+C: quit\n\n"
-
-	// Add legend for status symbols
-	helpText += "Status: "
-	helpText += workingIconStyle.Render(state.SymbolWorking) + " working • "
-	helpText += idleIconStyle.Render(state.SymbolIdle) + " idle • "
-	helpText += waitingIconStyle.Render(state.SymbolWaitingUser) + " waiting for input"
-
-	b.WriteString(helpStyle.Render(helpText))
-
-	return b.String()
-}
-
-// Helper functions
-
-// getDisplaySessions returns the appropriate session list based on filter state
-func (sl *SessionList) getDisplaySessions() []*tmux.Session {
-	if sl.filterText != "" {
-		return sl.filteredSessions
-	}
-	return sl.sessions
-}
-
-// adjustCursor ensures cursor is within valid range
-func (sl *SessionList) adjustCursor(maxLen int) {
-	if maxLen == 0 {
-		sl.cursor = 0
+// RefreshFromState reloads the session list from state
+func (sl *SessionList) RefreshFromState() {
+	sessionState, err := state.Load()
+	if err != nil {
+		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
+		logging.Logger.Error("Failed to refresh session state", "error", err)
 		return
 	}
-	if sl.cursor >= maxLen {
-		sl.cursor = maxLen - 1
-	}
-	if sl.cursor < 0 {
-		sl.cursor = 0
-	}
+
+	sl.sessionState = sessionState
+
+	// Update delegate
+	delegate := newSessionDelegate(sessionState)
+	sl.list.SetDelegate(delegate)
+
+	// Rebuild items
+	items := buildListItems(sessionState)
+	sl.list.SetItems(items)
 }
 
-// clearFilter clears the filter state
-func (sl *SessionList) clearFilter() {
-	sl.filterText = ""
-	sl.filterInput.SetValue("")
-	sl.filteredSessions = sl.sessions
-	sl.cursor = 0
-	sl.escPressCount = 0
+// pollStateCmd returns a command that waits 2 seconds then sends checkStateMsg
+func pollStateCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return checkStateMsg{}
+	})
 }
 
-// updateFilterText updates the filter text and recomputes filtered sessions
-func (sl *SessionList) updateFilterText(newText string) {
-	if sl.filterText != newText {
-		sl.filterText = newText
-		sl.filteredSessions = sl.filterSessions()
+// buildListItems converts SessionState to list items
+func buildListItems(sessionState *state.SessionState) []list.Item {
+	var items []list.Item
+	var sessions []*tmux.Session
 
-		// Reset and bound cursor
-		sl.cursor = 0
-		if len(sl.filteredSessions) > 0 && sl.cursor >= len(sl.filteredSessions) {
-			sl.cursor = len(sl.filteredSessions) - 1
-		}
-		if sl.cursor < 0 {
-			sl.cursor = 0
-		}
+	// Build sessions from state
+	for name, info := range sessionState.Sessions {
+		sessions = append(sessions, &tmux.Session{
+			Name:      name,
+			CreatedAt: info.LastUpdated,
+		})
 	}
+
+	// Sort by name
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].Name < sessions[j].Name
+	})
+
+	// Convert to list items
+	for _, session := range sessions {
+		info := sessionState.Sessions[session.Name]
+		displayName := session.Name
+		if info.DisplayName != "" {
+			displayName = info.DisplayName
+		}
+
+		// Build git reference
+		var gitRef string
+		if info.RepoInfo != "" && info.BranchName != "" {
+			gitRef = fmt.Sprintf("%s:%s", info.RepoInfo, info.BranchName)
+		} else if info.BranchName != "" {
+			gitRef = info.BranchName
+		}
+
+		items = append(items, SessionItem{
+			Session:     session,
+			DisplayName: displayName,
+			GitRef:      gitRef,
+			State:       info.State,
+		})
+	}
+
+	return items
 }
 
-// filterSessions filters sessions based on filter text
-func (sl *SessionList) filterSessions() []*tmux.Session {
-	if sl.filterText == "" {
-		return sl.sessions
-	}
+// renderStatusLegend renders the status legend with counts
+func (sl *SessionList) renderStatusLegend() string {
+	workingCount, idleCount, waitingCount, exitedCount := sl.countSessionsByState()
 
-	filterLower := strings.ToLower(sl.filterText)
-	var filtered []*tmux.Session
+	legend := "Status: "
+	legend += workingIconStyle.Render(state.SymbolWorking) + fmt.Sprintf(" %d working • ", workingCount)
+	legend += idleIconStyle.Render(state.SymbolIdle) + fmt.Sprintf(" %d idle • ", idleCount)
+	legend += waitingIconStyle.Render(state.SymbolWaitingUser) + fmt.Sprintf(" %d waiting • ", waitingCount)
+	legend += exitedIconStyle.Render(state.SymbolExited) + fmt.Sprintf(" %d exited", exitedCount)
 
-	for _, session := range sl.sessions {
-		sessionInfo, ok := sl.sessionState.Sessions[session.Name]
+	return legend
+}
 
-		// Build searchable text
-		var searchText strings.Builder
-		searchText.WriteString(strings.ToLower(session.Name))
-		if ok {
-			if sessionInfo.DisplayName != "" {
-				searchText.WriteString(" ")
-				searchText.WriteString(strings.ToLower(sessionInfo.DisplayName))
-			}
-			if sessionInfo.RepoInfo != "" {
-				searchText.WriteString(" ")
-				searchText.WriteString(strings.ToLower(sessionInfo.RepoInfo))
-			}
-			if sessionInfo.BranchName != "" {
-				searchText.WriteString(" ")
-				searchText.WriteString(strings.ToLower(sessionInfo.BranchName))
-			}
-		}
-
-		if strings.Contains(searchText.String(), filterLower) {
-			filtered = append(filtered, session)
+// countSessionsByState counts sessions by their state
+func (sl *SessionList) countSessionsByState() (working, idle, waiting, exited int) {
+	for _, sessionInfo := range sl.sessionState.Sessions {
+		switch sessionInfo.State {
+		case state.StateWorking:
+			working++
+		case state.StateIdle:
+			idle++
+		case state.StateWaitingUser:
+			waiting++
+		case state.StateExited:
+			exited++
 		}
 	}
-
-	return filtered
+	return
 }
 
 // ensureSessionExists checks if a session exists and recreates it if needed
-// Returns true if session is ready to attach, false if recreation failed
 func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
 	if sl.tmuxClient.Exists(session.Name) {
 		return true
@@ -624,19 +431,4 @@ func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
 	}
 
 	return true
-}
-
-// sessionsFromState rebuilds the session list from state.json (duplicated to avoid circular import)
-func sessionsFromState(sessionState *state.SessionState) []*tmux.Session {
-	var sessions []*tmux.Session
-	for name, info := range sessionState.Sessions {
-		sessions = append(sessions, &tmux.Session{
-			Name:      name,
-			CreatedAt: info.LastUpdated,
-		})
-	}
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].Name < sessions[j].Name
-	})
-	return sessions
 }

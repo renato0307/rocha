@@ -37,6 +37,9 @@ var (
 
 	waitingIconStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("1")) // Red - waiting for prompt
+
+	exitedIconStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")) // Gray - Claude has exited
 )
 
 type uiState int
@@ -107,8 +110,7 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
-		m.sessionList.width = msg.Width
-		m.sessionList.height = msg.Height
+		// SessionList handles its own sizing via Update()
 	}
 
 	// Handle detach message - session list auto-refreshes via polling
