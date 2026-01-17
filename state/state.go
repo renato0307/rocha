@@ -139,16 +139,29 @@ func (s *SessionState) Save() error {
 }
 
 // UpdateSession adds or updates a session with the given state and execution ID
+// Preserves existing git metadata fields if the session already exists
 func (s *SessionState) UpdateSession(name, state, executionID string) error {
 	if s.Sessions == nil {
 		s.Sessions = make(map[string]SessionInfo)
 	}
 
-	s.Sessions[name] = SessionInfo{
-		Name:        name,
-		State:       state,
-		ExecutionID: executionID,
-		LastUpdated: time.Now(),
+	// Get existing session if it exists
+	existing, exists := s.Sessions[name]
+
+	// If session exists, preserve all existing fields and only update what we need
+	if exists {
+		existing.State = state
+		existing.ExecutionID = executionID
+		existing.LastUpdated = time.Now()
+		s.Sessions[name] = existing
+	} else {
+		// New session - create with basic fields only
+		s.Sessions[name] = SessionInfo{
+			Name:        name,
+			State:       state,
+			ExecutionID: executionID,
+			LastUpdated: time.Now(),
+		}
 	}
 
 	return s.Save()
