@@ -150,6 +150,19 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.attachToSession(session.Name)
 	}
 
+	// Check if user selected a shell session
+	if m.sessionList.SelectedShellSession != nil {
+		session := m.sessionList.SelectedShellSession
+		m.sessionList.SelectedShellSession = nil // Reset
+
+		shellSessionName := m.getOrCreateShellSession(session)
+		if shellSessionName != "" {
+			// Use existing attachToSession() helper (follows tmux abstraction)
+			return m, m.attachToSession(shellSessionName)
+		}
+		return m, cmd
+	}
+
 	if m.sessionList.SessionToKill != nil {
 		session := m.sessionList.SessionToKill
 		m.sessionList.SessionToKill = nil // Clear
@@ -323,17 +336,71 @@ func (m *Model) attachToSession(sessionName string) tea.Cmd {
 	})
 }
 
+// getOrCreateShellSession returns shell session name, creating if needed
+// Returns empty string on error (error stored in m.err)
+func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
+	sessionInfo, ok := m.sessionState.Sessions[session.Name]
+	if !ok {
+		m.err = fmt.Errorf("session info not found: %s", session.Name)
+		return ""
+	}
+
+	// Check if shell session already exists
+	if sessionInfo.ShellSession != "" {
+		if m.tmuxClient.Exists(sessionInfo.ShellSession) {
+			return sessionInfo.ShellSession
+		}
+	}
+
+	// Create shell session name
+	shellSessionName := fmt.Sprintf("%s-shell", session.Name)
+
+	// Determine working directory
+	workingDir := sessionInfo.WorktreePath
+	if workingDir == "" {
+		workingDir = sessionInfo.RepoPath
+	}
+
+	// Create shell session
+	_, err := m.tmuxClient.CreateShellSession(shellSessionName, workingDir)
+	if err != nil {
+		m.err = fmt.Errorf("failed to create shell session: %w", err)
+		return ""
+	}
+
+	// Update state
+	sessionInfo.ShellSession = shellSessionName
+	m.sessionState.Sessions[session.Name] = sessionInfo
+	if err := m.sessionState.Save(); err != nil {
+		logging.Logger.Warn("Failed to save shell session to state", "error", err)
+	}
+
+	return shellSessionName
+}
+
 // killSession kills a session and removes it from state
 func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	logging.Logger.Info("Killing session", "name", session.Name)
 
+	// Get session info to check for shell session
+	sessionInfo, hasInfo := m.sessionState.Sessions[session.Name]
+
+	// Kill shell session if it exists
+	if hasInfo && sessionInfo.ShellSession != "" {
+		logging.Logger.Info("Killing shell session", "name", sessionInfo.ShellSession)
+		if err := m.tmuxClient.Kill(sessionInfo.ShellSession); err != nil {
+			logging.Logger.Warn("Failed to kill shell session", "error", err)
+		}
+	}
+
+	// Kill main Claude session
 	if err := m.tmuxClient.Kill(session.Name); err != nil {
 		m.err = fmt.Errorf("failed to kill session '%s': %w", session.Name, err)
 		return tea.Batch(m.sessionList.Init(), clearErrorAfterDelay()) // Continue polling and clear error after delay
 	}
 
 	// Check if session has worktree and remove it from state
-	if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
+	if hasInfo && sessionInfo.WorktreePath != "" {
 		logging.Logger.Info("Session had worktree", "path", sessionInfo.WorktreePath)
 	}
 

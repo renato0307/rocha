@@ -35,6 +35,7 @@ type SessionState struct {
 // SessionInfo represents the state of a single session
 type SessionInfo struct {
 	Name         string    `json:"name"`          // Tmux session name (no spaces)
+	ShellSession string    `json:"shell_session"` // Shell tmux session name (optional)
 	DisplayName  string    `json:"display_name"`  // Display name (with spaces)
 	State        string    `json:"state"`         // "waiting" or "working"
 	ExecutionID  string    `json:"execution_id"`  // Which rocha run owns this state
@@ -397,7 +398,10 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 		s.Sessions = make(map[string]SessionInfo)
 	}
 
-	s.Sessions[name] = SessionInfo{
+	// Get existing session to preserve ShellSession field
+	existing, exists := s.Sessions[name]
+
+	sessionInfo := SessionInfo{
 		Name:         name,
 		DisplayName:  displayName,
 		State:        state,
@@ -408,6 +412,13 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 		BranchName:   branchName,
 		WorktreePath: worktreePath,
 	}
+
+	// Preserve ShellSession if it exists
+	if exists {
+		sessionInfo.ShellSession = existing.ShellSession
+	}
+
+	s.Sessions[name] = sessionInfo
 
 	return s.Save()
 }

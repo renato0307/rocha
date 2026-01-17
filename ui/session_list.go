@@ -23,10 +23,11 @@ type sessionListDetachedMsg struct{} // Session list returned from attached stat
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
-	Session     *tmux.Session
-	DisplayName string
-	GitRef      string
-	State       string
+	Session         *tmux.Session
+	DisplayName     string
+	GitRef          string
+	State           string
+	HasShellSession bool // Track if shell session exists
 }
 
 // FilterValue implements list.Item
@@ -98,6 +99,13 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		statusIcon = exitedIconStyle.Render(state.SymbolExited)
 	}
 
+	// Add shell session indicator
+	if item.HasShellSession {
+		statusIcon += " " + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("33")).
+			Render("⚡")
+	}
+
 	// Build first line: cursor + zero-padded number + status + name
 	line1 := fmt.Sprintf("%s %02d. %s %s", cursor, index+1, statusIcon, item.DisplayName)
 	line1 = normalStyle.Render(line1)
@@ -125,11 +133,12 @@ type SessionList struct {
 	escPressTime  time.Time
 
 	// Result fields - set by component, read by Model
-	SelectedSession   *tmux.Session // Session user wants to attach to
-	SessionToKill     *tmux.Session // Session user wants to kill
-	SessionToRename   *tmux.Session // Session user wants to rename
-	RequestNewSession bool          // User pressed 'n'
-	ShouldQuit        bool          // User pressed 'q' or Ctrl+C
+	SelectedSession      *tmux.Session // Session user wants to attach to
+	SelectedShellSession *tmux.Session // Session user wants shell session for
+	SessionToKill        *tmux.Session // Session user wants to kill
+	SessionToRename      *tmux.Session // Session user wants to rename
+	RequestNewSession    bool          // User pressed 'n'
+	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
@@ -142,7 +151,7 @@ func NewSessionList(tmuxClient tmux.Client) *SessionList {
 	}
 
 	// Build items from state
-	items := buildListItems(sessionState)
+	items := buildListItems(sessionState, tmuxClient)
 
 	// Create delegate
 	delegate := newSessionDelegate(sessionState)
@@ -188,7 +197,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sl.list.SetDelegate(delegate)
 
 			// Rebuild items
-			items := buildListItems(newState)
+			items := buildListItems(newState, sl.tmuxClient)
 			cmd := sl.list.SetItems(items)
 			return sl, tea.Batch(cmd, pollStateCmd())
 		}
@@ -252,6 +261,16 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case "alt+enter":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				// Ensure session exists
+				if !sl.ensureSessionExists(item.Session) {
+					return sl, pollStateCmd()
+				}
+				sl.SelectedShellSession = item.Session
+				return sl, nil
+			}
+
 		case "esc":
 			// Handle double-ESC for filter clearing
 			if sl.list.FilterState() != list.Unfiltered {
@@ -305,7 +324,8 @@ func (sl *SessionList) View() string {
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
 	helpText += "↑/k: up • ↓/j: down • /: filter • n: new\n"
-	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • r: rename • x: kill • q: quit"
+	helpText += "enter/Alt+1-7: attach • Alt+Enter: shell • r: rename • x: kill • q: quit\n"
+	helpText += "(Ctrl+B D or Ctrl+Q to detach)"
 
 	s += helpStyle.Render(helpText)
 
@@ -328,7 +348,7 @@ func (sl *SessionList) RefreshFromState() {
 	sl.list.SetDelegate(delegate)
 
 	// Rebuild items
-	items := buildListItems(sessionState)
+	items := buildListItems(sessionState, sl.tmuxClient)
 	sl.list.SetItems(items)
 }
 
@@ -340,7 +360,7 @@ func pollStateCmd() tea.Cmd {
 }
 
 // buildListItems converts SessionState to list items
-func buildListItems(sessionState *state.SessionState) []list.Item {
+func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []list.Item {
 	var items []list.Item
 	var sessions []*tmux.Session
 
@@ -373,11 +393,18 @@ func buildListItems(sessionState *state.SessionState) []list.Item {
 			gitRef = info.BranchName
 		}
 
+		// Check if shell session exists
+		hasShell := false
+		if info.ShellSession != "" {
+			hasShell = tmuxClient.Exists(info.ShellSession)
+		}
+
 		items = append(items, SessionItem{
-			Session:     session,
-			DisplayName: displayName,
-			GitRef:      gitRef,
-			State:       info.State,
+			Session:         session,
+			DisplayName:     displayName,
+			GitRef:          gitRef,
+			State:           info.State,
+			HasShellSession: hasShell,
 		})
 	}
 
