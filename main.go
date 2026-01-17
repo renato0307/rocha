@@ -13,7 +13,7 @@ func main() {
 	var cli cmd.CLI
 	ctx := kong.Parse(&cli,
 		kong.Name("rocha"),
-		kong.Description("A TUI for managing Claude Code sessions in tmux"),
+		kong.Description("I'm rocha, and I manage coding agents"),
 		kong.UsageOnError(),
 	)
 

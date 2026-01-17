@@ -38,7 +38,7 @@ Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to
 
 ## Git Worktree Support
 
-When running in a git repository, rocha offers to create isolated worktrees for each session:
+When running in a git repository, `rocha` offers to create isolated worktrees for each session:
 
 - **Automatic detection** - Detects git repos and prompts for worktree creation
 - **Isolated branches** - Each session gets its own branch and working directory
