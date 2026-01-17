@@ -422,10 +422,10 @@ func (s *SessionState) RemoveSession(name string) error {
 	return s.Save()
 }
 
-// GetCounts returns the number of waiting, idle, and working sessions for the given execution ID
-func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, working int) {
+// GetCounts returns the number of waiting, idle, working, and exited sessions for the given execution ID
+func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, working int, exited int) {
 	if s.Sessions == nil {
-		return 0, 0, 0
+		return 0, 0, 0, 0
 	}
 
 	for _, session := range s.Sessions {
@@ -440,17 +440,19 @@ func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, wor
 			idle++
 		case StateWorking:
 			working++
+		case StateExited:
+			exited++
 		}
 	}
 
-	return waiting, idle, working
+	return waiting, idle, working, exited
 }
 
-// GetAllCounts returns the number of waiting, idle, and working sessions across all execution IDs
+// GetAllCounts returns the number of waiting, idle, working, and exited sessions across all execution IDs
 // This is useful for the status bar to show global state regardless of which rocha instance is active
-func (s *SessionState) GetAllCounts() (waiting int, idle int, working int) {
+func (s *SessionState) GetAllCounts() (waiting int, idle int, working int, exited int) {
 	if s.Sessions == nil {
-		return 0, 0, 0
+		return 0, 0, 0, 0
 	}
 
 	for _, session := range s.Sessions {
@@ -461,10 +463,12 @@ func (s *SessionState) GetAllCounts() (waiting int, idle int, working int) {
 			idle++
 		case StateWorking:
 			working++
+		case StateExited:
+			exited++
 		}
 	}
 
-	return waiting, idle, working
+	return waiting, idle, working, exited
 }
 
 // SyncWithRunning updates execution IDs for sessions that are actually running in tmux
