@@ -62,7 +62,6 @@ set -g status-interval 1
 
 ```bash
 rocha --debug              # Enable logging
-rocha play-sound           # Test notifications
 rocha --help               # More options
 ```
 
