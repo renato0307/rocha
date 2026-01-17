@@ -6,10 +6,43 @@ import (
 	"rocha/state"
 	"rocha/tmux"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 )
+
+// sanitizeTmuxName converts a display name to a tmux-compatible session name
+// - Alphanumeric, underscores, hyphens, and periods are kept
+// - Spaces and parentheses become underscores (multiple consecutive become single underscore)
+// - Special characters like []{}:;,!@#$%^&*+=|\/'"<>? are removed
+func sanitizeTmuxName(displayName string) string {
+	var result strings.Builder
+	lastWasUnderscore := false
+
+	for _, r := range displayName {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '-' || r == '.' {
+			// Keep alphanumeric, hyphens, and periods
+			result.WriteRune(r)
+			lastWasUnderscore = false
+		} else if r == '_' {
+			// Keep explicit underscores
+			result.WriteRune('_')
+			lastWasUnderscore = true
+		} else if unicode.IsSpace(r) || r == '(' || r == ')' {
+			// Replace spaces and parentheses with underscore (but avoid consecutive underscores)
+			if !lastWasUnderscore && result.Len() > 0 {
+				result.WriteRune('_')
+				lastWasUnderscore = true
+			}
+		}
+		// All other special characters are removed (no continue needed, just don't add them)
+	}
+
+	// Trim trailing underscore if any
+	str := result.String()
+	return strings.TrimRight(str, "_")
+}
 
 // SessionRenameFormResult contains the result of the rename operation
 type SessionRenameFormResult struct {
@@ -57,7 +90,7 @@ func NewSessionRenameForm(sessionManager tmux.SessionManager, sessionState *stat
 						return fmt.Errorf("session name required")
 					}
 					// Sanitize for tmux name check
-					tmuxName := strings.ReplaceAll(s, " ", "_")
+					tmuxName := sanitizeTmuxName(s)
 					if sessionManager.Exists(tmuxName) && tmuxName != oldTmuxName {
 						return fmt.Errorf("session %s already exists", tmuxName)
 					}
@@ -120,8 +153,8 @@ func (sf *SessionRenameForm) Result() SessionRenameFormResult {
 func (sf *SessionRenameForm) renameSession() error {
 	newDisplayName := sf.result.NewDisplayName
 
-	// Sanitize for tmux (replace spaces with underscores)
-	newTmuxName := strings.ReplaceAll(newDisplayName, " ", "_")
+	// Sanitize for tmux (remove colons, replace spaces/special chars with underscores)
+	newTmuxName := sanitizeTmuxName(newDisplayName)
 	sf.result.NewTmuxName = newTmuxName
 
 	logging.Logger.Info("Renaming session",
