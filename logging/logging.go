@@ -184,3 +184,36 @@ func getLogDir() (string, error) {
 		return filepath.Join(homeDir, ".rocha", "logs"), nil
 	}
 }
+
+// InitHookLogger initializes a logger for a specific hook execution
+// Creates a separate log file for each hook invocation to make debugging easier
+func InitHookLogger(sessionName, eventType string) (string, error) {
+	logDir, err := getLogDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get log directory: %w", err)
+	}
+
+	// Create log directory if it doesn't exist
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// Create hook-specific log file with timestamp
+	timestamp := time.Now().Format("20060102-150405")
+	hookLogFile := filepath.Join(logDir, fmt.Sprintf("hook-%s-%s-%s.log", sessionName, eventType, timestamp))
+
+	// Open or create the hook-specific log file
+	file, err := os.OpenFile(hookLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to open hook log file: %w", err)
+	}
+
+	// Set logger to write to hook-specific log file
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}
+	handler := slog.NewJSONHandler(file, opts)
+	Logger = slog.New(handler)
+
+	return hookLogFile, nil
+}

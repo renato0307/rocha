@@ -127,13 +127,12 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 		st = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
 	}
 
-	// Create or update session info - preserve DisplayName if session exists
+	// Create or update session info - preserve DisplayName and State if session exists
 	sessionInfo, exists := st.Sessions[sessionName]
 	if exists {
-		// Session exists - preserve DisplayName and update only necessary fields
-		sessionInfo.State = "working"
-		sessionInfo.ExecutionID = fmt.Sprintf("%d", time.Now().Unix())
+		// Session exists - preserve State and DisplayName, update timestamp and git metadata
 		sessionInfo.LastUpdated = time.Now()
+
 		// Update git metadata if provided
 		if branchName != "" {
 			sessionInfo.BranchName = branchName
@@ -148,12 +147,18 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 			sessionInfo.RepoInfo = repoInfo
 		}
 	} else {
-		// New session - create with all fields
+		// New session - create with "waiting" state, hooks will set "working" if needed
+		// Use current TUI's execution ID from state
+		executionID := st.ExecutionID
+		if executionID == "" {
+			executionID = "unknown"
+			logging.Logger.Warn("No execution ID in state, using 'unknown'")
+		}
 		sessionInfo = state.SessionInfo{
 			Name:         sessionName,
 			DisplayName:  sessionName,
-			State:        "working",
-			ExecutionID:  fmt.Sprintf("%d", time.Now().Unix()),
+			State:        state.StateWaitingUser,
+			ExecutionID:  executionID,
 			LastUpdated:  time.Now(),
 			BranchName:   branchName,
 			WorktreePath: worktreePath,

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,18 +9,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/sys/unix"
+	"rocha/logging"
 )
 
 const (
 	StateWaitingUser = "waiting" // Red - waiting for user input/prompt
 	StateWorking     = "working" // Green - actively working
 	StateIdle        = "idle"    // Yellow - finished/idle
+	StateExited      = "exited"  // Gray - tmux session exists but Claude has exited
 
 	// Status symbols (Unicode)
 	SymbolWorking     = "●" // Green - actively working
 	SymbolIdle        = "○" // Yellow - finished/idle
 	SymbolWaitingUser = "◐" // Red - waiting for user input/prompt
+	SymbolExited      = "■" // Gray - Claude has exited
 )
 
 // SessionState represents the persistent state of all Claude sessions
@@ -40,6 +43,21 @@ type SessionInfo struct {
 	RepoInfo     string    `json:"repo_info"`     // GitHub owner/repo (e.g., "owner/repo")
 	BranchName   string    `json:"branch_name"`   // Git branch name (if worktree created)
 	WorktreePath string    `json:"worktree_path"` // Path to worktree if created
+}
+
+// StateEvent represents an event to be applied to state
+type StateEvent struct {
+	Type      string    `json:"type"`       // "update_session" or "sync_running"
+	Timestamp time.Time `json:"timestamp"`
+
+	// For update_session events
+	SessionName string `json:"session_name,omitempty"`
+	State       string `json:"state,omitempty"`
+	ExecutionID string `json:"execution_id,omitempty"`
+
+	// For sync_running events
+	RunningSessionNames []string `json:"running_session_names,omitempty"`
+	NewExecutionID      string   `json:"new_execution_id,omitempty"`
 }
 
 // NewExecutionID generates a new UUID for the current rocha run
@@ -67,7 +85,198 @@ func GetStatePath() (string, error) {
 	return statePathFunc()
 }
 
-// Load reads the state from disk. Returns empty state if file doesn't exist.
+// getQueuePath returns the path to the event queue file
+func getQueuePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	configDir := filepath.Join(homeDir, ".config", "rocha")
+	return filepath.Join(configDir, "state-queue.jsonl"), nil
+}
+
+// appendEvent appends an event to the queue file (thread-safe across processes)
+func appendEvent(event StateEvent) error {
+	queuePath, err := getQueuePath()
+	if err != nil {
+		return err
+	}
+
+	logging.Logger.Debug("Attempting to append event to queue",
+		"type", event.Type,
+		"session", event.SessionName,
+		"state", event.State,
+		"queue_path", queuePath,
+		"pid", os.Getpid())
+
+	if err := os.MkdirAll(filepath.Dir(queuePath), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Open file for append with create
+	file, err := os.OpenFile(queuePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		logging.Logger.Error("Failed to open queue file", "error", err, "path", queuePath)
+		return fmt.Errorf("failed to open queue file: %w", err)
+	}
+	defer file.Close()
+
+	logging.Logger.Debug("Acquiring lock on queue file")
+
+	// Lock for append (OS-specific)
+	if err := lockFile(file); err != nil {
+		logging.Logger.Error("Failed to acquire lock", "error", err)
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		logging.Logger.Debug("Releasing lock on queue file")
+		unlockFile(file)
+	}()
+
+	// Marshal and append
+	event.Timestamp = time.Now()
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
+
+	logging.Logger.Debug("Writing event to queue", "data_size", len(data))
+
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		logging.Logger.Error("Failed to write event", "error", err)
+		return fmt.Errorf("failed to write event: %w", err)
+	}
+
+	logging.Logger.Info("Queue event written successfully",
+		"type", event.Type,
+		"session", event.SessionName,
+		"new_state", event.State,
+		"execution_id", event.ExecutionID)
+
+	return nil
+}
+
+// processQueueEvents reads and applies all queued events, then clears the queue
+func processQueueEvents(state *SessionState) error {
+	queuePath, err := getQueuePath()
+	if err != nil {
+		return err
+	}
+
+	// Open queue file
+	file, err := os.OpenFile(queuePath, os.O_RDWR, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No queue file, nothing to process
+		}
+		return fmt.Errorf("failed to open queue file: %w", err)
+	}
+	defer file.Close()
+
+	// Lock queue file (OS-specific)
+	if err := lockFile(file); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer unlockFile(file)
+
+	// Read all events
+	scanner := bufio.NewScanner(file)
+	var events []StateEvent
+
+	for scanner.Scan() {
+		var event StateEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			logging.Logger.Warn("Failed to unmarshal queue event, skipping", "error", err)
+			continue
+		}
+		events = append(events, event)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to read queue: %w", err)
+	}
+
+	// Apply events in order
+	for _, event := range events {
+		if err := applyEvent(state, event); err != nil {
+			logging.Logger.Warn("Failed to apply event", "type", event.Type, "error", err)
+		}
+	}
+
+	// Clear queue after processing
+	if err := file.Truncate(0); err != nil {
+		return fmt.Errorf("failed to clear queue: %w", err)
+	}
+
+	return nil
+}
+
+// applyEvent applies a single event to the state
+func applyEvent(state *SessionState, event StateEvent) error {
+	if state.Sessions == nil {
+		state.Sessions = make(map[string]SessionInfo)
+	}
+
+	switch event.Type {
+	case "update_session":
+		existing, exists := state.Sessions[event.SessionName]
+		if exists {
+			existing.State = event.State
+			existing.ExecutionID = event.ExecutionID
+			existing.LastUpdated = event.Timestamp
+			state.Sessions[event.SessionName] = existing
+		} else {
+			state.Sessions[event.SessionName] = SessionInfo{
+				Name:        event.SessionName,
+				State:       event.State,
+				ExecutionID: event.ExecutionID,
+				LastUpdated: event.Timestamp,
+			}
+		}
+
+	case "sync_running":
+		runningMap := make(map[string]bool)
+		for _, name := range event.RunningSessionNames {
+			runningMap[name] = true
+		}
+
+		for name, session := range state.Sessions {
+			if runningMap[name] {
+				// Only update ExecutionID, preserve current state
+				// (Don't reset state - if Claude is working, it should stay working)
+				session.ExecutionID = event.NewExecutionID
+				session.LastUpdated = event.Timestamp
+				state.Sessions[name] = session
+			}
+		}
+
+	default:
+		return fmt.Errorf("unknown event type: %s", event.Type)
+	}
+
+	return nil
+}
+
+// QueueUpdateSession queues a session state update
+func QueueUpdateSession(name, state, executionID string) error {
+	return appendEvent(StateEvent{
+		Type:        "update_session",
+		SessionName: name,
+		State:       state,
+		ExecutionID: executionID,
+	})
+}
+
+// QueueSyncRunning queues a sync operation
+func QueueSyncRunning(runningSessionNames []string, newExecutionID string) error {
+	return appendEvent(StateEvent{
+		Type:                "sync_running",
+		RunningSessionNames: runningSessionNames,
+		NewExecutionID:      newExecutionID,
+	})
+}
+
+// Load reads the state from disk and applies any queued events
 func Load() (*SessionState, error) {
 	path, err := GetStatePath()
 	if err != nil {
@@ -88,9 +297,18 @@ func Load() (*SessionState, error) {
 		return &SessionState{Sessions: make(map[string]SessionInfo)}, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 
-	// Ensure Sessions map is initialized
 	if state.Sessions == nil {
 		state.Sessions = make(map[string]SessionInfo)
+	}
+
+	// Process queued events before returning
+	if err := processQueueEvents(&state); err != nil {
+		logging.Logger.Warn("Failed to process queue events", "error", err)
+	}
+
+	// Save updated state after processing queue
+	if err := state.Save(); err != nil {
+		logging.Logger.Warn("Failed to save state after processing queue", "error", err)
 	}
 
 	return &state, nil
@@ -116,10 +334,10 @@ func (s *SessionState) Save() error {
 	defer file.Close()
 
 	// Acquire exclusive lock
-	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX); err != nil {
+	if err := lockFile(file); err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	defer unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	defer unlockFile(file)
 
 	// Update timestamp
 	s.UpdatedAt = time.Now()
@@ -215,6 +433,27 @@ func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, wor
 			continue
 		}
 
+		switch session.State {
+		case StateWaitingUser:
+			waiting++
+		case StateIdle:
+			idle++
+		case StateWorking:
+			working++
+		}
+	}
+
+	return waiting, idle, working
+}
+
+// GetAllCounts returns the number of waiting, idle, and working sessions across all execution IDs
+// This is useful for the status bar to show global state regardless of which rocha instance is active
+func (s *SessionState) GetAllCounts() (waiting int, idle int, working int) {
+	if s.Sessions == nil {
+		return 0, 0, 0
+	}
+
+	for _, session := range s.Sessions {
 		switch session.State {
 		case StateWaitingUser:
 			waiting++
