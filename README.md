@@ -1,6 +1,6 @@
 # Rocha
 
-I'm Rocha, and I manage coding agents
+Manage multiple Claude Code sessions in your terminal. Switch between conversations like browser tabs, with sound notifications when Claude needs your attention.
 
 ## Quick Start
 
@@ -22,7 +22,6 @@ Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to
 For all available commands and options, run `rocha --help`.
 
 ## What You Can Do
-
 - **Switch between Claude sessions** - Keep multiple conversations organized
 - **Get sound alerts** - Hear when Claude finishes and needs your input
 - **See status in tmux** - Show active/waiting sessions in your status bar
@@ -56,7 +55,6 @@ Worktrees are stored in `~/.rocha/worktrees/` by default.
 ## Status Bar (Optional)
 
 Show session counts in your tmux status bar:
-
 ```bash
 rocha setup
 source ~/.zshrc  # or ~/.bashrc
