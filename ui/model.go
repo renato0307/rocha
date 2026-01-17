@@ -31,10 +31,13 @@ var (
 			Foreground(lipgloss.Color("241")) // Dimmed/gray
 
 	workingIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("2")) // Green
+				Foreground(lipgloss.Color("2")) // Green - actively working
+
+	idleIconStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("3")) // Yellow - finished/idle
 
 	waitingIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("3")) // Yellow
+				Foreground(lipgloss.Color("1")) // Red - waiting for prompt
 )
 
 type uiState int

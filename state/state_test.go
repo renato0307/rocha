@@ -87,8 +87,8 @@ func TestUpdateSession(t *testing.T) {
 		expectedState string
 	}{
 		{"working state", "session1", StateWorking, "exec-1", StateWorking},
-		{"waiting state", "session2", StateWaiting, "exec-1", StateWaiting},
-		{"update existing", "session1", StateWaiting, "exec-1", StateWaiting},
+		{"waiting state", "session2", StateWaitingUser, "exec-1", StateWaitingUser},
+		{"update existing", "session1", StateWaitingUser, "exec-1", StateWaitingUser},
 	}
 
 	for _, tt := range tests {
@@ -122,7 +122,7 @@ func TestRemoveSession(t *testing.T) {
 		ExecutionID: executionID,
 		Sessions: map[string]SessionInfo{
 			"session1": {Name: "session1", State: StateWorking, ExecutionID: executionID},
-			"session2": {Name: "session2", State: StateWaiting, ExecutionID: executionID},
+			"session2": {Name: "session2", State: StateWaitingUser, ExecutionID: executionID},
 		},
 	}
 
@@ -147,6 +147,7 @@ func TestGetCounts(t *testing.T) {
 		sessions        map[string]SessionInfo
 		executionID     string
 		expectedWaiting int
+		expectedIdle    int
 		expectedWorking int
 	}{
 		{
@@ -154,16 +155,29 @@ func TestGetCounts(t *testing.T) {
 			sessions:        map[string]SessionInfo{},
 			executionID:     "exec-1",
 			expectedWaiting: 0,
+			expectedIdle:    0,
 			expectedWorking: 0,
 		},
 		{
 			name: "all waiting",
 			sessions: map[string]SessionInfo{
-				"s1": {State: StateWaiting, ExecutionID: "exec-1"},
-				"s2": {State: StateWaiting, ExecutionID: "exec-1"},
+				"s1": {State: StateWaitingUser, ExecutionID: "exec-1"},
+				"s2": {State: StateWaitingUser, ExecutionID: "exec-1"},
 			},
 			executionID:     "exec-1",
 			expectedWaiting: 2,
+			expectedIdle:    0,
+			expectedWorking: 0,
+		},
+		{
+			name: "all idle",
+			sessions: map[string]SessionInfo{
+				"s1": {State: StateIdle, ExecutionID: "exec-1"},
+				"s2": {State: StateIdle, ExecutionID: "exec-1"},
+			},
+			executionID:     "exec-1",
+			expectedWaiting: 0,
+			expectedIdle:    2,
 			expectedWorking: 0,
 		},
 		{
@@ -174,28 +188,31 @@ func TestGetCounts(t *testing.T) {
 			},
 			executionID:     "exec-1",
 			expectedWaiting: 0,
+			expectedIdle:    0,
 			expectedWorking: 2,
 		},
 		{
 			name: "mixed states",
 			sessions: map[string]SessionInfo{
-				"s1": {State: StateWaiting, ExecutionID: "exec-1"},
+				"s1": {State: StateWaitingUser, ExecutionID: "exec-1"},
 				"s2": {State: StateWorking, ExecutionID: "exec-1"},
-				"s3": {State: StateWaiting, ExecutionID: "exec-1"},
+				"s3": {State: StateIdle, ExecutionID: "exec-1"},
 			},
 			executionID:     "exec-1",
-			expectedWaiting: 2,
+			expectedWaiting: 1,
+			expectedIdle:    1,
 			expectedWorking: 1,
 		},
 		{
 			name: "filter by execution ID",
 			sessions: map[string]SessionInfo{
-				"s1": {State: StateWaiting, ExecutionID: "exec-1"},
+				"s1": {State: StateWaitingUser, ExecutionID: "exec-1"},
 				"s2": {State: StateWorking, ExecutionID: "exec-2"},
-				"s3": {State: StateWaiting, ExecutionID: "exec-1"},
+				"s3": {State: StateIdle, ExecutionID: "exec-1"},
 			},
 			executionID:     "exec-1",
-			expectedWaiting: 2,
+			expectedWaiting: 1,
+			expectedIdle:    1,
 			expectedWorking: 0,
 		},
 	}
@@ -207,8 +224,9 @@ func TestGetCounts(t *testing.T) {
 				Sessions:    tt.sessions,
 			}
 
-			waiting, working := st.GetCounts(tt.executionID)
+			waiting, idle, working := st.GetCounts(tt.executionID)
 			assert.Equal(t, tt.expectedWaiting, waiting)
+			assert.Equal(t, tt.expectedIdle, idle)
 			assert.Equal(t, tt.expectedWorking, working)
 		})
 	}
@@ -240,7 +258,7 @@ func TestConcurrentUpdates(t *testing.T) {
 			sessionName := fmt.Sprintf("session%d", sessionNum)
 			sessionState := StateWorking
 			if sessionNum%2 == 0 {
-				sessionState = StateWaiting
+				sessionState = StateWaitingUser
 			}
 
 			err = st.UpdateSession(sessionName, sessionState, executionID)

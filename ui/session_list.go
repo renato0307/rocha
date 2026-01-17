@@ -399,9 +399,11 @@ func (sl *SessionList) viewList() string {
 			// Add status icon
 			switch sessionState {
 			case state.StateWorking:
-				b.WriteString(" " + workingIconStyle.Render("●"))
-			case state.StateWaiting:
-				b.WriteString(" " + waitingIconStyle.Render("○"))
+				b.WriteString(" " + workingIconStyle.Render(state.SymbolWorking))
+			case state.StateIdle:
+				b.WriteString(" " + idleIconStyle.Render(state.SymbolIdle))
+			case state.StateWaitingUser:
+				b.WriteString(" " + waitingIconStyle.Render(state.SymbolWaitingUser))
 			}
 
 			b.WriteString("\n")
@@ -421,7 +423,14 @@ func (sl *SessionList) viewList() string {
 		helpText = fmt.Sprintf("🔍 Filter: %s • ESC×2: clear\n", sl.filterText)
 	}
 	helpText += "↑/k: up • ↓/j: down • /: filter • n: new\n"
-	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • x: kill • q: quit"
+	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • x: kill • q: quit\n\n"
+
+	// Add legend for status symbols
+	helpText += "Status: "
+	helpText += workingIconStyle.Render(state.SymbolWorking) + " working • "
+	helpText += idleIconStyle.Render(state.SymbolIdle) + " idle • "
+	helpText += waitingIconStyle.Render(state.SymbolWaitingUser) + " waiting for input"
+
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
@@ -476,9 +485,11 @@ func (sl *SessionList) viewFiltering() string {
 
 			switch sessionState {
 			case state.StateWorking:
-				b.WriteString(" " + workingIconStyle.Render("●"))
-			case state.StateWaiting:
-				b.WriteString(" " + waitingIconStyle.Render("○"))
+				b.WriteString(" " + workingIconStyle.Render(state.SymbolWorking))
+			case state.StateIdle:
+				b.WriteString(" " + idleIconStyle.Render(state.SymbolIdle))
+			case state.StateWaitingUser:
+				b.WriteString(" " + waitingIconStyle.Render(state.SymbolWaitingUser))
 			}
 
 			b.WriteString("\n")
@@ -487,7 +498,14 @@ func (sl *SessionList) viewFiltering() string {
 
 	b.WriteString("\n\n")
 	helpText := "Type to filter • ↑/↓: navigate • enter/Alt+1-7: apply/attach\n"
-	helpText += "ESC×2: clear • Ctrl+C: quit"
+	helpText += "ESC×2: clear • Ctrl+C: quit\n\n"
+
+	// Add legend for status symbols
+	helpText += "Status: "
+	helpText += workingIconStyle.Render(state.SymbolWorking) + " working • "
+	helpText += idleIconStyle.Render(state.SymbolIdle) + " idle • "
+	helpText += waitingIconStyle.Render(state.SymbolWaitingUser) + " waiting for input"
+
 	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
