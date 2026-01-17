@@ -21,6 +21,7 @@ Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to
 - **Get sound alerts** - Hear when Claude finishes and needs your input
 - **See status in tmux** - Show active/waiting sessions in your status bar
 - **Never lose context** - Sessions persist until you kill them
+- **Git worktree support** - Each session can have its own isolated branch and workspace
 
 ## Key Bindings
 
@@ -34,6 +35,17 @@ Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to
 **Inside a session:**
 - `Ctrl+Q` - Quick return to list
 - `Ctrl+B then D` - Standard tmux detach (also works)
+
+## Git Worktree Support
+
+When running in a git repository, rocha offers to create isolated worktrees for each session:
+
+- **Automatic detection** - Detects git repos and prompts for worktree creation
+- **Isolated branches** - Each session gets its own branch and working directory
+- **No conflicts** - Work on multiple branches simultaneously without switching
+- **Auto cleanup** - Worktrees are removed when you kill the session
+
+Worktrees are stored in `~/.rocha/worktrees/` by default.
 
 ## Status Bar (Optional)
 
