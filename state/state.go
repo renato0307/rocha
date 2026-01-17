@@ -12,8 +12,14 @@ import (
 )
 
 const (
-	StateWaiting = "waiting"
-	StateWorking = "working"
+	StateWaitingUser = "waiting" // Red - waiting for user input/prompt
+	StateWorking     = "working" // Green - actively working
+	StateIdle        = "idle"    // Yellow - finished/idle
+
+	// Status symbols (Unicode)
+	SymbolWorking     = "●" // Green - actively working
+	SymbolIdle        = "○" // Yellow - finished/idle
+	SymbolWaitingUser = "◐" // Red - waiting for user input/prompt
 )
 
 // SessionState represents the persistent state of all Claude sessions
@@ -198,10 +204,10 @@ func (s *SessionState) RemoveSession(name string) error {
 	return s.Save()
 }
 
-// GetCounts returns the number of waiting and working sessions for the given execution ID
-func (s *SessionState) GetCounts(executionID string) (waiting int, working int) {
+// GetCounts returns the number of waiting, idle, and working sessions for the given execution ID
+func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, working int) {
 	if s.Sessions == nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 
 	for _, session := range s.Sessions {
@@ -210,14 +216,16 @@ func (s *SessionState) GetCounts(executionID string) (waiting int, working int) 
 		}
 
 		switch session.State {
-		case StateWaiting:
+		case StateWaitingUser:
 			waiting++
+		case StateIdle:
+			idle++
 		case StateWorking:
 			working++
 		}
 	}
 
-	return waiting, working
+	return waiting, idle, working
 }
 
 // SyncWithRunning updates execution IDs for sessions that are actually running in tmux

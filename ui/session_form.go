@@ -191,7 +191,7 @@ func (sf *SessionForm) createSession() error {
 
 	// Save session state with git metadata
 	executionID := os.Getenv("ROCHA_EXECUTION_ID")
-	if err := sf.sessionState.UpdateSessionWithGit(tmuxName, sessionName, state.StateWaiting, executionID, repoPath, repoInfo, branchName, worktreePath); err != nil {
+	if err := sf.sessionState.UpdateSessionWithGit(tmuxName, sessionName, state.StateWaitingUser, executionID, repoPath, repoInfo, branchName, worktreePath); err != nil {
 		logging.Logger.Error("Failed to save session state", "error", err)
 	}
 

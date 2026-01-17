@@ -93,6 +93,8 @@ classDiagram
         +AddSession()
         +RemoveSession()
         +Sync()
+        +Load()
+        +GetCounts()
     }
 
     class Git {
@@ -105,15 +107,42 @@ classDiagram
     class Model {
         +Update()
         +View()
+        +sessionList: SessionList
+        +sessionForm: SessionForm
+    }
+
+    class SessionList {
+        +Init() "Start polling"
+        +Update()
+        +View()
+        +RefreshFromState()
+        -pollStateCmd() "Every 2s"
+    }
+
+    class SessionForm {
+        +Init()
+        +Update()
+        +View()
+        +Result()
     }
 
     DefaultClient ..|> Client
     Model --> Client
     Model --> StateManager
     Model --> Git
+    Model --> SessionList
+    Model --> SessionForm
+    SessionList --> StateManager
+    SessionList --> Client
+    SessionForm --> StateManager
+    SessionForm --> Client
+
+    note for SessionList "Auto-refreshes every 2s\nby checking state.json\ntimestamp (UpdatedAt)"
 ```
 
 ## Data Flow
+
+### Session Creation Flow
 
 ```mermaid
 sequenceDiagram
@@ -138,6 +167,52 @@ sequenceDiagram
     TUI->>State: Sync sessions
 ```
 
+### State Update Flow (Auto-refresh)
+
+```mermaid
+sequenceDiagram
+    participant Claude
+    participant Hook
+    participant State
+    participant TUI
+
+    Note over Claude,TUI: User submits prompt
+    Claude->>Hook: UserPromptSubmit event
+    Hook->>State: rocha notify prompt
+    State->>State: Set StateWorking (●)
+
+    loop Every 2 seconds
+        TUI->>State: Check state.json timestamp
+        State-->>TUI: UpdatedAt changed
+        TUI->>TUI: Reload & display ● (green)
+    end
+
+    Note over Claude,TUI: Claude finishes task
+    Claude->>Hook: Stop event
+    Hook->>State: rocha notify stop
+    State->>State: Set StateIdle (○)
+    TUI->>State: Poll detects change
+    TUI->>TUI: Display ○ (yellow)
+
+    Note over Claude,TUI: Claude needs input
+    Claude->>Hook: Notification event
+    Hook->>State: rocha notify notification
+    State->>State: Set StateWaitingUser (◐)
+    TUI->>State: Poll detects change
+    TUI->>TUI: Display ◐ (red)
+```
+
+### Hook Event Mapping
+
+Claude Code hooks trigger state transitions:
+
+| Hook Event | Command | New State | Symbol | Meaning |
+|------------|---------|-----------|--------|---------|
+| `SessionStart` | `rocha notify start` | `StateWorking` | ● (green) | Session initialized |
+| `UserPromptSubmit` | `rocha notify prompt` | `StateWorking` | ● (green) | User submitted prompt |
+| `Stop` | `rocha notify stop` | `StateIdle` | ○ (yellow) | Claude finished working |
+| `Notification` | `rocha notify notification` | `StateWaitingUser` | ◐ (red) | Claude needs user input |
+
 ## Packages
 
 ### Core Application Packages
@@ -146,17 +221,17 @@ sequenceDiagram
 CLI command handlers using Kong framework.
 - `RunCmd` - Start TUI
 - `AttachCmd` - Attach to session
-- `StatusCmd` - Status bar integration
+- `StatusCmd` - Status bar (`◐:N ○:N ●:N`)
 - `SetupCmd` - Shell integration
-- `StartClaudeCmd` - Bootstrap Claude Code with hooks (hidden command)
-- `NotifyCmd` - Handle Claude hook events (hidden command)
-- `PlaySoundCmd` - Play notification sounds (hidden command)
+- `StartClaudeCmd` - Bootstrap Claude Code with hooks (hidden)
+- `NotifyCmd` - Handle Claude hook events (hidden)
+- `PlaySoundCmd` - Play notification sounds (hidden)
 
 #### ui/
-Bubble Tea TUI implementation.
-- Session list view
-- Session creation forms
-- State machine (list, creating, confirming, filtering)
+Bubble Tea TUI with component architecture.
+- **SessionList** - Auto-refresh (2s poll), filtering, status symbols (●○◐)
+- **SessionForm** - Session creation forms
+- **Model** - Orchestrates states (list, creating, confirming)
 
 #### tmux/
 Tmux abstraction layer with dependency injection.
@@ -168,7 +243,7 @@ Tmux abstraction layer with dependency injection.
 Persistent session state management.
 - JSON storage with file locking
 - Session metadata (git info, status, timestamps)
-- Sync with tmux sessions
+- Three states: `WaitingUser` (◐), `Idle` (○), `Working` (●)
 
 #### git/
 Git worktree operations.

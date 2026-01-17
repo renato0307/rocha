@@ -8,12 +8,7 @@ import (
 	"rocha/logging"
 	"rocha/state"
 	"rocha/tmux"
-	"rocha/version"
-	"sort"
-	"strings"
-	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -36,10 +31,13 @@ var (
 			Foreground(lipgloss.Color("241")) // Dimmed/gray
 
 	workingIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("2")) // Green
+				Foreground(lipgloss.Color("2")) // Green - actively working
+
+	idleIconStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("3")) // Yellow - finished/idle
 
 	waitingIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("3")) // Yellow
+				Foreground(lipgloss.Color("1")) // Red - waiting for prompt
 )
 
 type uiState int
@@ -48,16 +46,12 @@ const (
 	stateList uiState = iota
 	stateCreatingSession
 	stateConfirmingWorktreeRemoval
-	stateFiltering
 )
-
-const escTimeout = 500 * time.Millisecond
 
 type Model struct {
 	tmuxClient         tmux.Client
-	sessions           []*tmux.Session
+	sessionList        *SessionList   // Session list component
 	sessionState       *state.SessionState // State data for git metadata and status
-	cursor             int
 	state              uiState
 	width              int
 	height             int
@@ -67,13 +61,6 @@ type Model struct {
 	sessionForm        *SessionForm   // Session creation form
 	sessionToKill      *tmux.Session  // Session being killed (for worktree removal)
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
-
-	// Filter fields
-	filterInput      textinput.Model
-	filterText       string
-	filteredSessions []*tmux.Session
-	escPressCount    int
-	escPressTime     time.Time
 }
 
 func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
@@ -86,30 +73,22 @@ func NewModel(tmuxClient tmux.Client, worktreePath string) Model {
 		sessionState = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
 	}
 
-	// Create session list from state (source of truth)
-	sessions := sessionsFromState(sessionState)
-
-	// Initialize filter input
-	filterInput := textinput.New()
-	filterInput.Placeholder = "Type to filter sessions..."
-	filterInput.CharLimit = 100
-	filterInput.Width = 50
+	// Create session list component
+	sessionList := NewSessionList(tmuxClient)
 
 	return Model{
-		tmuxClient:       tmuxClient,
-		sessions:         sessions,
-		sessionState:     sessionState,
-		cursor:           0,
-		state:            stateList,
-		err:              errMsg,
-		worktreePath:     worktreePath,
-		filterInput:      filterInput,
-		filteredSessions: sessions, // Initially show all
+		tmuxClient:   tmuxClient,
+		sessionList:  sessionList,
+		sessionState: sessionState,
+		state:        stateList,
+		err:          errMsg,
+		worktreePath: worktreePath,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	// Delegate to session list component (starts auto-refresh polling)
+	return m.sessionList.Init()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -120,211 +99,74 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCreatingSession(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
-	case stateFiltering:
-		return m.updateFiltering(msg)
 	}
 	return m, nil
 }
 
 func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case error:
-		m.err = msg
-		return m, nil
-
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-
-		case "esc":
-			// ESC×2 to clear filter when filter is active
-			if m.filterText != "" {
-				now := time.Now()
-				if now.Sub(m.escPressTime) < escTimeout && m.escPressCount >= 1 {
-					// Second ESC - clear filter
-					m.clearFilter()
-					return m, nil
-				}
-				// First ESC
-				m.escPressCount = 1
-				m.escPressTime = now
-			}
-			return m, nil
-
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		case "down", "j":
-			displaySessions := m.sessions
-			if m.filterText != "" {
-				displaySessions = m.filteredSessions
-			}
-			if m.cursor < len(displaySessions)-1 {
-				m.cursor++
-			}
-
-		case "n":
-			// Create session creation form
-			m.sessionForm = NewSessionForm(m.tmuxClient, m.worktreePath, m.sessionState)
-			m.state = stateCreatingSession
-			return m, m.sessionForm.Init()
-
-		case "/":
-			m.state = stateFiltering
-			m.filterInput.Focus()
-			m.filterInput.SetValue(m.filterText) // Restore previous filter
-			return m, textinput.Blink
-
-		case "enter":
-			displaySessions := m.sessions
-			if m.filterText != "" {
-				displaySessions = m.filteredSessions
-			}
-
-			if len(displaySessions) > 0 && m.cursor < len(displaySessions) {
-				session := displaySessions[m.cursor]
-
-				// Ensure session exists (recreate if needed for race condition protection)
-				if !m.ensureSessionExists(session) {
-					return m, nil
-				}
-
-				// Use tea.ExecProcess to suspend Bubble Tea and attach to tmux
-				c := exec.Command("tmux", "attach-session", "-t", session.Name)
-				return m, tea.ExecProcess(c, func(err error) tea.Msg {
-					if err != nil {
-						return err
-					}
-					return detachedMsg{}
-				})
-			}
-
-		case "x":
-			displaySessions := m.sessions
-			if m.filterText != "" {
-				displaySessions = m.filteredSessions
-			}
-
-			if len(displaySessions) > 0 && m.cursor < len(displaySessions) {
-				session := displaySessions[m.cursor]
-
-				// Check if session has a worktree
-				if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
-					// Session has a worktree, show confirmation form
-					logging.Logger.Info("Session has worktree, showing removal confirmation", "session", session.Name, "worktree", sessionInfo.WorktreePath)
-					m.sessionToKill = session
-					removeWorktree := false
-					m.formRemoveWorktree = &removeWorktree // Create pointer to persist with form
-					m.form = m.createWorktreeRemovalForm(sessionInfo.WorktreePath)
-					m.state = stateConfirmingWorktreeRemoval
-					return m, m.form.Init()
-				} else {
-					// No worktree, just kill the session
-					m.killSession(session)
-				}
-			}
-
-		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
-			displaySessions := m.sessions
-			if m.filterText != "" {
-				displaySessions = m.filteredSessions
-			}
-			return m.attachToSessionByNumber(displaySessions, msg.String())
-		}
-
-	case tea.WindowSizeMsg:
+	// Handle window size updates
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
+		m.sessionList.width = msg.Width
+		m.sessionList.height = msg.Height
+	}
 
-	case detachedMsg:
-		// Returned from attached state
+	// Handle detach message - session list auto-refreshes via polling
+	if _, ok := msg.(detachedMsg); ok {
 		m.state = stateList
-		// Refresh session list from state (source of truth)
-		sessionState, err := state.Load()
-		if err != nil {
-			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
+		m.sessionList.RefreshFromState()
+		return m, m.sessionList.Init()
+	}
+
+	// Delegate to SessionList component
+	newList, cmd := m.sessionList.Update(msg)
+	if sl, ok := newList.(*SessionList); ok {
+		m.sessionList = sl
+	}
+
+	// Handle SessionList results
+	if m.sessionList.ShouldQuit {
+		return m, tea.Quit
+	}
+
+	if m.sessionList.SelectedSession != nil {
+		session := m.sessionList.SelectedSession
+		m.sessionList.SelectedSession = nil // Clear
+
+		// Attach to session
+		c := exec.Command("tmux", "attach-session", "-t", session.Name)
+		return m, tea.ExecProcess(c, func(err error) tea.Msg {
+			if err != nil {
+				return err
+			}
+			return detachedMsg{}
+		})
+	}
+
+	if m.sessionList.SessionToKill != nil {
+		session := m.sessionList.SessionToKill
+		m.sessionList.SessionToKill = nil // Clear
+
+		// Check if session has worktree
+		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
+			m.sessionToKill = session
+			removeWorktree := false
+			m.formRemoveWorktree = &removeWorktree
+			m.form = m.createWorktreeRemovalForm(sessionInfo.WorktreePath)
+			m.state = stateConfirmingWorktreeRemoval
+			return m, m.form.Init()
 		} else {
-			m.sessionState = sessionState
-			m.sessions = sessionsFromState(sessionState)
-
-			// Recompute filtered sessions
-			if m.filterText != "" {
-				m.filteredSessions = m.filterSessions()
-			} else {
-				m.filteredSessions = m.sessions
-			}
-
-			// Adjust cursor with filtered sessions
-			displaySessions := m.sessions
-			if m.filterText != "" {
-				displaySessions = m.filteredSessions
-			}
-			if m.cursor >= len(displaySessions) {
-				m.cursor = len(displaySessions) - 1
-			}
-			if m.cursor < 0 {
-				m.cursor = 0
-			}
+			m.killSession(session)
 		}
-
 	}
 
-	return m, nil
-}
-
-func (m Model) updateFiltering(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-
-		case "esc":
-			// Double-ESC detection
-			now := time.Now()
-			if now.Sub(m.escPressTime) < escTimeout && m.escPressCount >= 1 {
-				// Second ESC - clear filter and exit
-				m.clearFilter()
-				m.state = stateList
-				return m, nil
-			}
-			// First ESC
-			m.escPressCount = 1
-			m.escPressTime = now
-			return m, nil
-
-		case "enter":
-			// Apply filter and return to list
-			m.state = stateList
-			return m, nil
-
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		case "down", "j":
-			if m.cursor < len(m.filteredSessions)-1 {
-				m.cursor++
-			}
-
-		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
-			return m.attachToSessionByNumber(m.filteredSessions, msg.String())
-		}
-
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+	if m.sessionList.RequestNewSession {
+		m.sessionList.RequestNewSession = false
+		m.sessionForm = NewSessionForm(m.tmuxClient, m.worktreePath, m.sessionState)
+		m.state = stateCreatingSession
+		return m, m.sessionForm.Init()
 	}
-
-	// Update filter input and refilter
-	m.filterInput, cmd = m.filterInput.Update(msg)
-	m.updateFilterText(m.filterInput.Value())
 
 	return m, cmd
 }
@@ -335,7 +177,7 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
 			m.state = stateList
 			m.sessionForm = nil
-			return m, nil
+			return m, m.sessionList.Init()
 		}
 	}
 
@@ -356,26 +198,23 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if session creation failed
 		if result.Error != nil {
 			m.err = fmt.Errorf("failed to create session: %w", result.Error)
-			return m, nil
+			return m, m.sessionList.Init()
 		}
 
 		if !result.Cancelled {
-			// Reload session state (source of truth)
+			// Reload session state
 			sessionState, err := state.Load()
 			if err != nil {
 				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 				log.Printf("Warning: failed to reload session state: %v", err)
 			} else {
 				m.sessionState = sessionState
-				m.sessions = sessionsFromState(sessionState)
-				m.cursor = len(m.sessions) - 1 // Jump to newly created session
-				if m.cursor < 0 {
-					m.cursor = 0
-				}
 			}
+			// Refresh session list component
+			m.sessionList.RefreshFromState()
 		}
 
-		return m, nil
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
@@ -405,18 +244,11 @@ func (m *Model) killSession(session *tmux.Session) {
 		if err := st.RemoveSession(session.Name); err != nil {
 			log.Printf("Warning: failed to remove session from state: %v", err)
 		}
+		m.sessionState = st
 	}
 
-	// Remove from session list
-	for i, s := range m.sessions {
-		if s.Name == session.Name {
-			m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
-			if m.cursor >= len(m.sessions) && m.cursor > 0 {
-				m.cursor--
-			}
-			break
-		}
-	}
+	// Refresh session list component
+	m.sessionList.RefreshFromState()
 }
 
 func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -484,79 +316,6 @@ func (m Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd)
 	return m, cmd
 }
 
-// sessionsFromState rebuilds the session list from state.json
-func sessionsFromState(sessionState *state.SessionState) []*tmux.Session {
-	var sessions []*tmux.Session
-	for name, info := range sessionState.Sessions {
-		sessions = append(sessions, &tmux.Session{
-			Name:      name,
-			CreatedAt: info.LastUpdated,
-		})
-	}
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].Name < sessions[j].Name
-	})
-	return sessions
-}
-
-// ensureSessionExists checks if a session exists and recreates it if needed
-// Returns true if session is ready to attach, false if recreation failed
-func (m *Model) ensureSessionExists(session *tmux.Session) bool {
-	if m.tmuxClient.Exists(session.Name) {
-		return true
-	}
-
-	logging.Logger.Info("Session no longer exists, recreating", "name", session.Name)
-
-	// Try to get stored metadata to recreate with same worktree
-	var worktreePath string
-	if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
-		worktreePath = sessionInfo.WorktreePath
-		logging.Logger.Info("Recreating session with stored worktree", "name", session.Name, "worktree", worktreePath)
-	} else {
-		logging.Logger.Warn("No stored metadata for session, creating without worktree", "name", session.Name)
-	}
-
-	// Recreate the session
-	if _, err := m.tmuxClient.Create(session.Name, worktreePath); err != nil {
-		m.err = fmt.Errorf("failed to recreate session: %w", err)
-		return false
-	}
-
-	return true
-}
-
-// attachToSessionByNumber handles alt+1-7 shortcuts for quick session attachment
-// Returns updated model and command to attach to session, or nil command if invalid index
-func (m Model) attachToSessionByNumber(sessions []*tmux.Session, keyStr string) (tea.Model, tea.Cmd) {
-	// Extract number from key (alt+1 -> '1' -> 1)
-	numStr := keyStr[4:] // Skip "alt+"
-	num := int(numStr[0] - '0')
-	index := num - 1 // Convert to 0-based index
-
-	if index >= 0 && index < len(sessions) {
-		session := sessions[index]
-
-		// Update cursor to selected session so it's highlighted when we return
-		m.cursor = index
-
-		// Ensure session exists (recreate if needed for race condition protection)
-		if !m.ensureSessionExists(session) {
-			return m, nil
-		}
-
-		c := exec.Command("tmux", "attach-session", "-t", session.Name)
-		return m, tea.ExecProcess(c, func(err error) tea.Msg {
-			if err != nil {
-				return err
-			}
-			return detachedMsg{}
-		})
-	}
-
-	return m, nil
-}
-
 // createWorktreeRemovalForm creates a confirmation form for removing a worktree
 func (m *Model) createWorktreeRemovalForm(worktreePath string) *huh.Form {
 	form := huh.NewForm(
@@ -573,71 +332,10 @@ func (m *Model) createWorktreeRemovalForm(worktreePath string) *huh.Form {
 	return form
 }
 
-func (m *Model) clearFilter() {
-	m.filterText = ""
-	m.filterInput.SetValue("")
-	m.filteredSessions = m.sessions
-	m.cursor = 0
-	m.escPressCount = 0
-}
-
-func (m *Model) updateFilterText(newText string) {
-	if m.filterText != newText {
-		m.filterText = newText
-		m.filteredSessions = m.filterSessions()
-
-		// Reset and bound cursor
-		m.cursor = 0
-		if len(m.filteredSessions) > 0 && m.cursor >= len(m.filteredSessions) {
-			m.cursor = len(m.filteredSessions) - 1
-		}
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
-	}
-}
-
-func (m Model) filterSessions() []*tmux.Session {
-	if m.filterText == "" {
-		return m.sessions
-	}
-
-	filterLower := strings.ToLower(m.filterText)
-	var filtered []*tmux.Session
-
-	for _, session := range m.sessions {
-		sessionInfo, ok := m.sessionState.Sessions[session.Name]
-
-		// Build searchable text
-		var searchText strings.Builder
-		searchText.WriteString(strings.ToLower(session.Name))
-		if ok {
-			if sessionInfo.DisplayName != "" {
-				searchText.WriteString(" ")
-				searchText.WriteString(strings.ToLower(sessionInfo.DisplayName))
-			}
-			if sessionInfo.RepoInfo != "" {
-				searchText.WriteString(" ")
-				searchText.WriteString(strings.ToLower(sessionInfo.RepoInfo))
-			}
-			if sessionInfo.BranchName != "" {
-				searchText.WriteString(" ")
-				searchText.WriteString(strings.ToLower(sessionInfo.BranchName))
-			}
-		}
-
-		if strings.Contains(searchText.String(), filterLower) {
-			filtered = append(filtered, session)
-		}
-	}
-
-	return filtered
-}
-
 func (m Model) View() string {
 	switch m.state {
 	case stateList:
-		return m.viewList()
+		return m.sessionList.View()
 	case stateCreatingSession:
 		if m.sessionForm != nil {
 			return m.sessionForm.View()
@@ -646,159 +344,6 @@ func (m Model) View() string {
 		if m.form != nil {
 			return m.form.View()
 		}
-	case stateFiltering:
-		return m.viewFiltering()
 	}
 	return ""
-}
-
-func (m Model) viewList() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render("Rocha"))
-	b.WriteString("\n")
-	b.WriteString(normalStyle.Render(version.Tagline))
-	b.WriteString("\n\n")
-
-	// Use filtered sessions if filter is active
-	displaySessions := m.sessions
-	if m.filterText != "" {
-		displaySessions = m.filteredSessions
-	}
-
-	if len(displaySessions) == 0 {
-		if m.filterText != "" {
-			b.WriteString(normalStyle.Render("No sessions match filter. Press ESC twice to clear."))
-		} else {
-			b.WriteString(normalStyle.Render("No Claude Code sessions yet. Press 'n' to create one."))
-		}
-	} else {
-		for i, session := range displaySessions {
-			cursor := " "
-			if i == m.cursor {
-				cursor = ">"
-			}
-
-			// Get display name from state, fallback to tmux name
-			displayName := session.Name
-			var gitRef string
-			var sessionState string
-
-			if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
-				if sessionInfo.DisplayName != "" {
-					displayName = sessionInfo.DisplayName
-				}
-				// Build git reference in standard format: owner/repo:branch
-				if sessionInfo.RepoInfo != "" && sessionInfo.BranchName != "" {
-					gitRef = fmt.Sprintf("%s:%s", sessionInfo.RepoInfo, sessionInfo.BranchName)
-				} else if sessionInfo.BranchName != "" {
-					// Fallback to just branch name if no repo info
-					gitRef = sessionInfo.BranchName
-				}
-				sessionState = sessionInfo.State
-			}
-
-			// Build session line with cursor indicator
-			line := fmt.Sprintf("%s %d. %s", cursor, i+1, displayName)
-			b.WriteString(normalStyle.Render(line))
-
-			// Add git reference if available
-			if gitRef != "" {
-				b.WriteString(branchStyle.Render(fmt.Sprintf(" (%s)", gitRef)))
-			}
-
-			// Add status icon
-			switch sessionState {
-			case state.StateWorking:
-				b.WriteString(" " + workingIconStyle.Render("●"))
-			case state.StateWaiting:
-				b.WriteString(" " + waitingIconStyle.Render("○"))
-			}
-
-			b.WriteString("\n")
-		}
-	}
-
-	if m.err != nil {
-		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v", m.err)))
-		m.err = nil // Clear error after showing
-	}
-
-	b.WriteString("\n\n")
-
-	var helpText string
-	if m.filterText != "" {
-		helpText = fmt.Sprintf("🔍 Filter: %s • ESC×2: clear\n", m.filterText)
-	}
-	helpText += "↑/k: up • ↓/j: down • /: filter • n: new\n"
-	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • x: kill • q: quit"
-	b.WriteString(helpStyle.Render(helpText))
-
-	return b.String()
-}
-
-func (m Model) viewFiltering() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render("Rocha - Filter Sessions"))
-	b.WriteString("\n\n")
-	b.WriteString(m.filterInput.View())
-	b.WriteString("\n\n")
-
-	resultCount := len(m.filteredSessions)
-	totalCount := len(m.sessions)
-	countText := fmt.Sprintf("Showing %d of %d sessions", resultCount, totalCount)
-	b.WriteString(branchStyle.Render(countText))
-	b.WriteString("\n\n")
-
-	if resultCount == 0 {
-		b.WriteString(normalStyle.Render("No sessions match filter."))
-	} else {
-		for i, session := range m.filteredSessions {
-			cursor := " "
-			if i == m.cursor {
-				cursor = ">"
-			}
-
-			displayName := session.Name
-			var gitRef string
-			var sessionState string
-
-			if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
-				if sessionInfo.DisplayName != "" {
-					displayName = sessionInfo.DisplayName
-				}
-				if sessionInfo.RepoInfo != "" && sessionInfo.BranchName != "" {
-					gitRef = fmt.Sprintf("%s:%s", sessionInfo.RepoInfo, sessionInfo.BranchName)
-				} else if sessionInfo.BranchName != "" {
-					gitRef = sessionInfo.BranchName
-				}
-				sessionState = sessionInfo.State
-			}
-
-			line := fmt.Sprintf("%s %d. %s", cursor, i+1, displayName)
-			b.WriteString(normalStyle.Render(line))
-
-			if gitRef != "" {
-				b.WriteString(branchStyle.Render(fmt.Sprintf(" (%s)", gitRef)))
-			}
-
-			switch sessionState {
-			case state.StateWorking:
-				b.WriteString(" " + workingIconStyle.Render("●"))
-			case state.StateWaiting:
-				b.WriteString(" " + waitingIconStyle.Render("○"))
-			}
-
-			b.WriteString("\n")
-		}
-	}
-
-	b.WriteString("\n\n")
-	helpText := "Type to filter • ↑/↓: navigate • enter/Alt+1-7: apply/attach\n"
-	helpText += "ESC×2: clear • Ctrl+C: quit"
-	b.WriteString(helpStyle.Render(helpText))
-
-	return b.String()
 }

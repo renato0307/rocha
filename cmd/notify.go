@@ -43,8 +43,10 @@ func (n *NotifyCmd) Run() error {
 	// Map event type to session state
 	var sessionState string
 	switch n.EventType {
-	case "stop", "notification":
-		sessionState = state.StateWaiting // Claude finished or needs input
+	case "stop":
+		sessionState = state.StateIdle // Claude finished working
+	case "notification":
+		sessionState = state.StateWaitingUser // Claude needs user input
 	case "prompt", "start":
 		sessionState = state.StateWorking // User submitted prompt or session started
 	default:
