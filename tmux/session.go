@@ -90,14 +90,33 @@ func NewSession(name string, worktreePath string) (*Session, error) {
 				logging.Logger.Debug("Rocha binary path", "path", rochaBin)
 
 				// Set session name in environment and start claude with hooks
+				// Also propagate debug environment variables to tmux session
+				envVars := fmt.Sprintf("ROCHA_SESSION_NAME=%s", name)
+
+				// Add debug environment variables if set
+				if debugEnabled := os.Getenv("ROCHA_DEBUG"); debugEnabled == "1" {
+					envVars += " ROCHA_DEBUG=1"
+					if debugFile := os.Getenv("ROCHA_DEBUG_FILE"); debugFile != "" {
+						envVars += fmt.Sprintf(" ROCHA_DEBUG_FILE=%q", debugFile)
+					}
+					if maxLogFiles := os.Getenv("ROCHA_MAX_LOG_FILES"); maxLogFiles != "" {
+						envVars += fmt.Sprintf(" ROCHA_MAX_LOG_FILES=%s", maxLogFiles)
+					}
+				}
+
+				// Add execution ID if set
+				if execID := os.Getenv("ROCHA_EXECUTION_ID"); execID != "" {
+					envVars += fmt.Sprintf(" ROCHA_EXECUTION_ID=%s", execID)
+				}
+
 				var startCmd string
 				if worktreePath != "" {
 					// Explicitly cd to worktree directory before starting Claude
 					// cd first so we can see any errors before clearing
 					logging.Logger.Info("Starting Claude in worktree directory", "path", worktreePath)
-					startCmd = fmt.Sprintf("cd %q && clear && ROCHA_SESSION_NAME=%s %s start-claude", worktreePath, name, rochaBin)
+					startCmd = fmt.Sprintf("cd %q && clear && %s %s start-claude", worktreePath, envVars, rochaBin)
 				} else {
-					startCmd = fmt.Sprintf("clear && ROCHA_SESSION_NAME=%s %s start-claude", name, rochaBin)
+					startCmd = fmt.Sprintf("clear && %s %s start-claude", envVars, rochaBin)
 				}
 				logging.Logger.Debug("Sending start command to session", "command", startCmd)
 				sendCmd := exec.Command("tmux", "send-keys", "-t", name, startCmd, "Enter")
