@@ -6,8 +6,7 @@ I'm Rocha, and I manage coding agents
 
 ```bash
 # Build and install
-go build -o rocha
-cp rocha ~/.local/bin/
+make install
 
 # Set up PATH and tmux status bar
 rocha setup
@@ -69,12 +68,56 @@ set -g status-interval 1
 set -g mouse on  # Enable mouse support
 ```
 
+## Building from Source
+
+### Prerequisites
+- Go 1.25.6 or later
+- Git
+
+### Using Make (recommended)
+```bash
+make build          # Build with version info
+make install        # Build and install to ~/.local/bin
+make snapshot       # Test release build locally
+```
+
+### Using Go directly
+```bash
+go build -o rocha .
+```
+
+### Check Version
+```bash
+rocha --version
+```
+
+## Release Process (for maintainers)
+
+Releases are automated via GitHub Actions:
+
+1. Create and push a version tag:
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+
+2. GitHub Actions automatically:
+   - Builds binaries for linux/darwin on amd64/arm64
+   - Creates a GitHub release with changelog
+   - Uploads binaries and checksums
+
+3. Test locally before tagging:
+   ```bash
+   make snapshot
+   ./dist/rocha_linux_amd64_v1/rocha --version
+   ```
+
 ## Requirements
 
 - tmux
 - git (for worktree support)
 - Claude Code CLI (`claude`)
-- Go 1.16+ (for building)
+- Go 1.25.6+ (for building from source)
 
 ## Troubleshooting
 

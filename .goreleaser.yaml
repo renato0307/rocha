@@ -1,0 +1,69 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: rocha
+    binary: rocha
+    main: ./main.go
+
+    goos:
+      - linux
+      - darwin
+
+    goarch:
+      - amd64
+      - arm64
+
+    ldflags:
+      - -s -w
+      - -X rocha/version.Version={{.Version}}
+      - -X rocha/version.Commit={{.Commit}}
+      - -X rocha/version.Date={{.Date}}
+      - -X rocha/version.GoVersion={{.Env.GOVERSION}}
+
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: rocha
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^feat.*:'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix.*:'
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  github:
+  draft: false
+  prerelease: auto
+  mode: replace

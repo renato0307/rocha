@@ -275,9 +275,10 @@ Structured logging with slog (used by cmd, ui, tmux).
 - Non-blocking operation tracing
 
 #### version/
-Version and tagline constants (used by ui).
-- Build-time version information
+Version and build metadata (used by cmd, ui).
+- Build-time version injection (Version, Commit, Date, GoVersion)
 - Application tagline for display
+- Injectable via ldflags during compilation
 
 ## Dependencies
 
