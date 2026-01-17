@@ -69,6 +69,7 @@ set -g status-interval 1
 ## Requirements
 
 - tmux
+- git (for worktree support)
 - Claude Code CLI (`claude`)
 - Go 1.16+ (for building)
 
