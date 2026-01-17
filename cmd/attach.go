@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -173,16 +172,16 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 	// Step 6: Attach to tmux session
 	logging.Logger.Info("Attaching to tmux session", "name", sessionName)
 
-	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		logging.Logger.Error("Tmux attach failed", "error", err)
+	detachCh, err := tmuxClient.Attach(sessionName)
+	if err != nil {
+		logging.Logger.Error("Failed to attach to session", "error", err)
 		return fmt.Errorf("failed to attach to session: %w", err)
 	}
 
+	// Block until user detaches
+	<-detachCh
+
+	logging.Logger.Info("Detached from session", "name", sessionName)
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"rocha/logging"
+	"rocha/sound"
 	"rocha/state"
 )
 
@@ -23,7 +24,7 @@ func (n *NotifyCmd) Run() error {
 	// Play sound for stop, start, and notification events (not for prompt - user already knows they submitted)
 	if n.EventType == "stop" || n.EventType == "start" || n.EventType == "notification" {
 		logging.Logger.Debug("Playing notification sound", "event", n.EventType)
-		if err := PlaySoundForEvent(n.EventType); err != nil {
+		if err := sound.PlaySoundForEvent(n.EventType); err != nil {
 			logging.Logger.Error("Failed to play sound", "error", err)
 			return fmt.Errorf("failed to play notification sound: %w", err)
 		}

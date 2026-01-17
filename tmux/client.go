@@ -266,6 +266,13 @@ func (c *DefaultClient) Detach(sessionName string) error {
 	return nil
 }
 
+// GetAttachCommand returns an exec.Cmd configured for attaching to a session.
+// This is useful for integration with frameworks like Bubble Tea's tea.ExecProcess.
+func (c *DefaultClient) GetAttachCommand(sessionName string) *exec.Cmd {
+	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+	return cmd
+}
+
 // SendKeys sends keystrokes to the specified tmux session
 func (c *DefaultClient) SendKeys(sessionName string, keys ...string) error {
 	args := []string{"send-keys", "-t", sessionName}

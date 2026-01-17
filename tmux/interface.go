@@ -1,6 +1,9 @@
 package tmux
 
-import "errors"
+import (
+	"errors"
+	"os/exec"
+)
 
 // Error sentinels for consistent error handling
 var (
@@ -22,6 +25,10 @@ type SessionManager interface {
 type Attacher interface {
 	Attach(sessionName string) (chan struct{}, error)
 	Detach(sessionName string) error
+	// GetAttachCommand returns an exec.Cmd configured for attaching to a session.
+	// This is useful for integration with frameworks that need the command directly
+	// (like Bubble Tea's tea.ExecProcess).
+	GetAttachCommand(sessionName string) *exec.Cmd
 }
 
 // PaneOperations handles pane-level operations

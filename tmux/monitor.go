@@ -1,9 +1,6 @@
 package tmux
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -124,27 +121,4 @@ func (m *Monitor) detectPrompt(content string) bool {
 	}
 
 	return false
-}
-
-// PlaySound plays a notification sound
-func PlaySound() {
-	// Try different methods to play sound
-	// Method 1: paplay (PulseAudio)
-	if _, err := exec.LookPath("paplay"); err == nil {
-		cmd := exec.Command("paplay", "/usr/share/sounds/freedesktop/stereo/complete.oga")
-		if err := cmd.Run(); err == nil {
-			return
-		}
-	}
-
-	// Method 2: aplay (ALSA)
-	if _, err := exec.LookPath("aplay"); err == nil {
-		cmd := exec.Command("aplay", "/usr/share/sounds/freedesktop/stereo/complete.wav")
-		if err := cmd.Run(); err == nil {
-			return
-		}
-	}
-
-	// Method 3: Terminal bell
-	fmt.Fprintf(os.Stderr, "\a")
 }

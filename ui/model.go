@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"log"
-	"os/exec"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
@@ -134,14 +133,8 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		session := m.sessionList.SelectedSession
 		m.sessionList.SelectedSession = nil // Clear
 
-		// Attach to session
-		c := exec.Command("tmux", "attach-session", "-t", session.Name)
-		return m, tea.ExecProcess(c, func(err error) tea.Msg {
-			if err != nil {
-				return err
-			}
-			return detachedMsg{}
-		})
+		// Attach to session using tmux abstraction
+		return m, m.attachToSession(session.Name)
 	}
 
 	if m.sessionList.SessionToKill != nil {
@@ -221,6 +214,25 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 type detachedMsg struct{}
+
+// attachToSession suspends Bubble Tea, attaches to a tmux session via the abstraction layer,
+// and returns a detachedMsg when the user detaches
+func (m *Model) attachToSession(sessionName string) tea.Cmd {
+	logging.Logger.Info("Attaching to session via abstraction layer", "name", sessionName)
+
+	// Get the attach command from the abstraction layer
+	cmd := m.tmuxClient.GetAttachCommand(sessionName)
+
+	// Use tea.ExecProcess to suspend Bubble Tea and run the command
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if err != nil {
+			logging.Logger.Error("Failed to attach to session", "error", err, "name", sessionName)
+			return err
+		}
+		logging.Logger.Info("Detached from session", "name", sessionName)
+		return detachedMsg{}
+	})
+}
 
 // killSession kills a session and removes it from state
 func (m *Model) killSession(session *tmux.Session) {
