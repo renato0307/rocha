@@ -1,6 +1,6 @@
 # Rocha
 
-Manage multiple Claude Code sessions in your terminal. Switch between conversations like browser tabs, with sound notifications when Claude needs your attention.
+I'm Rocha, and I manage coding agents
 
 ## Quick Start
 
