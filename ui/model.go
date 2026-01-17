@@ -49,6 +49,7 @@ const (
 	stateList uiState = iota
 	stateCreatingSession
 	stateConfirmingWorktreeRemoval
+	stateRenamingSession
 )
 
 type Model struct {
@@ -62,6 +63,7 @@ type Model struct {
 	worktreePath       string
 	form               *huh.Form      // Form for worktree removal confirmation
 	sessionForm        *SessionForm   // Session creation form
+	sessionRenameForm  *SessionRenameForm // Session rename form
 	sessionToKill      *tmux.Session  // Session being killed (for worktree removal)
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
 }
@@ -102,6 +104,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCreatingSession(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
+	case stateRenamingSession:
+		return m.updateRenamingSession(msg)
 	}
 	return m, nil
 }
@@ -163,6 +167,21 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.sessionList.SessionToRename != nil {
+		session := m.sessionList.SessionToRename
+		m.sessionList.SessionToRename = nil // Clear
+
+		// Get current display name
+		currentDisplayName := session.Name
+		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.DisplayName != "" {
+			currentDisplayName = sessionInfo.DisplayName
+		}
+
+		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.sessionState, session.Name, currentDisplayName)
+		m.state = stateRenamingSession
+		return m, m.sessionRenameForm.Init()
+	}
+
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
 		m.sessionForm = NewSessionForm(m.tmuxClient, m.worktreePath, m.sessionState)
@@ -209,6 +228,56 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 				log.Printf("Warning: failed to reload session state: %v", err)
+				m.sessionList.RefreshFromState()
+				return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+			} else {
+				m.sessionState = sessionState
+			}
+			// Refresh session list component
+			m.sessionList.RefreshFromState()
+		}
+
+		return m, m.sessionList.Init()
+	}
+
+	return m, cmd
+}
+
+func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.sessionRenameForm = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	// Forward message to SessionRenameForm
+	newForm, cmd := m.sessionRenameForm.Update(msg)
+	if sf, ok := newForm.(*SessionRenameForm); ok {
+		m.sessionRenameForm = sf
+	}
+
+	// Check if form is completed
+	if m.sessionRenameForm.Completed {
+		result := m.sessionRenameForm.Result()
+
+		// Return to list state
+		m.state = stateList
+		m.sessionRenameForm = nil
+
+		// Check if rename failed
+		if result.Error != nil {
+			m.err = fmt.Errorf("failed to rename session: %w", result.Error)
+			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+		}
+
+		if !result.Cancelled {
+			// Reload session state
+			sessionState, err := state.Load()
+			if err != nil {
+				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 				m.sessionList.RefreshFromState()
 				return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
 			} else {
@@ -390,6 +459,10 @@ func (m *Model) View() string {
 	case stateConfirmingWorktreeRemoval:
 		if m.form != nil {
 			return m.form.View()
+		}
+	case stateRenamingSession:
+		if m.sessionRenameForm != nil {
+			return m.sessionRenameForm.View()
 		}
 	}
 	return ""

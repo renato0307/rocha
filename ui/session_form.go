@@ -140,8 +140,8 @@ func (sf *SessionForm) createSession() error {
 
 	logging.Logger.Info("Creating session", "name", sessionName, "create_worktree", createWorktree, "branch", branchName)
 
-	// Generate tmux-compatible name (no spaces)
-	tmuxName := strings.ReplaceAll(sessionName, " ", "_")
+	// Generate tmux-compatible name (remove colons, replace spaces/special chars with underscores)
+	tmuxName := sanitizeTmuxName(sessionName)
 
 	var worktreePath string
 	var repoPath string

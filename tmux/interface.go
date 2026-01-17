@@ -19,6 +19,7 @@ type SessionManager interface {
 	Exists(name string) bool
 	List() ([]*Session, error)
 	Kill(name string) error
+	Rename(oldName, newName string) error
 }
 
 // Attacher handles session attachment operations
