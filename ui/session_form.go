@@ -20,6 +20,7 @@ type SessionFormResult struct {
 	BranchName     string
 	CreateWorktree bool
 	Cancelled      bool
+	Error          error // Error that occurred during session creation
 }
 
 // SessionForm is a Bubble Tea component for creating sessions
@@ -111,7 +112,7 @@ func (sf *SessionForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Create the session
 		if err := sf.createSession(); err != nil {
 			logging.Logger.Error("Failed to create session", "error", err)
-			// TODO: Handle error better
+			sf.result.Error = err // Store error in result so it can be displayed to user
 		}
 		return sf, nil
 	}

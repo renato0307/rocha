@@ -389,6 +389,12 @@ func (m Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateList
 		m.sessionForm = nil
 
+		// Check if session creation failed
+		if result.Error != nil {
+			m.err = fmt.Errorf("failed to create session: %w", result.Error)
+			return m, nil
+		}
+
 		if !result.Cancelled {
 			// Reload session state (source of truth)
 			sessionState, err := state.Load()
