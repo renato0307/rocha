@@ -38,6 +38,10 @@
 - [ ] Auto-enable debug mode when --debug-file is set
 - [ ] Add settings.json to rocha so we can configure stuff permanently
 
+## Code Organization
+
+- [ ] Move packages to the internal folder
+
 ## Distribution
 
 - [ ] Add Homebrew support
