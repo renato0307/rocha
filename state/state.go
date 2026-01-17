@@ -412,6 +412,44 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 	return s.Save()
 }
 
+// RenameSession renames a session by updating both tmux name (map key) and display name
+// The old session is removed and a new entry is created with the new name as key
+func (s *SessionState) RenameSession(oldName, newName, newDisplayName string) error {
+	if s.Sessions == nil {
+		return fmt.Errorf("no sessions in state")
+	}
+
+	// Get existing session info
+	oldInfo, exists := s.Sessions[oldName]
+	if !exists {
+		return fmt.Errorf("session %s not found in state", oldName)
+	}
+
+	// Check if new name already exists
+	if _, exists := s.Sessions[newName]; exists && newName != oldName {
+		return fmt.Errorf("session %s already exists", newName)
+	}
+
+	// Create new entry with updated names
+	newInfo := SessionInfo{
+		Name:         newName,
+		DisplayName:  newDisplayName,
+		State:        oldInfo.State,
+		ExecutionID:  oldInfo.ExecutionID,
+		LastUpdated:  time.Now(),
+		RepoPath:     oldInfo.RepoPath,
+		RepoInfo:     oldInfo.RepoInfo,
+		BranchName:   oldInfo.BranchName,
+		WorktreePath: oldInfo.WorktreePath,
+	}
+
+	// Remove old entry and add new entry
+	delete(s.Sessions, oldName)
+	s.Sessions[newName] = newInfo
+
+	return s.Save()
+}
+
 // RemoveSession deletes a session from the state
 func (s *SessionState) RemoveSession(name string) error {
 	if s.Sessions == nil {

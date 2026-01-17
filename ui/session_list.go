@@ -127,6 +127,7 @@ type SessionList struct {
 	// Result fields - set by component, read by Model
 	SelectedSession   *tmux.Session // Session user wants to attach to
 	SessionToKill     *tmux.Session // Session user wants to kill
+	SessionToRename   *tmux.Session // Session user wants to rename
 	RequestNewSession bool          // User pressed 'n'
 	ShouldQuit        bool          // User pressed 'q' or Ctrl+C
 }
@@ -225,6 +226,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
+		case "r":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToRename = item.Session
+				return sl, nil
+			}
+
 		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
 			// Quick attach to session by number
 			numStr := msg.String()[4:] // Skip "alt+"
@@ -298,7 +305,7 @@ func (sl *SessionList) View() string {
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
 	helpText += "↑/k: up • ↓/j: down • /: filter • n: new\n"
-	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • x: kill • q: quit"
+	helpText += "enter/Alt+1-7: attach (Ctrl+B D or Ctrl+Q to detach) • r: rename • x: kill • q: quit"
 
 	s += helpStyle.Render(helpText)
 

@@ -181,6 +181,31 @@ func (c *DefaultClient) Kill(name string) error {
 	return cmd.Run()
 }
 
+// Rename renames a tmux session
+func (c *DefaultClient) Rename(oldName, newName string) error {
+	if oldName == "" || newName == "" {
+		return fmt.Errorf("session names cannot be empty")
+	}
+
+	// Check if old session exists
+	if !c.Exists(oldName) {
+		return fmt.Errorf("session %s not found", oldName)
+	}
+
+	// Check if new name already exists
+	if c.Exists(newName) {
+		return fmt.Errorf("session %s already exists", newName)
+	}
+
+	cmd := exec.Command("tmux", "rename-session", "-t", oldName, newName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to rename session: %w (output: %s)", err, string(output))
+	}
+
+	return nil
+}
+
 // Attach attaches to the tmux session. Returns a channel that will be closed when detached.
 func (c *DefaultClient) Attach(sessionName string) (chan struct{}, error) {
 	c.mu.Lock()
