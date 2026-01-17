@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"rocha/cmd"
+	"rocha/version"
 
 	"github.com/alecthomas/kong"
 )
@@ -13,7 +14,7 @@ func main() {
 	var cli cmd.CLI
 	ctx := kong.Parse(&cli,
 		kong.Name("rocha"),
-		kong.Description(Tagline),
+		kong.Description(version.Tagline),
 		kong.UsageOnError(),
 	)
 
