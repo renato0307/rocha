@@ -228,33 +228,11 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
-			// Quick attach to session by number
 			displaySessions := m.sessions
 			if m.filterText != "" {
 				displaySessions = m.filteredSessions
 			}
-
-			// Extract number from key (alt+1 -> '1' -> 1)
-			numStr := msg.String()[4:] // Skip "alt+"
-			num := int(numStr[0] - '0')
-			index := num - 1 // Convert to 0-based index
-
-			if index >= 0 && index < len(displaySessions) {
-				session := displaySessions[index]
-
-				// Ensure session exists (recreate if needed for race condition protection)
-				if !m.ensureSessionExists(session) {
-					return m, nil
-				}
-
-				c := exec.Command("tmux", "attach-session", "-t", session.Name)
-				return m, tea.ExecProcess(c, func(err error) tea.Msg {
-					if err != nil {
-						return err
-					}
-					return detachedMsg{}
-				})
-			}
+			return m.attachToSessionByNumber(displaySessions, msg.String())
 		}
 
 	case tea.WindowSizeMsg:
@@ -336,21 +314,7 @@ func (m Model) updateFiltering(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
-			// Quick attach to session by number
-			numStr := msg.String()[4:] // Skip "alt+"
-			num := int(numStr[0] - '0')
-			index := num - 1 // Convert to 0-based index
-
-			if index >= 0 && index < len(m.filteredSessions) {
-				session := m.filteredSessions[index]
-				c := exec.Command("tmux", "attach-session", "-t", session.Name)
-				return m, tea.ExecProcess(c, func(err error) tea.Msg {
-					if err != nil {
-						return err
-					}
-					return detachedMsg{}
-				})
-			}
+			return m.attachToSessionByNumber(m.filteredSessions, msg.String())
 		}
 
 	case tea.WindowSizeMsg:
@@ -560,6 +524,37 @@ func (m *Model) ensureSessionExists(session *tmux.Session) bool {
 	}
 
 	return true
+}
+
+// attachToSessionByNumber handles alt+1-7 shortcuts for quick session attachment
+// Returns updated model and command to attach to session, or nil command if invalid index
+func (m Model) attachToSessionByNumber(sessions []*tmux.Session, keyStr string) (tea.Model, tea.Cmd) {
+	// Extract number from key (alt+1 -> '1' -> 1)
+	numStr := keyStr[4:] // Skip "alt+"
+	num := int(numStr[0] - '0')
+	index := num - 1 // Convert to 0-based index
+
+	if index >= 0 && index < len(sessions) {
+		session := sessions[index]
+
+		// Update cursor to selected session so it's highlighted when we return
+		m.cursor = index
+
+		// Ensure session exists (recreate if needed for race condition protection)
+		if !m.ensureSessionExists(session) {
+			return m, nil
+		}
+
+		c := exec.Command("tmux", "attach-session", "-t", session.Name)
+		return m, tea.ExecProcess(c, func(err error) tea.Msg {
+			if err != nil {
+				return err
+			}
+			return detachedMsg{}
+		})
+	}
+
+	return m, nil
 }
 
 // createWorktreeRemovalForm creates a confirmation form for removing a worktree
