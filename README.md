@@ -9,6 +9,10 @@ Manage multiple Claude Code sessions in your terminal. Switch between conversati
 go build -o rocha
 cp rocha ~/.local/bin/
 
+# Set up PATH and tmux status bar
+rocha setup
+source ~/.zshrc  # or ~/.bashrc
+
 # Run it
 rocha
 ```
