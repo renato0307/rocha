@@ -19,6 +19,9 @@ func main() {
 	ctx := kong.Parse(&cli,
 		kong.Name("rocha"),
 		kong.Description(version.Tagline),
+		kong.Vars{
+			"version": version.Info(),
+		},
 		kong.UsageOnError(),
 		kong.BindTo(tmuxClient, (*tmux.Client)(nil)),
 	)

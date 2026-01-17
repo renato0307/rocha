@@ -12,14 +12,16 @@ import (
 	"rocha/tmux"
 	"rocha/ui"
 
+	"github.com/alecthomas/kong"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // CLI represents the command-line interface structure
 type CLI struct {
-	Debug        bool   `help:"Enable debug logging to file" short:"d"`
-	DebugFile    string `help:"Custom path for debug log file (disables automatic cleanup)"`
-	MaxLogFiles  int    `help:"Maximum number of log files to keep (0 = unlimited)" default:"1000"`
+	Version      kong.VersionFlag `help:"Show version information"`
+	Debug        bool             `help:"Enable debug logging to file" short:"d"`
+	DebugFile    string           `help:"Custom path for debug log file (disables automatic cleanup)"`
+	MaxLogFiles  int              `help:"Maximum number of log files to keep (0 = unlimited)" default:"1000"`
 
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
