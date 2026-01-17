@@ -44,3 +44,4 @@
 ## Bug Fixes
 
 - [x] Fix worktree removal failing when directory has modified/untracked files
+- [ ] Fix subprocess logging - hook commands not logging to shared log file
