@@ -14,6 +14,7 @@ type SetupCmd struct{}
 const (
 	tmuxConfig = `
 # Rocha status bar configuration
+set -g status-left-length 50  # Allow longer session names
 set -g status-right "Claude: #(rocha status) | %H:%M"
 set -g status-interval 1  # Update every 1 second
 `
@@ -22,6 +23,11 @@ set -g status-interval 1  # Update every 1 second
 
 // Run executes the setup command
 func (s *SetupCmd) Run() error {
+	// Verify required dependencies
+	if err := s.verifyDependencies(); err != nil {
+		return err
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
@@ -113,24 +119,59 @@ func (s *SetupCmd) setupTmux(homeDir string) error {
 
 	existingConfigStr := string(existingConfig)
 
-	// Check if config already exists (idempotent)
-	if strings.Contains(existingConfigStr, "rocha status") {
-		fmt.Println("✓ Tmux configuration already exists in ~/.tmux.conf")
+	// Check which settings are missing
+	requiredSettings := []struct {
+		check   string
+		setting string
+	}{
+		{"status-left-length", "set -g status-left-length 50  # Allow longer session names\n"},
+		{"rocha status", "set -g status-right \"Claude: #(rocha status) | %H:%M\"\n"},
+		{"status-interval", "set -g status-interval 1  # Update every 1 second\n"},
+	}
+
+	var missingSettings []string
+	var needsHeader bool
+
+	// Check if header comment exists
+	if !strings.Contains(existingConfigStr, "# Rocha status bar configuration") {
+		needsHeader = true
+	}
+
+	// Find missing settings
+	for _, req := range requiredSettings {
+		if !strings.Contains(existingConfigStr, req.check) {
+			missingSettings = append(missingSettings, req.setting)
+		}
+	}
+
+	// If all settings exist, nothing to do
+	if len(missingSettings) == 0 {
+		fmt.Println("✓ Tmux configuration is up to date in ~/.tmux.conf")
 		return nil
 	}
 
-	// Append config to file
+	// Append missing settings to file
 	f, err := os.OpenFile(tmuxConfPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open .tmux.conf: %w", err)
 	}
 	defer f.Close()
 
-	if _, err := f.WriteString(tmuxConfig); err != nil {
-		return fmt.Errorf("failed to write to .tmux.conf: %w", err)
+	// Add header if needed
+	if needsHeader {
+		if _, err := f.WriteString("\n# Rocha status bar configuration\n"); err != nil {
+			return fmt.Errorf("failed to write to .tmux.conf: %w", err)
+		}
 	}
 
-	fmt.Println("✓ Added rocha configuration to ~/.tmux.conf")
+	// Add missing settings
+	for _, setting := range missingSettings {
+		if _, err := f.WriteString(setting); err != nil {
+			return fmt.Errorf("failed to write to .tmux.conf: %w", err)
+		}
+	}
+
+	fmt.Printf("✓ Added %d missing setting(s) to ~/.tmux.conf\n", len(missingSettings))
 
 	// Reload tmux configuration if tmux is running
 	cmd := exec.Command("tmux", "source-file", tmuxConfPath)
@@ -141,5 +182,50 @@ func (s *SetupCmd) setupTmux(homeDir string) error {
 		fmt.Println("✓ Reloaded tmux configuration")
 	}
 
+	return nil
+}
+
+// verifyDependencies checks if required binaries are installed
+func (s *SetupCmd) verifyDependencies() error {
+	dependencies := []struct {
+		name        string
+		command     string
+		installInfo string
+	}{
+		{
+			name:        "tmux",
+			command:     "tmux",
+			installInfo: "Install with: apt install tmux (Ubuntu/Debian), brew install tmux (macOS), or pacman -S tmux (Arch)",
+		},
+		{
+			name:        "git",
+			command:     "git",
+			installInfo: "Install with: apt install git (Ubuntu/Debian), brew install git (macOS), or pacman -S git (Arch)",
+		},
+		{
+			name:        "Claude Code CLI",
+			command:     "claude",
+			installInfo: "Install from: https://claude.ai/download",
+		},
+	}
+
+	var missing []string
+	fmt.Println("Checking dependencies...")
+
+	for _, dep := range dependencies {
+		if _, err := exec.LookPath(dep.command); err != nil {
+			missing = append(missing, fmt.Sprintf("  ✗ %s not found\n    %s", dep.name, dep.installInfo))
+			fmt.Printf("✗ %s not found\n", dep.name)
+		} else {
+			fmt.Printf("✓ %s found\n", dep.name)
+		}
+	}
+
+	if len(missing) > 0 {
+		fmt.Println()
+		return fmt.Errorf("missing required dependencies:\n%s", strings.Join(missing, "\n"))
+	}
+
+	fmt.Println()
 	return nil
 }

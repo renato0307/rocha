@@ -18,7 +18,8 @@ import (
 var Logger *slog.Logger
 
 // Initialize sets up the logger based on the debug flag and configuration
-func Initialize(debug bool, debugFile string, maxLogFiles int) error {
+// Returns the log file path that subprocesses should use, or empty string if logging is disabled
+func Initialize(debug bool, debugFile string, maxLogFiles int) (string, error) {
 	// Check environment variables for inherited debug settings
 	if os.Getenv("ROCHA_DEBUG") == "1" {
 		debug = true
@@ -36,7 +37,7 @@ func Initialize(debug bool, debugFile string, maxLogFiles int) error {
 	if !debug && debugFile == "" {
 		// Discard all logs when debug is false and no custom file
 		Logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
-		return nil
+		return "", nil
 	}
 
 	var logFilePath string
@@ -47,18 +48,18 @@ func Initialize(debug bool, debugFile string, maxLogFiles int) error {
 
 		// Create directory if needed
 		if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
-			return fmt.Errorf("failed to create log directory: %w", err)
+			return "", fmt.Errorf("failed to create log directory: %w", err)
 		}
 	} else {
 		// Use OS-specific log directory with rotation
 		logDir, err := getLogDir()
 		if err != nil {
-			return fmt.Errorf("failed to get log directory: %w", err)
+			return "", fmt.Errorf("failed to get log directory: %w", err)
 		}
 
 		// Create log directory if it doesn't exist
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return fmt.Errorf("failed to create log directory: %w", err)
+			return "", fmt.Errorf("failed to create log directory: %w", err)
 		}
 
 		// Rotate logs if needed (only when not using custom file)
@@ -77,7 +78,7 @@ func Initialize(debug bool, debugFile string, maxLogFiles int) error {
 	// Open log file
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
+		return "", fmt.Errorf("failed to create log file: %w", err)
 	}
 
 	// Create JSON handler with options
@@ -96,7 +97,7 @@ func Initialize(debug bool, debugFile string, maxLogFiles int) error {
 		fmt.Printf("Debug mode enabled. Logs: %s\n", logFilePath)
 	}
 
-	return nil
+	return logFilePath, nil
 }
 
 // rotateLogs removes old log files if there are more than maxLogFiles

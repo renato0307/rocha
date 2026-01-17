@@ -25,10 +25,15 @@ type SessionState struct {
 
 // SessionInfo represents the state of a single session
 type SessionInfo struct {
-	Name        string    `json:"name"`
-	State       string    `json:"state"`        // "waiting" or "working"
-	ExecutionID string    `json:"execution_id"` // Which rocha run owns this state
-	LastUpdated time.Time `json:"last_updated"`
+	Name         string    `json:"name"`          // Tmux session name (no spaces)
+	DisplayName  string    `json:"display_name"`  // Display name (with spaces)
+	State        string    `json:"state"`         // "waiting" or "working"
+	ExecutionID  string    `json:"execution_id"`  // Which rocha run owns this state
+	LastUpdated  time.Time `json:"last_updated"`
+	RepoPath     string    `json:"repo_path"`     // Original repository path (if in git repo)
+	RepoInfo     string    `json:"repo_info"`     // GitHub owner/repo (e.g., "owner/repo")
+	BranchName   string    `json:"branch_name"`   // Git branch name (if worktree created)
+	WorktreePath string    `json:"worktree_path"` // Path to worktree if created
 }
 
 // NewExecutionID generates a new UUID for the current rocha run
@@ -149,6 +154,27 @@ func (s *SessionState) UpdateSession(name, state, executionID string) error {
 	return s.Save()
 }
 
+// UpdateSessionWithGit adds or updates a session with git metadata
+func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionID, repoPath, repoInfo, branchName, worktreePath string) error {
+	if s.Sessions == nil {
+		s.Sessions = make(map[string]SessionInfo)
+	}
+
+	s.Sessions[name] = SessionInfo{
+		Name:         name,
+		DisplayName:  displayName,
+		State:        state,
+		ExecutionID:  executionID,
+		LastUpdated:  time.Now(),
+		RepoPath:     repoPath,
+		RepoInfo:     repoInfo,
+		BranchName:   branchName,
+		WorktreePath: worktreePath,
+	}
+
+	return s.Save()
+}
+
 // RemoveSession deletes a session from the state
 func (s *SessionState) RemoveSession(name string) error {
 	if s.Sessions == nil {
@@ -179,4 +205,33 @@ func (s *SessionState) GetCounts(executionID string) (waiting int, working int) 
 	}
 
 	return waiting, working
+}
+
+// SyncWithRunning updates execution IDs for sessions that are actually running in tmux
+// Sessions not running in tmux are kept in state (so they can be restarted later)
+// but their execution IDs are not updated
+func (s *SessionState) SyncWithRunning(runningSessionNames []string, newExecutionID string) error {
+	if s.Sessions == nil {
+		s.Sessions = make(map[string]SessionInfo)
+	}
+
+	// Create a map of running session names for fast lookup
+	runningMap := make(map[string]bool)
+	for _, name := range runningSessionNames {
+		runningMap[name] = true
+	}
+
+	// Update execution ID only for sessions that are currently running in tmux
+	// Keep sessions that aren't running (they can be restarted later)
+	for name, session := range s.Sessions {
+		if runningMap[name] {
+			// Session is running - update its execution ID to current
+			session.ExecutionID = newExecutionID
+			s.Sessions[name] = session
+		}
+		// If not running in tmux, keep the session in state unchanged
+		// so it can be restarted later
+	}
+
+	return s.Save()
 }

@@ -24,8 +24,9 @@ type Session struct {
 }
 
 // NewSession creates a new tmux session with the given name
-func NewSession(name string) (*Session, error) {
-	logging.Logger.Info("Creating new tmux session", "name", name)
+// If worktreePath is provided (non-empty), the session will start in that directory
+func NewSession(name string, worktreePath string) (*Session, error) {
+	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath)
 
 	s := &Session{
 		Name:      name,
@@ -46,7 +47,15 @@ func NewSession(name string) (*Session, error) {
 	}
 	logging.Logger.Debug("Creating tmux session with shell", "shell", shell)
 
-	cmd := exec.Command("tmux", "new-session", "-d", "-s", name, shell)
+	// Build tmux command with optional working directory
+	var cmd *exec.Cmd
+	if worktreePath != "" {
+		logging.Logger.Info("Starting session in worktree directory", "path", worktreePath)
+		cmd = exec.Command("tmux", "new-session", "-d", "-s", name, "-c", worktreePath, shell)
+	} else {
+		cmd = exec.Command("tmux", "new-session", "-d", "-s", name, shell)
+	}
+
 	if err := cmd.Run(); err != nil {
 		logging.Logger.Error("Failed to create tmux session", "error", err, "name", name)
 		return nil, fmt.Errorf("failed to create tmux session: %w", err)
@@ -81,8 +90,15 @@ func NewSession(name string) (*Session, error) {
 				logging.Logger.Debug("Rocha binary path", "path", rochaBin)
 
 				// Set session name in environment and start claude with hooks
-				// Clear the screen first to hide the command being typed
-				startCmd := fmt.Sprintf("clear && ROCHA_SESSION_NAME=%s %s start-claude", name, rochaBin)
+				var startCmd string
+				if worktreePath != "" {
+					// Explicitly cd to worktree directory before starting Claude
+					// cd first so we can see any errors before clearing
+					logging.Logger.Info("Starting Claude in worktree directory", "path", worktreePath)
+					startCmd = fmt.Sprintf("cd %q && clear && ROCHA_SESSION_NAME=%s %s start-claude", worktreePath, name, rochaBin)
+				} else {
+					startCmd = fmt.Sprintf("clear && ROCHA_SESSION_NAME=%s %s start-claude", name, rochaBin)
+				}
 				logging.Logger.Debug("Sending start command to session", "command", startCmd)
 				sendCmd := exec.Command("tmux", "send-keys", "-t", name, startCmd, "Enter")
 				if err := sendCmd.Run(); err != nil {
@@ -98,7 +114,7 @@ func NewSession(name string) (*Session, error) {
 
 // Exists checks if the tmux session exists
 func (s *Session) Exists() bool {
-	cmd := exec.Command("tmux", "has-session", "-t="+s.Name)
+	cmd := exec.Command("tmux", "has-session", "-t", s.Name)
 	return cmd.Run() == nil
 }
 
