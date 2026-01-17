@@ -43,10 +43,6 @@
 
 - [ ] Move packages to the internal folder
 
-## Code Organization
-
-- [ ] Move packages to the internal folder
-
 ## Distribution
 
 - [ ] Add Homebrew support
