@@ -78,8 +78,9 @@ func RemoveWorktree(repoPath, worktreePath string) error {
 		return nil // Already removed, not an error
 	}
 
-	// Run git worktree remove from the repository directory
-	cmd := exec.Command("git", "worktree", "remove", worktreePath)
+	// Run git worktree remove with --force flag to allow removal even with uncommitted changes
+	// This is appropriate for rocha's use case where worktrees are temporary development environments
+	cmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
 	cmd.Dir = repoPath
 
 	if output, err := cmd.CombinedOutput(); err != nil {

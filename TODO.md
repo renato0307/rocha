@@ -40,3 +40,7 @@
 ## Distribution
 
 - [ ] Add Homebrew support
+
+## Bug Fixes
+
+- [x] Fix worktree removal failing when directory has modified/untracked files
