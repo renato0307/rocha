@@ -89,9 +89,24 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 				Negative("No"),
 			huh.NewInput().
 				Title("Branch name").
-				Description("Leave empty to auto-generate from session name").
+				Description("Leave empty to auto-generate. Must match git naming rules.").
 				Value(&sf.result.BranchName).
-				Placeholder("(auto-generated)"),
+				Placeholder("(auto-generated)").
+				Validate(func(s string) error {
+					if s == "" {
+						return nil // Empty is OK, will auto-generate
+					}
+					// Validate user-provided name
+					if err := git.ValidateBranchName(s); err != nil {
+						// Show what it would become if sanitized
+						sanitized, sanitizeErr := git.SanitizeBranchName(s)
+						if sanitizeErr == nil {
+							return fmt.Errorf("invalid branch name: %v (suggestion: %s)", err, sanitized)
+						}
+						return fmt.Errorf("invalid branch name: %v", err)
+					}
+					return nil
+				}),
 		)
 	}
 
@@ -200,7 +215,11 @@ func (sf *SessionForm) createSession() error {
 
 			// Auto-generate branch name if not provided
 			if branchName == "" {
-				branchName = strings.ReplaceAll(sessionName, " ", "-")
+				var err error
+				branchName, err = git.SanitizeBranchName(sessionName)
+				if err != nil {
+					return fmt.Errorf("failed to generate branch name from session name: %w", err)
+				}
 				logging.Logger.Info("Auto-generated branch name", "branch", branchName)
 			}
 

@@ -88,6 +88,12 @@ func CreateWorktree(repoPath, worktreePath, branchName string) error {
 		logging.Logger.Debug("Git pull --rebase succeeded")
 	}
 
+	// Validate branch name before creating worktree
+	if err := ValidateBranchName(branchName); err != nil {
+		logging.Logger.Error("Invalid branch name", "branch", branchName, "error", err)
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
 	// Create the worktree with new branch
 	logging.Logger.Info("Running git worktree add", "path", worktreePath, "branch", branchName)
 	worktreeCmd := exec.Command("git", "worktree", "add", worktreePath, "-b", branchName)
