@@ -1,4 +1,5 @@
 /rocha
+rocha-*
 debug.log
 
 # GoReleaser output
