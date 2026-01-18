@@ -2,10 +2,22 @@ package git
 
 import (
 	"fmt"
+	"regexp"
 	"rocha/logging"
 	"strings"
 	"unicode"
 )
+
+// validBranchNameChars matches valid characters for git branch names
+// Allows: alphanumeric, hyphens, underscores, dots, slashes
+var validBranchNameChars = regexp.MustCompile(`^[a-zA-Z0-9._/-]+$`)
+
+// invalidBranchNameChars matches characters that should be replaced with hyphens
+// Includes: spaces, special characters not allowed in branch names
+var invalidBranchNameChars = regexp.MustCompile(`[\s~^:?*\[\]\\{}#@]+`)
+
+// consecutiveHyphens matches two or more consecutive hyphens
+var consecutiveHyphens = regexp.MustCompile(`-{2,}`)
 
 // ValidateBranchName checks if a branch name is valid according to git rules.
 // Returns nil if valid, error with helpful message if invalid.
@@ -57,19 +69,16 @@ func ValidateBranchName(name string) error {
 		return fmt.Errorf("branch name cannot contain '@{'")
 	}
 
-	// Check for invalid characters
-	invalidChars := []rune{'~', '^', ':', '?', '*', '[', ']', '\\', ' ', '#', '@', '{', '}'}
+	// Check for control characters
 	for _, r := range name {
-		// Check for control characters
 		if unicode.IsControl(r) {
 			return fmt.Errorf("branch name cannot contain control characters")
 		}
-		// Check for specific invalid characters
-		for _, invalid := range invalidChars {
-			if r == invalid {
-				return fmt.Errorf("branch name cannot contain '%c'", invalid)
-			}
-		}
+	}
+
+	// Check for valid characters using regex
+	if !validBranchNameChars.MatchString(name) {
+		return fmt.Errorf("branch name contains invalid characters (only alphanumeric, '.', '_', '-', '/' allowed)")
 	}
 
 	// Special check: '@' alone is not valid
@@ -103,27 +112,17 @@ func SanitizeBranchName(name string) (string, error) {
 	// Step 1: Lowercase
 	result := strings.ToLower(name)
 
-	// Step 2: Replace invalid characters with '-'
+	// Step 2: Remove control characters
 	var builder strings.Builder
-	invalidChars := map[rune]bool{
-		' ': true, '~': true, '^': true, ':': true, '?': true, '*': true,
-		'[': true, ']': true, '\\': true, '{': true, '}': true, '#': true, '@': true,
-	}
-
 	for _, r := range result {
-		// Step 3: Remove control characters (skip them)
-		if unicode.IsControl(r) {
-			continue
-		}
-		// Replace invalid characters with '-'
-		if invalidChars[r] {
-			builder.WriteRune('-')
-		} else {
+		if !unicode.IsControl(r) {
 			builder.WriteRune(r)
 		}
 	}
-
 	result = builder.String()
+
+	// Step 3: Replace invalid characters with '-' using regex
+	result = invalidBranchNameChars.ReplaceAllString(result, "-")
 
 	// Step 4: Replace '..' with '-'
 	result = strings.ReplaceAll(result, "..", "-")
@@ -138,10 +137,8 @@ func SanitizeBranchName(name string) (string, error) {
 	result = strings.TrimSuffix(result, ".lock")
 	result = strings.TrimRight(result, "./-")
 
-	// Step 7: Collapse consecutive hyphens
-	for strings.Contains(result, "--") {
-		result = strings.ReplaceAll(result, "--", "-")
-	}
+	// Step 7: Collapse consecutive hyphens using regex
+	result = consecutiveHyphens.ReplaceAllString(result, "-")
 
 	// Step 8: Check if result is valid
 	if result == "" {
