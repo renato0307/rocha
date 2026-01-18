@@ -546,11 +546,6 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client) 
 						"session", session.Name,
 						"error", stats.Error)
 				} else {
-					// Add PR number (if available)
-					if stats.PRNumber != "" {
-						gitRef += fmt.Sprintf(" | #%s", stats.PRNumber)
-					}
-
 					// Add ahead/behind (if non-zero)
 					if stats.Ahead > 0 || stats.Behind > 0 {
 						gitRef += fmt.Sprintf(" | ↑%d ↓%d", stats.Ahead, stats.Behind)

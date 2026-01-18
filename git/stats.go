@@ -21,7 +21,6 @@ type GitStats struct {
 	Deletions     int       // Lines deleted in working directory
 	CommitHash    string    // Last commit hash (short)
 	CommitMessage string    // Last commit message (truncated)
-	PRNumber      string    // PR number if branch has associated PR (optional)
 	Error         error     // Error during fetching (if any)
 	FetchedAt     time.Time // When these stats were fetched
 }
@@ -83,17 +82,6 @@ func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) 
 		return nil
 	})
 
-	// Fetch PR number (optional, requires gh CLI)
-	g.Go(func() error {
-		prNumber, err := getPRNumber(ctx, worktreePath)
-		if err != nil {
-			logging.Logger.Debug("Failed to get PR number", "error", err)
-			// Non-fatal - PR info is optional
-			return nil
-		}
-		stats.PRNumber = prNumber
-		return nil
-	})
 
 	// Wait for all fetches to complete
 	if err := g.Wait(); err != nil {
@@ -105,8 +93,7 @@ func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) 
 		"ahead", stats.Ahead,
 		"behind", stats.Behind,
 		"additions", stats.Additions,
-		"deletions", stats.Deletions,
-		"pr", stats.PRNumber)
+		"deletions", stats.Deletions)
 
 	return stats, nil
 }
@@ -214,24 +201,6 @@ func getLastCommit(ctx context.Context, path string) (hash string, message strin
 	return hash, message, nil
 }
 
-// getPRNumber returns the PR number for the current branch (requires gh CLI)
-func getPRNumber(ctx context.Context, path string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", "--json", "number", "-q", ".number")
-	cmd.Dir = path
-
-	output, err := cmd.Output()
-	if err != nil {
-		// gh CLI not installed or no PR for this branch
-		return "", fmt.Errorf("gh pr view failed: %w", err)
-	}
-
-	prNumber := strings.TrimSpace(string(output))
-	if prNumber == "" {
-		return "", fmt.Errorf("no PR number found")
-	}
-
-	return prNumber, nil
-}
 
 // StartGitStatsFetcher starts an async worker that fetches git stats
 // Returns a tea.Cmd that will send GitStatsReadyMsg or GitStatsErrorMsg
