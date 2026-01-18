@@ -270,6 +270,7 @@ Persistent session state management.
 #### git/
 Git worktree operations.
 - Create/remove worktrees
+- Branch name validation and sanitization
 - Branch detection
 - Repository metadata extraction
 

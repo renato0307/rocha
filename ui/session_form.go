@@ -37,9 +37,9 @@ type SessionForm struct {
 	worktreePath   string
 	sessionState   *state.SessionState
 	result         SessionFormResult
-	Completed      bool    // Exported so Model can check completion
+	Completed      bool // Exported so Model can check completion
 	cancelled      bool
-	creating       bool    // True when session creation is in progress
+	creating       bool // True when session creation is in progress
 	spinner        spinner.Model
 }
 
@@ -65,9 +65,30 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 
 	logging.Logger.Debug("Creating session form", "is_git_repo", isGit, "cwd", cwd)
 
-	// Build form fields
-	fields := []huh.Field{
-		huh.NewInput().
+	// Build form fields - all in one group
+	var sessionNameField *huh.Input
+	if isGit {
+		// For git repos, show suggested branch name in session name description
+		sessionNameField = huh.NewInput().
+			Title("Session name").
+			Value(&sf.result.SessionName).
+			DescriptionFunc(func() string {
+				if sf.result.SessionName != "" {
+					if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
+						return fmt.Sprintf("Suggested branch name: %s", sanitized)
+					}
+				}
+				return ""
+			}, &sf.result.SessionName).
+			Validate(func(s string) error {
+				if s == "" {
+					return fmt.Errorf("session name required")
+				}
+				return nil
+			})
+	} else {
+		// For non-git repos, just show session name field
+		sessionNameField = huh.NewInput().
 			Title("Session name").
 			Value(&sf.result.SessionName).
 			Validate(func(s string) error {
@@ -75,8 +96,10 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 					return fmt.Errorf("session name required")
 				}
 				return nil
-			}),
+			})
 	}
+
+	fields := []huh.Field{sessionNameField}
 
 	// Only add worktree options if in a git repo
 	if isGit {
@@ -88,10 +111,24 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 				Affirmative("Yes").
 				Negative("No"),
 			huh.NewInput().
-				Title("Branch name").
-				Description("Leave empty to auto-generate from session name").
+				Title("Override branch name").
+				Description("Leave empty to use suggested name above. Must match git naming rules.").
 				Value(&sf.result.BranchName).
-				Placeholder("(auto-generated)"),
+				Validate(func(s string) error {
+					if s == "" {
+						return nil // Empty is OK, will use suggested name
+					}
+					// Validate user-provided name
+					if err := git.ValidateBranchName(s); err != nil {
+						// Show what it would become if sanitized
+						sanitized, sanitizeErr := git.SanitizeBranchName(s)
+						if sanitizeErr == nil {
+							return fmt.Errorf("invalid branch name: %v (suggestion: %s)", err, sanitized)
+						}
+						return fmt.Errorf("invalid branch name: %v", err)
+					}
+					return nil
+				}),
 		)
 	}
 
@@ -198,10 +235,14 @@ func (sf *SessionForm) createSession() error {
 			repoInfo = git.GetRepoInfo(repo)
 			logging.Logger.Info("Extracted repo info", "repo_info", repoInfo)
 
-			// Auto-generate branch name if not provided
+			// Auto-generate branch name if not provided (user left field empty)
 			if branchName == "" {
-				branchName = strings.ReplaceAll(sessionName, " ", "-")
-				logging.Logger.Info("Auto-generated branch name", "branch", branchName)
+				var err error
+				branchName, err = git.SanitizeBranchName(sessionName)
+				if err != nil {
+					return fmt.Errorf("failed to generate branch name from session name: %w", err)
+				}
+				logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
 			}
 
 			// Expand worktree base path
