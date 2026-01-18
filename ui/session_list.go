@@ -99,16 +99,16 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		statusIcon = exitedIconStyle.Render(state.SymbolExited)
 	}
 
-	// Add shell session indicator
-	if item.HasShellSession {
-		statusIcon += " " + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("33")).
-			Render("⚡")
-	}
-
 	// Build first line: cursor + zero-padded number + status + name
 	line1 := fmt.Sprintf("%s %02d. %s %s", cursor, index+1, statusIcon, item.DisplayName)
 	line1 = normalStyle.Render(line1)
+
+	// Add shell session indicator at the end
+	if item.HasShellSession {
+		line1 += " " + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("33")).
+			Render("⌨")
+	}
 
 	// Build second line: git ref (indented to align with session name)
 	var line2 string
@@ -323,9 +323,8 @@ func (sl *SessionList) View() string {
 	// Add custom help (status legend first, then keys)
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
-	helpText += "↑/k: up • ↓/j: down • /: filter • n: new\n"
-	helpText += "enter/Alt+1-7: attach • Alt+Enter: shell • r: rename • x: kill • q: quit\n"
-	helpText += "(Ctrl+B D or Ctrl+Q to detach)"
+	helpText += "↑/k: up • ↓/j: down • /: filter • n: new • r: rename • x: kill • q: quit\n"
+	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell"
 
 	s += helpStyle.Render(helpText)
 
@@ -364,8 +363,20 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 	var items []list.Item
 	var sessions []*tmux.Session
 
-	// Build sessions from state
+	// Build a set of shell session names to filter them out
+	shellSessions := make(map[string]bool)
+	for _, info := range sessionState.Sessions {
+		if info.ShellSession != "" {
+			shellSessions[info.ShellSession] = true
+		}
+	}
+
+	// Build sessions from state (skip shell sessions)
 	for name, info := range sessionState.Sessions {
+		// Skip shell sessions - they're accessed via Alt+Enter on parent session
+		if shellSessions[name] {
+			continue
+		}
 		sessions = append(sessions, &tmux.Session{
 			Name:      name,
 			CreatedAt: info.LastUpdated,
@@ -415,8 +426,7 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 func (sl *SessionList) renderStatusLegend() string {
 	workingCount, idleCount, waitingCount, exitedCount := sl.countSessionsByState()
 
-	legend := "Status: "
-	legend += workingIconStyle.Render(state.SymbolWorking) + fmt.Sprintf(" %d working • ", workingCount)
+	legend := workingIconStyle.Render(state.SymbolWorking) + fmt.Sprintf(" %d working • ", workingCount)
 	legend += idleIconStyle.Render(state.SymbolIdle) + fmt.Sprintf(" %d idle • ", idleCount)
 	legend += waitingIconStyle.Render(state.SymbolWaitingUser) + fmt.Sprintf(" %d waiting • ", waitingCount)
 	legend += exitedIconStyle.Render(state.SymbolExited) + fmt.Sprintf(" %d exited", exitedCount)
