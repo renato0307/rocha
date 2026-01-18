@@ -167,7 +167,59 @@ func NewStore(dbPath string) (*Store, error) {
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(0)
 
-	return &Store{db: db}, nil
+	store := &Store{db: db}
+
+	// Initialize positions for existing sessions if needed
+	if err := store.initializePositions(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to initialize positions: %w", err)
+	}
+
+	return store, nil
+}
+
+// initializePositions assigns unique position values to sessions that don't have them.
+// This handles migration from databases where all sessions have position = 0.
+func (s *Store) initializePositions(ctx context.Context) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Check if we need to initialize positions
+			// Count sessions with non-zero position
+			var countNonZero int64
+			if err := tx.Model(&Session{}).
+				Where("parent_name IS NULL AND position != 0").
+				Count(&countNonZero).Error; err != nil {
+				return fmt.Errorf("failed to count sessions with positions: %w", err)
+			}
+
+			// If any session has a non-zero position, assume positions are already initialized
+			if countNonZero > 0 {
+				return nil
+			}
+
+			// Load all top-level sessions (ordered by last_updated to maintain some consistency)
+			var sessions []Session
+			if err := tx.Where("parent_name IS NULL").
+				Order("last_updated ASC").
+				Find(&sessions).Error; err != nil {
+				return fmt.Errorf("failed to load sessions: %w", err)
+			}
+
+			// No sessions to initialize
+			if len(sessions) == 0 {
+				return nil
+			}
+
+			// Assign sequential positions
+			for i, session := range sessions {
+				if err := tx.Model(&Session{}).
+					Where("name = ?", session.Name).
+					Update("position", i).Error; err != nil {
+					return fmt.Errorf("failed to update position for %s: %w", session.Name, err)
+				}
+			}
+			return nil
+		})
+	}, 3)
 }
 
 // Load reads all sessions with ACID guarantees
@@ -248,6 +300,16 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 			// Save sessions
 			for _, sessInfo := range state.Sessions {
 				session := convertFromSessionInfo(sessInfo)
+
+				// Preserve position field from existing session
+				var existing Session
+				err := tx.Where("name = ?", session.Name).First(&existing).Error
+				if err == nil {
+					// Session exists, preserve position
+					session.Position = existing.Position
+				}
+				// If session doesn't exist (err != nil), position will be 0 which is fine for new sessions
+
 				if err := tx.Save(&session).Error; err != nil {
 					return fmt.Errorf("failed to save session %s: %w", sessInfo.Name, err)
 				}
@@ -257,6 +319,14 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 				if sessInfo.ShellSession != nil {
 					nested := convertFromSessionInfo(*sessInfo.ShellSession)
 					nested.ParentName = &sessInfo.Name // Set parent relationship
+
+					// Preserve position field from existing nested session
+					var existingNested Session
+					err := tx.Where("name = ?", nested.Name).First(&existingNested).Error
+					if err == nil {
+						nested.Position = existingNested.Position
+					}
+
 					if err := tx.Save(&nested).Error; err != nil {
 						return fmt.Errorf("failed to save nested session for %s: %w", sessInfo.Name, err)
 					}
@@ -321,7 +391,6 @@ func (s *Store) SwapPositions(ctx context.Context, name1, name2 string) error {
 			if err := tx.Model(&Session{}).Where("name = ?", name2).Update("position", session2.Position).Error; err != nil {
 				return fmt.Errorf("failed to update position for %s: %w", name2, err)
 			}
-
 			return nil
 		})
 	}, 3)
