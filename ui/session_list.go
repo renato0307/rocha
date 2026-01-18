@@ -127,6 +127,7 @@ type SessionList struct {
 	tmuxClient   tmux.Client
 	sessionState *state.SessionState
 	err          error
+	editor       string // Editor to open sessions in
 
 	// Escape handling for filter clearing
 	escPressCount int
@@ -137,12 +138,13 @@ type SessionList struct {
 	SelectedShellSession *tmux.Session // Session user wants shell session for
 	SessionToKill        *tmux.Session // Session user wants to kill
 	SessionToRename      *tmux.Session // Session user wants to rename
+	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
 	RequestNewSession    bool          // User pressed 'n'
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, editor string) *SessionList {
 	// Load session state
 	sessionState, err := state.Load()
 	if err != nil {
@@ -169,6 +171,7 @@ func NewSessionList(tmuxClient tmux.Client) *SessionList {
 		tmuxClient:   tmuxClient,
 		sessionState: sessionState,
 		err:          err,
+		editor:       editor,
 	}
 }
 
@@ -238,6 +241,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToRename = item.Session
+				return sl, nil
+			}
+
+		case "o":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToOpenEditor = item.Session
 				return sl, nil
 			}
 
@@ -330,7 +339,7 @@ func (sl *SessionList) View() string {
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
 	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • x: kill\n"
-	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨) • q: quit"
+	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨) • o: open editor • q: quit"
 
 	s += helpStyle.Render(helpText)
 
