@@ -62,9 +62,12 @@ func (c *CLI) AfterApply() error {
 
 // RunCmd starts the TUI application
 type RunCmd struct {
-	WorktreePath    string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
 	Editor          string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 	ErrorClearDelay int    `help:"Seconds before error messages auto-clear" default:"10"`
+	StatusColors    string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
+	StatusIcons     string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
+	Statuses        string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
+	WorktreePath    string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
 }
 
 // Run executes the TUI
@@ -131,8 +134,9 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
+	statusConfig := ui.NewStatusConfig(r.Statuses, r.StatusIcons, r.StatusColors)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay),
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
