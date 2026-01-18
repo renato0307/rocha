@@ -10,9 +10,16 @@ import (
 	"rocha/tmux"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 )
+
+// sessionCreatedMsg is sent when session creation completes
+type sessionCreatedMsg struct {
+	err error
+}
 
 // SessionFormResult contains the result of the session creation form
 type SessionFormResult struct {
@@ -30,12 +37,18 @@ type SessionForm struct {
 	worktreePath   string
 	sessionState   *state.SessionState
 	result         SessionFormResult
-	Completed      bool // Exported so Model can check completion
+	Completed      bool    // Exported so Model can check completion
 	cancelled      bool
+	creating       bool    // True when session creation is in progress
+	spinner        spinner.Model
 }
 
 // NewSessionForm creates a new session creation form
 func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, sessionState *state.SessionState) *SessionForm {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
 	sf := &SessionForm{
 		sessionManager: sessionManager,
 		worktreePath:   worktreePath,
@@ -43,6 +56,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 		result: SessionFormResult{
 			CreateWorktree: true, // Default to true
 		},
+		spinner: s,
 	}
 
 	// Check if we're in a git repository
@@ -91,6 +105,24 @@ func (sf *SessionForm) Init() tea.Cmd {
 }
 
 func (sf *SessionForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle session creation result
+	if msg, ok := msg.(sessionCreatedMsg); ok {
+		sf.creating = false
+		sf.Completed = true
+		if msg.err != nil {
+			logging.Logger.Error("Failed to create session", "error", msg.err)
+			sf.result.Error = msg.err
+		}
+		return sf, nil
+	}
+
+	// If already creating, only update spinner
+	if sf.creating {
+		var cmd tea.Cmd
+		sf.spinner, cmd = sf.spinner.Update(msg)
+		return sf, cmd
+	}
+
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
@@ -106,21 +138,20 @@ func (sf *SessionForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sf.form = f
 	}
 
-	// Check if form completed
-	if sf.form.State == huh.StateCompleted {
-		sf.Completed = true
-		// Create the session
-		if err := sf.createSession(); err != nil {
-			logging.Logger.Error("Failed to create session", "error", err)
-			sf.result.Error = err // Store error in result so it can be displayed to user
-		}
-		return sf, nil
+	// Check if form completed - trigger async session creation
+	if sf.form.State == huh.StateCompleted && !sf.creating {
+		sf.creating = true
+		// Return commands to create session and start spinner
+		return sf, tea.Batch(sf.createSessionCmd(), sf.spinner.Tick)
 	}
 
 	return sf, cmd
 }
 
 func (sf *SessionForm) View() string {
+	if sf.creating {
+		return fmt.Sprintf("\n%s Creating session...\n", sf.spinner.View())
+	}
 	if sf.form != nil {
 		return sf.form.View()
 	}
@@ -130,6 +161,14 @@ func (sf *SessionForm) View() string {
 // Result returns the form result
 func (sf *SessionForm) Result() SessionFormResult {
 	return sf.result
+}
+
+// createSessionCmd returns a command that creates the session asynchronously
+func (sf *SessionForm) createSessionCmd() tea.Cmd {
+	return func() tea.Msg {
+		err := sf.createSession()
+		return sessionCreatedMsg{err: err}
+	}
 }
 
 // createSession creates the tmux session with optional worktree
