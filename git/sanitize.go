@@ -13,8 +13,11 @@ import (
 var validBranchNameChars = regexp.MustCompile(`^[a-zA-Z0-9._/-]+$`)
 
 // invalidBranchNameChars matches characters that should be replaced with hyphens
-// Includes: spaces, special characters not allowed in branch names
-var invalidBranchNameChars = regexp.MustCompile(`[\s~^:?*\[\]\\{}#@()]+`)
+// Includes:
+// - Git-prohibited: space, ~, ^, :, ?, *, [, \
+// - Shell metacharacters: &, |, ;, <, >, $, `, ', "
+// - Other problematic: #, @, {, }, (, )
+var invalidBranchNameChars = regexp.MustCompile(`[\s~^:?*\[\]\\{}#@()&|;<>$` + "`" + `'"]+`)
 
 // consecutiveHyphens matches two or more consecutive hyphens
 var consecutiveHyphens = regexp.MustCompile(`-{2,}`)
@@ -23,10 +26,15 @@ var consecutiveHyphens = regexp.MustCompile(`-{2,}`)
 // Returns nil if valid, error with helpful message if invalid.
 // Use for user-provided branch names.
 //
-// Git branch naming rules:
+// Note: We enforce stricter rules than git's git-check-ref-format because rocha
+// executes git commands via shell. While git allows shell metacharacters like
+// &, |, ;, etc., they require quoting in shell commands and can cause issues.
+//
+// Git branch naming rules enforced:
 // - Cannot start with '.' or end with '.lock', '.', '/', or '-'
 // - Cannot contain '..' or '//' or '@{'
-// - Cannot contain '~', '^', ':', '?', '*', '[', ']', '\', spaces, control chars
+// - Cannot contain git-prohibited chars: ~, ^, :, ?, *, [, \, space, control chars
+// - Cannot contain shell metacharacters: &, |, ;, <, >, $, `, ', "
 // - Cannot start or end with '/'
 func ValidateBranchName(name string) error {
 	if name == "" {
