@@ -66,8 +66,29 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 	logging.Logger.Debug("Creating session form", "is_git_repo", isGit, "cwd", cwd)
 
 	// Build form fields - all in one group
-	fields := []huh.Field{
-		huh.NewInput().
+	var sessionNameField *huh.Input
+	if isGit {
+		// For git repos, show suggested branch name in session name description
+		sessionNameField = huh.NewInput().
+			Title("Session name").
+			Value(&sf.result.SessionName).
+			DescriptionFunc(func() string {
+				if sf.result.SessionName != "" {
+					if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
+						return fmt.Sprintf("Suggested branch name: %s", sanitized)
+					}
+				}
+				return ""
+			}, &sf.result.SessionName).
+			Validate(func(s string) error {
+				if s == "" {
+					return fmt.Errorf("session name required")
+				}
+				return nil
+			})
+	} else {
+		// For non-git repos, just show session name field
+		sessionNameField = huh.NewInput().
 			Title("Session name").
 			Value(&sf.result.SessionName).
 			Validate(func(s string) error {
@@ -75,21 +96,14 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 					return fmt.Errorf("session name required")
 				}
 				return nil
-			}),
+			})
 	}
+
+	fields := []huh.Field{sessionNameField}
 
 	// Only add worktree options if in a git repo
 	if isGit {
 		fields = append(fields,
-			huh.NewNote().
-				DescriptionFunc(func() string {
-					if sf.result.SessionName != "" {
-						if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
-							return fmt.Sprintf("Suggested branch name: %s", sanitized)
-						}
-					}
-					return "Suggested branch name: (waiting for session name...)"
-				}, &sf.result.SessionName),
 			huh.NewConfirm().
 				Title("Create worktree?").
 				Description("Creates an isolated git worktree for this session").
