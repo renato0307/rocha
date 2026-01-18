@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"rocha/git"
 	"rocha/storage"
 	"text/tabwriter"
 	"time"
@@ -14,15 +15,91 @@ import (
 
 // SessionsCmd manages sessions
 type SessionsCmd struct {
-	List SessionsListCmd `cmd:"list" help:"List all sessions" default:"1"`
-	View SessionsViewCmd `cmd:"view" help:"View a specific session"`
-	Add  SessionsAddCmd  `cmd:"add" help:"Add a new session"`
-	Del  SessionsDelCmd  `cmd:"del" help:"Delete a session"`
+	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
+	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
+	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
+	Add     SessionsAddCmd     `cmd:"add" help:"Add a new session"`
+	Del     SessionsDelCmd     `cmd:"del" help:"Delete a session"`
+}
+
+// SessionsArchiveCmd archives or unarchives a session
+type SessionsArchiveCmd struct {
+	Name                string `arg:"" help:"Name of the session to archive/unarchive"`
+	Force               bool   `help:"Skip confirmation prompt" short:"f"`
+	RemoveWorktree      bool   `help:"Remove associated git worktree" short:"w"`
+	SkipWorktreePrompt  bool   `help:"Don't prompt about worktree removal" short:"s"`
+}
+
+// Run executes the archive command
+func (s *SessionsArchiveCmd) Run(cli *CLI) error {
+	store, err := storage.NewStore(expandPath(cli.DBPath))
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
+	// Check if session exists
+	session, err := store.GetSession(context.Background(), s.Name)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	// Determine if archiving or unarchiving
+	isArchiving := !session.IsArchived
+
+	if isArchiving {
+		// Archiving workflow
+		if !s.Force {
+			fmt.Printf("Are you sure you want to archive session '%s'? (y/N): ", s.Name)
+			var response string
+			fmt.Scanln(&response)
+			if response != "y" && response != "Y" {
+				fmt.Println("Cancelled")
+				return nil
+			}
+		}
+
+		// Handle worktree removal
+		removeWorktree := s.RemoveWorktree
+		if session.WorktreePath != "" && !s.SkipWorktreePrompt && !s.RemoveWorktree {
+			fmt.Printf("Remove associated worktree at '%s'? (y/N): ", session.WorktreePath)
+			var response string
+			fmt.Scanln(&response)
+			removeWorktree = (response == "y" || response == "Y")
+		}
+
+		// Remove worktree if requested
+		if removeWorktree && session.WorktreePath != "" {
+			if err := git.RemoveWorktree(session.RepoPath, session.WorktreePath); err != nil {
+				fmt.Printf("⚠ Warning: Failed to remove worktree: %v\n", err)
+				fmt.Println("Continuing with archiving...")
+			} else {
+				fmt.Printf("✓ Removed worktree at '%s'\n", session.WorktreePath)
+			}
+		}
+
+		// Archive the session
+		if err := store.ToggleArchive(context.Background(), s.Name); err != nil {
+			return fmt.Errorf("failed to archive session: %w", err)
+		}
+
+		fmt.Printf("✓ Session '%s' archived successfully\n", s.Name)
+	} else {
+		// Unarchiving workflow
+		if err := store.ToggleArchive(context.Background(), s.Name); err != nil {
+			return fmt.Errorf("failed to unarchive session: %w", err)
+		}
+
+		fmt.Printf("✓ Session '%s' unarchived successfully\n", s.Name)
+	}
+
+	return nil
 }
 
 // SessionsListCmd lists all sessions
 type SessionsListCmd struct {
-	Format string `help:"Output format: table or json" enum:"table,json" default:"table"`
+	Format       string `help:"Output format: table or json" enum:"table,json" default:"table"`
+	ShowArchived bool   `help:"Show archived sessions" short:"a"`
 }
 
 // Run executes the list command
@@ -33,7 +110,7 @@ func (s *SessionsListCmd) Run(cli *CLI) error {
 	}
 	defer store.Close()
 
-	sessions, err := store.ListSessions(context.Background())
+	sessions, err := store.ListSessions(context.Background(), s.ShowArchived)
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}
@@ -49,14 +126,19 @@ func (s *SessionsListCmd) Run(cli *CLI) error {
 
 	// Table format
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tDISPLAY NAME\tSTATE\tBRANCH\tREPO\tLAST UPDATED")
+	fmt.Fprintln(w, "NAME\tDISPLAY NAME\tSTATE\tBRANCH\tREPO\tARCHIVED\tLAST UPDATED")
 	for _, sess := range sessions {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		archived := ""
+		if sess.IsArchived {
+			archived = "✓"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sess.Name,
 			sess.DisplayName,
 			sess.State,
 			sess.BranchName,
 			sess.RepoInfo,
+			archived,
 			sess.LastUpdated.Format("2006-01-02 15:04:05"))
 	}
 	w.Flush()
@@ -98,6 +180,8 @@ func (s *SessionsViewCmd) Run(cli *CLI) error {
 	fmt.Printf("Display Name: %s\n", session.DisplayName)
 	fmt.Printf("State: %s\n", session.State)
 	fmt.Printf("Execution ID: %s\n", session.ExecutionID)
+	fmt.Printf("Archived: %t\n", session.IsArchived)
+	fmt.Printf("Flagged: %t\n", session.IsFlagged)
 	fmt.Printf("Last Updated: %s\n", session.LastUpdated.Format("2006-01-02 15:04:05"))
 	fmt.Printf("Repo Path: %s\n", session.RepoPath)
 	fmt.Printf("Repo Info: %s\n", session.RepoInfo)

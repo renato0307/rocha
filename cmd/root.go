@@ -193,7 +193,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	defer store.Close()
 
 	// Load state for initial session info
-	st, err := store.Load(context.Background())
+	st, err := store.Load(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load session state: %v", err)
 		logging.Logger.Warn("Failed to load session state", "error", err)

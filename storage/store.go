@@ -187,6 +187,22 @@ func NewStore(dbPath string) (*Store, error) {
 		}
 	}
 
+	// Manually create session_archives table
+	if !migrator.HasTable(&SessionArchive{}) {
+		if err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS session_archives (
+				session_name TEXT PRIMARY KEY,
+				is_archived INTEGER NOT NULL DEFAULT 0,
+				archived_at DATETIME,
+				created_at DATETIME,
+				updated_at DATETIME,
+				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
+			)
+		`).Error; err != nil {
+			return nil, fmt.Errorf("failed to create session_archives table: %w", err)
+		}
+	}
+
 	// Configure connection pool after migration
 	// SQLite with WAL mode can handle multiple readers + 1 writer
 	sqlDB, err := db.DB()
@@ -201,15 +217,22 @@ func NewStore(dbPath string) (*Store, error) {
 }
 
 // Load reads all sessions with ACID guarantees
-func (s *Store) Load(ctx context.Context) (*SessionState, error) {
+func (s *Store) Load(ctx context.Context, showArchived bool) (*SessionState, error) {
 	var state SessionState
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			// Load top-level sessions only (parent_name IS NULL), ordered by position
 			// Use secondary sort by name for consistent ordering when positions are equal
+			query := tx.Where("parent_name IS NULL")
+
+			// Filter archived sessions unless showArchived is true
+			if !showArchived {
+				query = query.Where("name NOT IN (SELECT session_name FROM session_archives WHERE is_archived = 1)")
+			}
+
 			var sessions []Session
-			if err := tx.Where("parent_name IS NULL").Order("position ASC, name ASC").Find(&sessions).Error; err != nil {
+			if err := query.Order("position ASC, name ASC").Find(&sessions).Error; err != nil {
 				return fmt.Errorf("failed to load sessions: %w", err)
 			}
 
@@ -236,6 +259,12 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 				logging.Logger.Debug("session_statuses table doesn't exist yet, skipping status loading")
 			}
 
+			// Load all archives at once
+			var archives []SessionArchive
+			if err := tx.Find(&archives).Error; err != nil {
+				return fmt.Errorf("failed to load archives: %w", err)
+			}
+
 			// Build flag lookup map
 			flagMap := make(map[string]bool)
 			for _, flag := range flags {
@@ -256,6 +285,14 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 			for _, comment := range comments {
 				if comment.Comment != "" {
 					commentMap[comment.SessionName] = comment.Comment
+				}
+			}
+
+			// Build archive lookup map
+			archiveMap := make(map[string]bool)
+			for _, archive := range archives {
+				if archive.IsArchived {
+					archiveMap[archive.SessionName] = true
 				}
 			}
 
@@ -294,22 +331,23 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 			}
 
 			for i, sess := range sessions {
-				// Get flag state, status, and comment for top-level session
+				// Get flag state, status, comment, and archive for top-level session
 				isFlagged := flagMap[sess.Name]
 				comment := commentMap[sess.Name]
+				isArchived := archiveMap[sess.Name]
 
 				// Load nested session if exists (parent_name = this session's name)
 				var nestedSession Session
 				err := tx.Where("parent_name = ?", sess.Name).First(&nestedSession).Error
 				if err == nil {
-					// Nested session found (nested sessions are never flagged, don't have status, and no comment)
-					nestedInfo := convertToSessionInfo(nestedSession, false, nil, "")
-					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap, comment)
+					// Nested session found (nested sessions are never flagged, don't have status, no comment, and not archived)
+					nestedInfo := convertToSessionInfo(nestedSession, false, nil, "", false)
+					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived)
 					sessInfo.ShellSession = &nestedInfo
 					state.Sessions[sess.Name] = sessInfo
 				} else if errors.Is(err, gorm.ErrRecordNotFound) {
 					// No nested session
-					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap, comment)
+					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived)
 				} else {
 					return fmt.Errorf("failed to load nested session for %s: %w", sess.Name, err)
 				}
@@ -611,6 +649,41 @@ func (s *Store) UpdateComment(ctx context.Context, sessionName, comment string) 
 	}, 3)
 }
 
+// ToggleArchive toggles the archive state for a session
+func (s *Store) ToggleArchive(ctx context.Context, sessionName string) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var archive SessionArchive
+			err := tx.Where("session_name = ?", sessionName).First(&archive).Error
+
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// No archive record exists, create as archived
+				now := time.Now().UTC()
+				archive = SessionArchive{
+					IsArchived:  true,
+					SessionName: sessionName,
+					ArchivedAt:  &now,
+				}
+				return tx.Create(&archive).Error
+			}
+			if err != nil {
+				return fmt.Errorf("failed to load archive: %w", err)
+			}
+
+			// Toggle existing archive
+			archive.IsArchived = !archive.IsArchived
+			if archive.IsArchived {
+				now := time.Now().UTC()
+				archive.ArchivedAt = &now
+			} else {
+				archive.ArchivedAt = nil
+			}
+
+			return tx.Save(&archive).Error
+		})
+	}, 3)
+}
+
 // AddSession adds a new session to the database at the top (position = min - 1)
 func (s *Store) AddSession(ctx context.Context, sessInfo SessionInfo) error {
 	return withRetry(func() error {
@@ -665,6 +738,7 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	var flag SessionFlag
 	var status SessionStatus
 	var comment SessionComment
+	var archive SessionArchive
 	statusMap := make(map[string]*string)
 
 	err := withRetry(func() error {
@@ -695,6 +769,12 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 				return err
 			}
 
+			// Try to get archive
+			err = tx.Where("session_name = ?", name).First(&archive).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
 			// Try to get nested session
 			err = tx.Where("parent_name = ?", name).First(&nestedSession).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -714,11 +794,12 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 
 	isFlagged := flag.IsFlagged
 	commentText := comment.Comment
-	info := convertToSessionInfo(session, isFlagged, statusMap, commentText)
+	isArchived := archive.IsArchived
+	info := convertToSessionInfo(session, isFlagged, statusMap, commentText, isArchived)
 
-	// Add nested session if found (nested sessions are never flagged, don't have status, and no comment)
+	// Add nested session if found (nested sessions are never flagged, don't have status, no comment, and not archived)
 	if nestedSession.Name != "" {
-		nestedInfo := convertToSessionInfo(nestedSession, false, nil, "")
+		nestedInfo := convertToSessionInfo(nestedSession, false, nil, "", false)
 		info.ShellSession = &nestedInfo
 	}
 
@@ -726,17 +807,25 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 }
 
 // ListSessions returns all top-level sessions with their nested sessions
-func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
+func (s *Store) ListSessions(ctx context.Context, showArchived bool) ([]SessionInfo, error) {
 	var sessions []Session
 	var allSessions []Session
 	var flags []SessionFlag
 	var statuses []SessionStatus
 	var comments []SessionComment
+	var archives []SessionArchive
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			// Get top-level sessions
-			if err := tx.Where("parent_name IS NULL").Find(&sessions).Error; err != nil {
+			query := tx.Where("parent_name IS NULL")
+
+			// Filter archived sessions unless showArchived is true
+			if !showArchived {
+				query = query.Where("name NOT IN (SELECT session_name FROM session_archives WHERE is_archived = 1)")
+			}
+
+			if err := query.Find(&sessions).Error; err != nil {
 				return err
 			}
 
@@ -759,6 +848,11 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 
 			// Get all comments
 			if err := tx.Find(&comments).Error; err != nil {
+				return err
+			}
+
+			// Get all archives
+			if err := tx.Find(&archives).Error; err != nil {
 				return err
 			}
 
@@ -801,16 +895,25 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 		}
 	}
 
+	// Build archive lookup map
+	archiveMap := make(map[string]bool)
+	for _, archive := range archives {
+		if archive.IsArchived {
+			archiveMap[archive.SessionName] = true
+		}
+	}
+
 	// Convert to SessionInfo with nested sessions
 	result := make([]SessionInfo, len(sessions))
 	for i, sess := range sessions {
 		isFlagged := flagMap[sess.Name]
 		comment := commentMap[sess.Name]
-		info := convertToSessionInfo(sess, isFlagged, statusMap, comment)
+		isArchived := archiveMap[sess.Name]
+		info := convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived)
 
-		// Add nested session if exists (nested sessions are never flagged, don't have status, and no comment)
+		// Add nested session if exists (nested sessions are never flagged, don't have status, no comment, and not archived)
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedInfo := convertToSessionInfo(nested, false, nil, "")
+			nestedInfo := convertToSessionInfo(nested, false, nil, "", false)
 			info.ShellSession = &nestedInfo
 		}
 
@@ -850,7 +953,7 @@ func withRetry(fn func() error, maxRetries int) error {
 }
 
 // Helper conversion functions
-func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string, comment string) SessionInfo {
+func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string, comment string, isArchived bool) SessionInfo {
 	var status *string
 	if statusMap != nil {
 		if s, ok := statusMap[s.Name]; ok {
@@ -864,6 +967,7 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 		DisplayName:  s.DisplayName,
 		ExecutionID:  s.ExecutionID,
 		GitStats:     nil, // Not persisted
+		IsArchived:   isArchived,
 		IsFlagged:    isFlagged,
 		LastUpdated:  s.LastUpdated,
 		Name:         s.Name,

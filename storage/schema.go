@@ -48,3 +48,12 @@ type SessionComment struct {
 	SessionName string `gorm:"primaryKey"`
 	UpdatedAt   time.Time
 }
+
+// SessionArchive represents archive status for a session (extension table)
+type SessionArchive struct {
+	ArchivedAt  *time.Time `gorm:"default:null"`
+	CreatedAt   time.Time
+	IsArchived  bool   `gorm:"not null;default:false"`
+	SessionName string `gorm:"primaryKey"`
+	UpdatedAt   time.Time
+}

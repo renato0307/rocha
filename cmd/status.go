@@ -22,7 +22,7 @@ func (s *StatusCmd) Run(cli *CLI) error {
 	}
 	defer store.Close()
 
-	st, err := store.Load(context.Background())
+	st, err := store.Load(context.Background(), false)
 	if err != nil {
 		// No state
 		fmt.Printf("%s:? %s:? %s:?", state.SymbolWaitingUser, state.SymbolIdle, state.SymbolWorking)
