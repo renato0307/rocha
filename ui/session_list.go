@@ -451,7 +451,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return sl, nil
 
 		case "esc":
-			// Handle ESC when not filtering (filter-clearing is handled in guard clause above)
+			// Handle double-ESC for filter clearing (only when filtering)
 			if sl.list.FilterState() != list.Unfiltered {
 				now := time.Now()
 				if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
@@ -464,6 +464,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				sl.escPressCount = 1
 				sl.escPressTime = now
 			}
+			// When not filtering, ESC does nothing (only q and ctrl+c exit)
+			return sl, nil
 		}
 
 	case tea.WindowSizeMsg:
