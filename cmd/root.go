@@ -138,8 +138,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	statusConfig := ui.NewStatusConfig(r.Statuses, r.StatusIcons, r.StatusColors)
 	p := tea.NewProgram(
 		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, r.Dev),
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithMouseCellMotion(), // Enable mouse support
+		tea.WithAltScreen(), // Use alternate screen buffer
 	)
 
 	logging.Logger.Info("Starting TUI program")
