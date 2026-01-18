@@ -241,6 +241,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
+		case "shift+up", "shift+k":
+			return sl, sl.moveSelectedUp()
+
+		case "shift+down", "shift+j":
+			return sl, sl.moveSelectedDown()
+
 		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
 			// Quick attach to session by number
 			numStr := msg.String()[4:] // Skip "alt+"
@@ -323,7 +329,7 @@ func (sl *SessionList) View() string {
 	// Add custom help (status legend first, then keys)
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
-	helpText += "↑/k: up • ↓/j: down • /: filter • n: new • r: rename • x: kill • q: quit\n"
+	helpText += "↑/k: up • ↓/j: down • Shift+↑/K: move up • Shift+↓/J: move down • /: filter • n: new • r: rename • x: kill • q: quit\n"
 	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨)"
 
 	s += helpStyle.Render(helpText)
@@ -361,21 +367,32 @@ func pollStateCmd() tea.Cmd {
 // buildListItems converts SessionState to list items
 func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []list.Item {
 	var items []list.Item
-	var sessions []*tmux.Session
 
 	// Build sessions from state
 	// No need to filter - shell sessions won't have top-level entries with nested structure!
+	sessionsMap := make(map[string]*tmux.Session)
 	for name, info := range sessionState.Sessions {
-		sessions = append(sessions, &tmux.Session{
+		sessionsMap[name] = &tmux.Session{
 			Name:      name,
 			CreatedAt: info.LastUpdated,
-		})
+		}
 	}
 
-	// Sort by name
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].Name < sessions[j].Name
-	})
+	// Initialize OrderedSessionNames if empty (first time)
+	if len(sessionState.OrderedSessionNames) == 0 && len(sessionsMap) > 0 {
+		// Get all session names and sort alphabetically for initial order
+		var names []string
+		for name := range sessionsMap {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		sessionState.OrderedSessionNames = names
+		sessionState.Save() // Persist the initial order
+	}
+
+	// Apply manual order
+	var sessions []*tmux.Session
+	sessions = applyManualOrder(sessionsMap, sessionState.OrderedSessionNames)
 
 	// Convert to list items
 	for _, session := range sessions {
@@ -409,6 +426,37 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 	}
 
 	return items
+}
+
+// applyManualOrder orders sessions according to OrderedSessionNames
+// Sessions in the order list come first, followed by unordered sessions alphabetically
+func applyManualOrder(sessionsMap map[string]*tmux.Session, orderedNames []string) []*tmux.Session {
+	var ordered []*tmux.Session
+	orderedSet := make(map[string]bool)
+
+	// Add sessions in manual order
+	for _, name := range orderedNames {
+		if session, exists := sessionsMap[name]; exists {
+			ordered = append(ordered, session)
+			orderedSet[name] = true
+		}
+	}
+
+	// Find sessions not in order list and add them alphabetically at end
+	var unordered []string
+	for name := range sessionsMap {
+		if !orderedSet[name] {
+			unordered = append(unordered, name)
+		}
+	}
+	sort.Strings(unordered)
+
+	// Append unordered sessions
+	for _, name := range unordered {
+		ordered = append(ordered, sessionsMap[name])
+	}
+
+	return ordered
 }
 
 // renderStatusLegend renders the status legend with counts
@@ -464,4 +512,59 @@ func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
 	}
 
 	return true
+}
+
+// moveSelectedUp moves the currently selected session up one position in the order
+func (sl *SessionList) moveSelectedUp() tea.Cmd {
+	item, ok := sl.list.SelectedItem().(SessionItem)
+	if !ok {
+		return nil
+	}
+
+	currentIndex := sl.list.Index()
+	if currentIndex <= 0 {
+		return nil // Already at top
+	}
+
+	// Move session up in state
+	if err := sl.sessionState.MoveSessionUp(item.Session.Name); err != nil {
+		logging.Logger.Warn("Failed to move session up", "session", item.Session.Name, "error", err)
+		return nil
+	}
+
+	// Reload state and rebuild list
+	sl.RefreshFromState()
+
+	// Adjust cursor to follow moved item
+	sl.list.Select(currentIndex - 1)
+
+	return pollStateCmd()
+}
+
+// moveSelectedDown moves the currently selected session down one position in the order
+func (sl *SessionList) moveSelectedDown() tea.Cmd {
+	item, ok := sl.list.SelectedItem().(SessionItem)
+	if !ok {
+		return nil
+	}
+
+	currentIndex := sl.list.Index()
+	items := sl.list.Items()
+	if currentIndex >= len(items)-1 {
+		return nil // Already at bottom
+	}
+
+	// Move session down in state
+	if err := sl.sessionState.MoveSessionDown(item.Session.Name); err != nil {
+		logging.Logger.Warn("Failed to move session down", "session", item.Session.Name, "error", err)
+		return nil
+	}
+
+	// Reload state and rebuild list
+	sl.RefreshFromState()
+
+	// Adjust cursor to follow moved item
+	sl.list.Select(currentIndex + 1)
+
+	return pollStateCmd()
 }

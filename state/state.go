@@ -27,9 +27,11 @@ const (
 
 // SessionState represents the persistent state of all Claude sessions
 type SessionState struct {
-	ExecutionID string                 `json:"execution_id"` // UUID for current rocha run
-	Sessions    map[string]SessionInfo `json:"sessions"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ExecutionID         string                 `json:"execution_id"` // UUID for current rocha run
+	Sessions            map[string]SessionInfo `json:"sessions"`
+	UpdatedAt           time.Time              `json:"updated_at"`
+	SortOrder           string                 `json:"sort_order"`                  // Session list sort order: "name", "updated", "created", "state"
+	OrderedSessionNames []string               `json:"ordered_session_names,omitempty"` // Manual order of sessions
 }
 
 // SessionInfo represents the state of a single session
@@ -309,6 +311,11 @@ func Load() (*SessionState, error) {
 		state.Sessions = make(map[string]SessionInfo)
 	}
 
+	// Initialize default sort order if not set
+	if state.SortOrder == "" {
+		state.SortOrder = "name"
+	}
+
 	// Process queued events before returning (this will save state if events were processed)
 	if err := processQueueEvents(&state); err != nil {
 		logging.Logger.Warn("Failed to process queue events", "error", err)
@@ -566,6 +573,75 @@ func (s *SessionState) SyncWithRunning(runningSessionNames []string, newExecutio
 		// If not running in tmux, keep the session in state unchanged
 		// so it can be restarted later
 	}
+
+	return s.Save()
+}
+
+// AddSessionToTop adds a session to the top of the manual order list
+// If the session is already in the list, it moves it to the top
+func (s *SessionState) AddSessionToTop(sessionName string) error {
+	// Remove from current position if it exists
+	for i, name := range s.OrderedSessionNames {
+		if name == sessionName {
+			s.OrderedSessionNames = append(s.OrderedSessionNames[:i], s.OrderedSessionNames[i+1:]...)
+			break
+		}
+	}
+
+	// Add to top
+	s.OrderedSessionNames = append([]string{sessionName}, s.OrderedSessionNames...)
+
+	return s.Save()
+}
+
+// MoveSessionUp moves a session up one position in the manual order
+// Returns error if session is already at the top or not found
+func (s *SessionState) MoveSessionUp(sessionName string) error {
+	// Find session in order list
+	idx := -1
+	for i, name := range s.OrderedSessionNames {
+		if name == sessionName {
+			idx = i
+			break
+		}
+	}
+
+	if idx == -1 {
+		return fmt.Errorf("session %s not found in order list", sessionName)
+	}
+
+	if idx == 0 {
+		return nil // Already at top, no-op
+	}
+
+	// Swap with previous
+	s.OrderedSessionNames[idx], s.OrderedSessionNames[idx-1] = s.OrderedSessionNames[idx-1], s.OrderedSessionNames[idx]
+
+	return s.Save()
+}
+
+// MoveSessionDown moves a session down one position in the manual order
+// Returns error if session is already at the bottom or not found
+func (s *SessionState) MoveSessionDown(sessionName string) error {
+	// Find session in order list
+	idx := -1
+	for i, name := range s.OrderedSessionNames {
+		if name == sessionName {
+			idx = i
+			break
+		}
+	}
+
+	if idx == -1 {
+		return fmt.Errorf("session %s not found in order list", sessionName)
+	}
+
+	if idx == len(s.OrderedSessionNames)-1 {
+		return nil // Already at bottom, no-op
+	}
+
+	// Swap with next
+	s.OrderedSessionNames[idx], s.OrderedSessionNames[idx+1] = s.OrderedSessionNames[idx+1], s.OrderedSessionNames[idx]
 
 	return s.Save()
 }
