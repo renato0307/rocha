@@ -174,19 +174,12 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 		// Continue anyway - session is created
 	}
 
-	// Step 6: Attach to tmux session
-	logging.Logger.Info("Attaching to tmux session", "name", sessionName)
+	// Step 6: Inform user that session is ready
+	logging.Logger.Info("Session registered successfully", "name", sessionName)
 
-	detachCh, err := tmuxClient.Attach(sessionName)
-	if err != nil {
-		logging.Logger.Error("Failed to attach to session", "error", err)
-		return fmt.Errorf("failed to attach to session: %w", err)
-	}
+	fmt.Printf("\nSession '%s' is ready!\n", sessionName)
+	fmt.Printf("Start 'rocha' to view and attach to your sessions.\n")
 
-	// Block until user detaches
-	<-detachCh
-
-	logging.Logger.Info("Detached from session", "name", sessionName)
 	return nil
 }
 
