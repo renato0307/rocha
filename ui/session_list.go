@@ -3,11 +3,14 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os"
+	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/tmux"
 	"rocha/version"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -114,7 +117,47 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	var line2 string
 	if item.GitRef != "" {
 		indent := "        " // 8 spaces to align with session name (> 01. ● name)
-		line2 = branchStyle.Render(fmt.Sprintf("%s%s", indent, item.GitRef))
+
+		// Apply colors to +N and -N in the git ref
+		styledGitRef := item.GitRef
+
+		// Split by " | " to process each section
+		parts := strings.Split(styledGitRef, " | ")
+		for i, part := range parts {
+			// Check if this part contains file stats (starts with +digit or has +digit in it)
+			hasFileStats := false
+			words := strings.Fields(part)
+			for _, word := range words {
+				if (strings.HasPrefix(word, "+") || strings.HasPrefix(word, "-")) && len(word) > 1 {
+					// Check if the character after + or - is a digit
+					if len(word) > 1 && word[1] >= '0' && word[1] <= '9' {
+						hasFileStats = true
+						break
+					}
+				}
+			}
+
+			if hasFileStats {
+				// Color file stats: +N in green, -N in red
+				for j, word := range words {
+					if strings.HasPrefix(word, "+") && len(word) > 1 && word[1] >= '0' && word[1] <= '9' {
+						words[j] = additionsStyle.Render(word)
+					} else if strings.HasPrefix(word, "-") && len(word) > 1 && word[1] >= '0' && word[1] <= '9' {
+						words[j] = deletionsStyle.Render(word)
+					} else {
+						// Other parts of stats section stay gray
+						words[j] = branchStyle.Render(word)
+					}
+				}
+				parts[i] = strings.Join(words, " ")
+			} else {
+				// Apply gray color to non-stat parts (branch name, PR, ahead/behind, etc)
+				parts[i] = branchStyle.Render(part)
+			}
+		}
+		styledGitRef = strings.Join(parts, branchStyle.Render(" | "))
+
+		line2 = branchStyle.Render(indent) + styledGitRef
 	}
 
 	// Write both lines
@@ -136,6 +179,9 @@ type SessionList struct {
 	// Escape handling for filter clearing
 	escPressCount int
 	escPressTime  time.Time
+
+	// Git stats fetching
+	fetchingGitStats bool // Prevent concurrent fetches
 
 	// Result fields - set by component, read by Model
 	SelectedSession      *tmux.Session // Session user wants to attach to
@@ -188,6 +234,29 @@ func (sl *SessionList) Init() tea.Cmd {
 // Update handles messages for the session list component
 func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case git.GitStatsReadyMsg:
+		// Git stats successfully fetched
+		if info, exists := sl.sessionState.Sessions[msg.SessionName]; exists {
+			info.GitStats = msg.Stats
+			sl.sessionState.Sessions[msg.SessionName] = info
+		}
+
+		// Rebuild items with updated stats
+		delegate := newSessionDelegate(sl.sessionState)
+		sl.list.SetDelegate(delegate)
+		items := buildListItems(sl.sessionState, sl.tmuxClient)
+		cmd := sl.list.SetItems(items)
+
+		// Mark fetching as done and continue polling
+		sl.fetchingGitStats = false
+		return sl, tea.Batch(cmd, pollStateCmd())
+
+	case git.GitStatsErrorMsg:
+		// Git stats fetch failed - log and continue
+		logging.Logger.Debug("Git stats fetch failed", "session", msg.SessionName, "error", msg.Err)
+		sl.fetchingGitStats = false
+		return sl, pollStateCmd()
+
 	case checkStateMsg:
 		// Auto-refresh: Check if state file has changed
 		newState, err := state.Load()
@@ -198,6 +267,14 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Only update if state actually changed
 		if !newState.UpdatedAt.Equal(sl.sessionState.UpdatedAt) {
+			// Preserve GitStats cache from old state
+			for name, newInfo := range newState.Sessions {
+				if oldInfo, exists := sl.sessionState.Sessions[name]; exists {
+					newInfo.GitStats = oldInfo.GitStats
+					newState.Sessions[name] = newInfo
+				}
+			}
+
 			sl.sessionState = newState
 
 			// Update delegate with new state
@@ -207,10 +284,15 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Rebuild items
 			items := buildListItems(newState, sl.tmuxClient)
 			cmd := sl.list.SetItems(items)
-			return sl, tea.Batch(cmd, pollStateCmd())
+
+			// Request git stats for visible sessions
+			gitStatsCmd := sl.requestGitStatsForVisible()
+			return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
 		}
 
-		return sl, pollStateCmd()
+		// Even if state didn't change, try to fetch git stats
+		gitStatsCmd := sl.requestGitStatsForVisible()
+		return sl, tea.Batch(pollStateCmd(), gitStatsCmd)
 
 	case error:
 		sl.err = msg
@@ -372,6 +454,14 @@ func (sl *SessionList) RefreshFromState() {
 		return
 	}
 
+	// Preserve GitStats cache from old state
+	for name, newInfo := range sessionState.Sessions {
+		if oldInfo, exists := sl.sessionState.Sessions[name]; exists {
+			newInfo.GitStats = oldInfo.GitStats
+			sessionState.Sessions[name] = newInfo
+		}
+	}
+
 	sl.sessionState = sessionState
 
 	// Update delegate
@@ -440,6 +530,33 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 		hasShell := false
 		if info.ShellSession != nil {
 			hasShell = tmuxClient.Exists(info.ShellSession.Name)
+		}
+
+		// Append git stats if available
+		if info.GitStats != nil {
+			if stats, ok := info.GitStats.(*git.GitStats); ok {
+				if stats.Error != nil {
+					// Log the error to help debug why some repos don't show info
+					logging.Logger.Debug("Git stats error for session",
+						"session", session.Name,
+						"error", stats.Error)
+				} else {
+					// Add PR number (if available)
+					if stats.PRNumber != "" {
+						gitRef += fmt.Sprintf(" | #%s", stats.PRNumber)
+					}
+
+					// Add ahead/behind (if non-zero)
+					if stats.Ahead > 0 || stats.Behind > 0 {
+						gitRef += fmt.Sprintf(" | ↑%d ↓%d", stats.Ahead, stats.Behind)
+					}
+
+					// Add file stats (if non-zero)
+					if stats.Additions > 0 || stats.Deletions > 0 {
+						gitRef += fmt.Sprintf(" | +%d -%d", stats.Additions, stats.Deletions)
+					}
+				}
+			}
 		}
 
 		items = append(items, SessionItem{
@@ -593,4 +710,111 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 	sl.list.Select(currentIndex + 1)
 
 	return pollStateCmd()
+}
+
+// requestGitStatsForVisible fetches git stats for visible sessions
+// Returns a tea.Cmd that will fetch stats asynchronously
+func (sl *SessionList) requestGitStatsForVisible() tea.Cmd {
+	// Don't start a new fetch if one is already in progress
+	if sl.fetchingGitStats {
+		return nil
+	}
+
+	// Get visible items
+	visibleItems := sl.list.VisibleItems()
+	if len(visibleItems) == 0 {
+		return nil
+	}
+
+	// Collect requests for sessions that need stats
+	var requests []git.GitStatsRequest
+	selectedIndex := sl.list.Index()
+
+	for i, item := range visibleItems {
+		sessionItem, ok := item.(SessionItem)
+		if !ok {
+			continue
+		}
+
+		// Get session info
+		info, exists := sl.sessionState.Sessions[sessionItem.Session.Name]
+		if !exists {
+			logging.Logger.Debug("Session not in state, skipping git stats",
+				"session", sessionItem.Session.Name)
+			continue
+		}
+
+		// Determine which path to use for git stats
+		// Prefer worktree path, fall back to repo path
+		gitPath := info.WorktreePath
+		if gitPath == "" {
+			gitPath = info.RepoPath
+		}
+
+		if gitPath == "" {
+			logging.Logger.Debug("No git path for session, skipping git stats",
+				"session", sessionItem.Session.Name)
+			continue
+		}
+
+		// Check if git path exists
+		if _, err := os.Stat(gitPath); os.IsNotExist(err) {
+			logging.Logger.Debug("Git path does not exist, skipping git stats",
+				"session", sessionItem.Session.Name,
+				"path", gitPath)
+			continue
+		}
+
+		// Check if stats are fresh (< 5 seconds old)
+		if info.GitStats != nil {
+			if stats, ok := info.GitStats.(*git.GitStats); ok {
+				if time.Since(stats.FetchedAt) < 5*time.Second {
+					continue // Stats are fresh, skip
+				}
+			}
+		}
+
+		// Add request with priority (selected = 1, others = 0)
+		priority := 0
+		if i == selectedIndex {
+			priority = 1
+		}
+
+		requests = append(requests, git.GitStatsRequest{
+			SessionName:  sessionItem.Session.Name,
+			WorktreePath: gitPath, // Use gitPath which can be either worktree or repo path
+			Priority:     priority,
+		})
+
+		// Limit to 5 requests per cycle to fetch faster while preventing git storms
+		if len(requests) >= 5 {
+			break
+		}
+	}
+
+	if len(requests) == 0 {
+		return nil
+	}
+
+	// Sort by priority (higher first)
+	if len(requests) > 1 {
+		for i := 0; i < len(requests)-1; i++ {
+			for j := i + 1; j < len(requests); j++ {
+				if requests[j].Priority > requests[i].Priority {
+					requests[i], requests[j] = requests[j], requests[i]
+				}
+			}
+		}
+	}
+
+	// Mark as fetching
+	sl.fetchingGitStats = true
+
+	// Start fetchers for all requests in parallel
+	var cmds []tea.Cmd
+	for _, req := range requests {
+		cmds = append(cmds, git.StartGitStatsFetcher(req))
+	}
+
+	return tea.Batch(cmds...)
 }
