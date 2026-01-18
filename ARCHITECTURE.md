@@ -235,7 +235,7 @@ Claude Code hooks trigger state transitions:
 #### cmd/
 CLI command handlers using Kong framework.
 - `RunCmd` - Start TUI
-- `AttachCmd` - Attach to session
+- `AttachCmd` - Register session (creates tmux session, updates state)
 - `StatusCmd` - Status bar (`◐:N ○:N ●:N ■:N`)
 - `SetupCmd` - Shell integration
 - `StartClaudeCmd` - Bootstrap Claude Code with hooks (hidden)
