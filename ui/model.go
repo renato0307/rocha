@@ -63,6 +63,7 @@ type Model struct {
 	err                error
 	worktreePath       string
 	editor             string         // Editor to open sessions in
+	errorClearDelay    time.Duration  // Duration before errors auto-clear
 	form               *huh.Form      // Form for worktree removal confirmation
 	sessionForm        *SessionForm   // Session creation form
 	sessionRenameForm  *SessionRenameForm // Session rename form
@@ -70,7 +71,7 @@ type Model struct {
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
 }
 
-func NewModel(tmuxClient tmux.Client, worktreePath string, editor string) *Model {
+func NewModel(tmuxClient tmux.Client, worktreePath string, editor string, errorClearDelay time.Duration) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := state.Load()
 	var errMsg error
@@ -84,13 +85,14 @@ func NewModel(tmuxClient tmux.Client, worktreePath string, editor string) *Model
 	sessionList := NewSessionList(tmuxClient, editor)
 
 	return &Model{
-		tmuxClient:   tmuxClient,
-		sessionList:  sessionList,
-		sessionState: sessionState,
-		state:        stateList,
-		err:          errMsg,
-		worktreePath: worktreePath,
-		editor:       editor,
+		tmuxClient:      tmuxClient,
+		sessionList:     sessionList,
+		sessionState:    sessionState,
+		state:           stateList,
+		err:             errMsg,
+		worktreePath:    worktreePath,
+		editor:          editor,
+		errorClearDelay: errorClearDelay,
 	}
 }
 
@@ -116,7 +118,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle clear error message
 	if _, ok := msg.(clearErrorMsg); ok {
-		m.err = nil
+		m.clearError()
 		return m, nil
 	}
 
@@ -132,6 +134,12 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateList
 		m.sessionList.RefreshFromState()
 		return m, m.sessionList.Init()
+	}
+
+	// Hidden test command: alt+shift+e generates Model-level error (persists 5 seconds)
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "alt+E" {
+		m.setError(fmt.Errorf("this is a persistent Model-level test error that demonstrates the error display functionality with automatic height adjustment and will clear after five seconds to verify that the list height properly expands back to normal and ensures all session items remain visible throughout the entire error lifecycle"))
+		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 	}
 
 	// Delegate to SessionList component
@@ -205,12 +213,12 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sessionInfo, exists := m.sessionState.Sessions[session.Name]
 		if !exists || sessionInfo.WorktreePath == "" {
 			m.err = fmt.Errorf("no worktree associated with session '%s'", session.Name)
-			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 		}
 
 		if err := editor.OpenInEditor(sessionInfo.WorktreePath, m.editor); err != nil {
 			m.err = fmt.Errorf("failed to open editor: %w", err)
-			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 		}
 
 		return m, m.sessionList.Init()
@@ -221,6 +229,12 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionForm = NewSessionForm(m.tmuxClient, m.worktreePath, m.sessionState)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
+	}
+
+	if m.sessionList.RequestTestError {
+		m.sessionList.RequestTestError = false
+		m.setError(fmt.Errorf("this is a very long test error message to verify that the error display truncation functionality works correctly and ensures that error text wraps properly across multiple lines and eventually gets truncated with ellipsis if it exceeds the maximum allowed length of three lines which should be enforced by the formatErrorForDisplay function"))
+		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 	}
 
 	return m, cmd
@@ -252,18 +266,18 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check if session creation failed
 		if result.Error != nil {
-			m.err = fmt.Errorf("failed to create session: %w", result.Error)
-			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+			m.setError(fmt.Errorf("failed to create session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 		}
 
 		if !result.Cancelled {
 			// Reload session state
 			sessionState, err := state.Load()
 			if err != nil {
-				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
+				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 				log.Printf("Warning: failed to reload session state: %v", err)
 				m.sessionList.RefreshFromState()
-				return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 			} else {
 				m.sessionState = sessionState
 			}
@@ -303,17 +317,17 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check if rename failed
 		if result.Error != nil {
-			m.err = fmt.Errorf("failed to rename session: %w", result.Error)
-			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+			m.setError(fmt.Errorf("failed to rename session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 		}
 
 		if !result.Cancelled {
 			// Reload session state
 			sessionState, err := state.Load()
 			if err != nil {
-				m.err = fmt.Errorf("failed to refresh sessions: %w", err)
+				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 				m.sessionList.RefreshFromState()
-				return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 			} else {
 				m.sessionState = sessionState
 			}
@@ -331,9 +345,9 @@ type detachedMsg struct{}
 
 type clearErrorMsg struct{}
 
-// clearErrorAfterDelay returns a command that sends clearErrorMsg after a delay
-func clearErrorAfterDelay() tea.Cmd {
-	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+// clearErrorAfterDelay returns a command that sends clearErrorMsg after the configured delay
+func (m *Model) clearErrorAfterDelay() tea.Cmd {
+	return tea.Tick(m.errorClearDelay, func(time.Time) tea.Msg {
 		return clearErrorMsg{}
 	})
 }
@@ -432,8 +446,8 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 
 	// Kill main Claude session
 	if err := m.tmuxClient.Kill(session.Name); err != nil {
-		m.err = fmt.Errorf("failed to kill session '%s': %w", session.Name, err)
-		return tea.Batch(m.sessionList.Init(), clearErrorAfterDelay()) // Continue polling and clear error after delay
+		m.setError(fmt.Errorf("failed to kill session '%s': %w", session.Name, err))
+		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay()) // Continue polling and clear error after delay
 	}
 
 	// Check if session has worktree and remove it from state
@@ -499,7 +513,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 		if removeWorktree {
 			logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
 			if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
-				m.err = fmt.Errorf("failed to remove worktree: %w", err)
+				m.setError(fmt.Errorf("failed to remove worktree: %w", err))
 				logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
 				worktreeErr = true
 			} else {
@@ -520,7 +534,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 
 		// If there was a worktree error, add clearErrorAfterDelay to the batch
 		if worktreeErr {
-			return m, tea.Batch(killCmd, clearErrorAfterDelay())
+			return m, tea.Batch(killCmd, m.clearErrorAfterDelay())
 		}
 		return m, killCmd
 	}
@@ -549,10 +563,15 @@ func (m *Model) View() string {
 	case stateList:
 		view := m.sessionList.View()
 
-		// Display model-level errors (e.g., from killSession failures)
+		// Always reserve 2 lines for errors (keeps layout stable)
+		view += "\n"
 		if m.err != nil {
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-			view += "\n" + errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
+			errorText := formatErrorForDisplay(m.err, m.width)
+			view += errorStyle.Render(errorText)
+		} else {
+			// Empty line to maintain spacing
+			view += " "
 		}
 
 		return view
@@ -570,4 +589,15 @@ func (m *Model) View() string {
 		}
 	}
 	return ""
+}
+
+// setError sets model error.
+// Error will be displayed in the reserved 2-line error area.
+func (m *Model) setError(err error) {
+	m.err = err
+}
+
+// clearError clears model error.
+func (m *Model) clearError() {
+	m.err = nil
 }

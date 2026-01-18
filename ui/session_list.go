@@ -129,6 +129,10 @@ type SessionList struct {
 	err          error
 	editor       string // Editor to open sessions in
 
+	// Window dimensions
+	width  int
+	height int
+
 	// Escape handling for filter clearing
 	escPressCount int
 	escPressTime  time.Time
@@ -140,6 +144,7 @@ type SessionList struct {
 	SessionToRename      *tmux.Session // Session user wants to rename
 	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
 	RequestNewSession    bool          // User pressed 'n'
+	RequestTestError     bool          // User pressed 'alt+e' (test command)
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
 
@@ -286,6 +291,11 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
+		case "alt+e":
+			// Hidden test command: Request Model to generate test error
+			sl.RequestTestError = true
+			return sl, nil
+
 		case "esc":
 			// Handle double-ESC for filter clearing
 			if sl.list.FilterState() != list.Unfiltered {
@@ -303,12 +313,18 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		// Update list size - reserve space for:
+		// Store dimensions
+		sl.width = msg.Width
+		sl.height = msg.Height
+
+		// Calculate list size - reserve space for:
 		// - Header: 2 lines (title + tagline)
 		// - Spacing after header: 2 lines
-		// - Help text: 6 lines
+		// - Help text: 6 lines (legend + keys)
 		// - Spacing before help: 2 lines
-		sl.list.SetSize(msg.Width, msg.Height-12)
+		// - Error space: 2 lines (always reserved)
+		// Total reserved: 14 lines
+		sl.list.SetSize(msg.Width, msg.Height-14)
 	}
 
 	// Delegate to list for normal handling
@@ -329,9 +345,10 @@ func (sl *SessionList) View() string {
 	// Render list
 	s += sl.list.View()
 
-	// Show error if any
+	// Show SessionList error if any (transient, limited to 2 lines)
 	if sl.err != nil {
-		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(fmt.Sprintf("Error: %v", sl.err))
+		errorText := formatErrorForDisplay(sl.err, sl.width)
+		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(errorText)
 		sl.err = nil
 	}
 
