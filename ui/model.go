@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"log"
+	"rocha/editor"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
@@ -61,6 +62,7 @@ type Model struct {
 	height             int
 	err                error
 	worktreePath       string
+	editor             string         // Editor to open sessions in
 	form               *huh.Form      // Form for worktree removal confirmation
 	sessionForm        *SessionForm   // Session creation form
 	sessionRenameForm  *SessionRenameForm // Session rename form
@@ -68,7 +70,7 @@ type Model struct {
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
 }
 
-func NewModel(tmuxClient tmux.Client, worktreePath string) *Model {
+func NewModel(tmuxClient tmux.Client, worktreePath string, editor string) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := state.Load()
 	var errMsg error
@@ -79,7 +81,7 @@ func NewModel(tmuxClient tmux.Client, worktreePath string) *Model {
 	}
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient)
+	sessionList := NewSessionList(tmuxClient, editor)
 
 	return &Model{
 		tmuxClient:   tmuxClient,
@@ -88,6 +90,7 @@ func NewModel(tmuxClient tmux.Client, worktreePath string) *Model {
 		state:        stateList,
 		err:          errMsg,
 		worktreePath: worktreePath,
+		editor:       editor,
 	}
 }
 
@@ -193,6 +196,24 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.sessionState, session.Name, currentDisplayName)
 		m.state = stateRenamingSession
 		return m, m.sessionRenameForm.Init()
+	}
+
+	if m.sessionList.SessionToOpenEditor != nil {
+		session := m.sessionList.SessionToOpenEditor
+		m.sessionList.SessionToOpenEditor = nil
+
+		sessionInfo, exists := m.sessionState.Sessions[session.Name]
+		if !exists || sessionInfo.WorktreePath == "" {
+			m.err = fmt.Errorf("no worktree associated with session '%s'", session.Name)
+			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+		}
+
+		if err := editor.OpenInEditor(sessionInfo.WorktreePath, m.editor); err != nil {
+			m.err = fmt.Errorf("failed to open editor: %w", err)
+			return m, tea.Batch(m.sessionList.Init(), clearErrorAfterDelay())
+		}
+
+		return m, m.sessionList.Init()
 	}
 
 	if m.sessionList.RequestNewSession {

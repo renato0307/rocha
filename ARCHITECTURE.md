@@ -18,6 +18,7 @@ graph TB
         TMUX[Tmux Client<br/>tmux/]
         STATE[State Manager<br/>state/]
         GIT[Git Operations<br/>git/]
+        EDITOR[Editor Opener<br/>editor/]
     end
 
     subgraph "Cross-Cutting Concerns"
@@ -39,6 +40,7 @@ graph TB
     TUI --> TMUX
     TUI --> STATE
     TUI --> GIT
+    TUI --> EDITOR
     TMUX --> TMUXCLI
     STATE --> FS
     GIT --> GITCLI
@@ -271,6 +273,12 @@ Git worktree operations.
 - Branch detection
 - Repository metadata extraction
 
+#### editor/
+Editor integration with platform-specific defaults.
+- Build-tag based platform detection (linux, darwin, windows)
+- Fallback chain: CLI flag → `$ROCHA_EDITOR` → `$VISUAL` → `$EDITOR` → platform defaults
+- Non-blocking editor launch
+
 ### Cross-Cutting Concerns
 
 #### logging/
@@ -301,6 +309,7 @@ graph LR
         TMUX[tmux]
         GIT[git]
         CLAUDE[claude<br/>Claude Code CLI]
+        CODE[code<br/>VS Code/Editor]
     end
 
     APP[Rocha] --> KONG
@@ -311,6 +320,7 @@ graph LR
     APP --> TMUX
     APP --> GIT
     APP -.-> CLAUDE
+    APP -.-> CODE
 ```
 
 **Go Libraries:**
@@ -326,6 +336,7 @@ graph LR
 - `tmux` - Terminal multiplexer (required)
 - `git` - Version control (required for worktrees)
 - `claude` - Claude Code CLI (bootstrapped automatically, dotted line indicates it's spawned not directly called)
+- `code` - VS Code or other editor (optional, dotted line indicates it's spawned via 'o' key, falls back to shell)
 
 
 <!-- Keep this document more visual than textual, an image is better than 1000 words -->

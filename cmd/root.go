@@ -59,6 +59,7 @@ func (c *CLI) AfterApply() error {
 // RunCmd starts the TUI application
 type RunCmd struct {
 	WorktreePath string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
+	Editor       string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 }
 
 // Run executes the TUI
@@ -166,7 +167,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, r.WorktreePath),
+		ui.NewModel(tmuxClient, r.WorktreePath, r.Editor),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
