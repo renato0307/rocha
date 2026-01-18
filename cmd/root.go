@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
@@ -58,8 +59,9 @@ func (c *CLI) AfterApply() error {
 
 // RunCmd starts the TUI application
 type RunCmd struct {
-	WorktreePath string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
-	Editor       string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
+	WorktreePath    string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
+	Editor          string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
+	ErrorClearDelay int    `help:"Seconds before error messages auto-clear" default:"10"`
 }
 
 // Run executes the TUI
@@ -166,8 +168,9 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
+	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, r.WorktreePath, r.Editor),
+		ui.NewModel(tmuxClient, r.WorktreePath, r.Editor, errorClearDelay),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
