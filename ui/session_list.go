@@ -106,7 +106,7 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// Add shell session indicator at the end
 	if item.HasShellSession {
 		line1 += " " + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("33")).
+			Foreground(lipgloss.Color("22")).
 			Render("⌨")
 	}
 
@@ -324,7 +324,7 @@ func (sl *SessionList) View() string {
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
 	helpText += "↑/k: up • ↓/j: down • /: filter • n: new • r: rename • x: kill • q: quit\n"
-	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell"
+	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨)"
 
 	s += helpStyle.Render(helpText)
 
