@@ -324,7 +324,29 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return sl, pollStateCmd()
 
 	case tea.KeyMsg:
-		// Handle custom keys before delegating to list
+		// Guard clause: When actively filtering, bypass shortcuts to allow typing
+		if sl.list.FilterState() == list.Filtering {
+			// ESC is the only key we handle specially during filtering
+			if msg.String() == "esc" {
+				now := time.Now()
+				if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
+					// Second ESC - clear filter
+					sl.list.ResetFilter()
+					sl.escPressCount = 0
+					return sl, pollStateCmd()
+				}
+				// First ESC - start counting
+				sl.escPressCount = 1
+				sl.escPressTime = now
+			}
+
+			// For all other keys during filtering, delegate to list immediately
+			var cmd tea.Cmd
+			sl.list, cmd = sl.list.Update(msg)
+			return sl, tea.Batch(cmd, pollStateCmd())
+		}
+
+		// Normal shortcut processing when NOT filtering
 		switch msg.String() {
 		case "ctrl+c", "q":
 			sl.ShouldQuit = true
@@ -428,7 +450,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return sl, nil
 
 		case "esc":
-			// Handle double-ESC for filter clearing
+			// Handle ESC when not filtering (filter-clearing is handled in guard clause above)
 			if sl.list.FilterState() != list.Unfiltered {
 				now := time.Now()
 				if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
