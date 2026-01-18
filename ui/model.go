@@ -346,9 +346,10 @@ func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 	}
 
 	// Check if shell session already exists
-	if sessionInfo.ShellSession != "" {
-		if m.tmuxClient.Exists(sessionInfo.ShellSession) {
-			return sessionInfo.ShellSession
+	if sessionInfo.ShellSession != nil {
+		// Check if tmux session exists
+		if m.tmuxClient.Exists(sessionInfo.ShellSession.Name) {
+			return sessionInfo.ShellSession.Name
 		}
 	}
 
@@ -361,16 +362,31 @@ func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 		workingDir = sessionInfo.RepoPath
 	}
 
-	// Create shell session
+	// Create shell session in tmux
 	_, err := m.tmuxClient.CreateShellSession(shellSessionName, workingDir)
 	if err != nil {
 		m.err = fmt.Errorf("failed to create shell session: %w", err)
 		return ""
 	}
 
-	// Update state
-	sessionInfo.ShellSession = shellSessionName
+	// Create nested SessionInfo for shell session
+	shellInfo := state.SessionInfo{
+		Name:         shellSessionName,
+		ShellSession: nil, // Shell sessions don't have their own shells
+		DisplayName:  "",  // No display name for shell sessions
+		State:        state.StateIdle,
+		ExecutionID:  sessionInfo.ExecutionID,
+		LastUpdated:  time.Now(),
+		RepoPath:     sessionInfo.RepoPath,
+		RepoInfo:     sessionInfo.RepoInfo,
+		BranchName:   sessionInfo.BranchName,
+		WorktreePath: sessionInfo.WorktreePath,
+	}
+
+	// Update parent session with nested shell info
+	sessionInfo.ShellSession = &shellInfo
 	m.sessionState.Sessions[session.Name] = sessionInfo
+
 	if err := m.sessionState.Save(); err != nil {
 		logging.Logger.Warn("Failed to save shell session to state", "error", err)
 	}
@@ -386,9 +402,9 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	sessionInfo, hasInfo := m.sessionState.Sessions[session.Name]
 
 	// Kill shell session if it exists
-	if hasInfo && sessionInfo.ShellSession != "" {
-		logging.Logger.Info("Killing shell session", "name", sessionInfo.ShellSession)
-		if err := m.tmuxClient.Kill(sessionInfo.ShellSession); err != nil {
+	if hasInfo && sessionInfo.ShellSession != nil {
+		logging.Logger.Info("Killing shell session", "name", sessionInfo.ShellSession.Name)
+		if err := m.tmuxClient.Kill(sessionInfo.ShellSession.Name); err != nil {
 			logging.Logger.Warn("Failed to kill shell session", "error", err)
 		}
 	}

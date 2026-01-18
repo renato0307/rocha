@@ -363,20 +363,9 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 	var items []list.Item
 	var sessions []*tmux.Session
 
-	// Build a set of shell session names to filter them out
-	shellSessions := make(map[string]bool)
-	for _, info := range sessionState.Sessions {
-		if info.ShellSession != "" {
-			shellSessions[info.ShellSession] = true
-		}
-	}
-
-	// Build sessions from state (skip shell sessions)
+	// Build sessions from state
+	// No need to filter - shell sessions won't have top-level entries with nested structure!
 	for name, info := range sessionState.Sessions {
-		// Skip shell sessions - they're accessed via Alt+Enter on parent session
-		if shellSessions[name] {
-			continue
-		}
 		sessions = append(sessions, &tmux.Session{
 			Name:      name,
 			CreatedAt: info.LastUpdated,
@@ -404,10 +393,10 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 			gitRef = info.BranchName
 		}
 
-		// Check if shell session exists
+		// Check if shell session exists (check nested object)
 		hasShell := false
-		if info.ShellSession != "" {
-			hasShell = tmuxClient.Exists(info.ShellSession)
+		if info.ShellSession != nil {
+			hasShell = tmuxClient.Exists(info.ShellSession.Name)
 		}
 
 		items = append(items, SessionItem{
