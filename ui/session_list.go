@@ -28,6 +28,7 @@ type sessionListDetachedMsg struct{} // Session list returned from attached stat
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
+	Comment         string
 	DisplayName     string
 	GitRef          string
 	HasShellSession bool // Track if shell session exists
@@ -119,9 +120,14 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		line1 += " ⚑"
 	}
 
+	// Add comment indicator if there's a comment
+	if item.Comment != "" {
+		line1 += " ⌨"
+	}
+
 	// Add shell session indicator at the end
 	if item.HasShellSession {
-		line1 += " ⌨"
+		line1 += " >_"
 	}
 
 	// Add implementation status if set (with color-coded brackets)
@@ -212,6 +218,7 @@ type SessionList struct {
 	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
 	SessionToRename      *tmux.Session // Session user wants to rename
 	SessionToSetStatus   *tmux.Session // Session user wants to set status for
+	SessionToComment     *tmux.Session // Session user wants to comment
 	SessionToToggleFlag  *tmux.Session // Session user wants to toggle flag
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
@@ -349,6 +356,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
+		case "c":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToComment = item.Session
+				return sl, nil
+			}
+
 		case "o":
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToOpenEditor = item.Session
@@ -471,7 +484,7 @@ func (sl *SessionList) View() string {
 	// Add custom help (status legend first, then keys)
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
-	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • f: flag • x: kill\n"
+	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • c: comment • f: flag • x: kill\n"
 	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨) • o: open editor • q: quit"
 
 	s += helpStyle.Render(helpText)
@@ -597,6 +610,7 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client, 
 		}
 
 		items = append(items, SessionItem{
+			Comment:         info.Comment,
 			DisplayName:     displayName,
 			GitRef:          gitRef,
 			HasShellSession: hasShell,

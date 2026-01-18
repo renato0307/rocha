@@ -60,6 +60,7 @@ const (
 	stateConfirmingWorktreeRemoval
 	stateRenamingSession
 	stateSettingStatus
+	stateCommentingSession
 )
 
 type Model struct {
@@ -73,6 +74,7 @@ type Model struct {
 	sessionForm        *SessionForm   // Session creation form
 	sessionList        *SessionList   // Session list component
 	sessionRenameForm  *SessionRenameForm // Session rename form
+	sessionCommentForm *SessionCommentForm // Session comment form
 	sessionState       *storage.SessionState // State data for git metadata and status
 	sessionStatusForm  *SessionStatusForm // Session status form
 	sessionToKill      *tmux.Session  // Session being killed (for worktree removal)
@@ -129,6 +131,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateRenamingSession(msg)
 	case stateSettingStatus:
 		return m.updateSettingStatus(msg)
+	case stateCommentingSession:
+		return m.updateCommentingSession(msg)
 	}
 	return m, nil
 }
@@ -237,6 +241,21 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionStatusForm = NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig, m.devMode)
 		m.state = stateSettingStatus
 		return m, m.sessionStatusForm.Init()
+	}
+
+	if m.sessionList.SessionToComment != nil {
+		session := m.sessionList.SessionToComment
+		m.sessionList.SessionToComment = nil // Clear
+
+		// Get current comment
+		currentComment := ""
+		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
+			currentComment = sessionInfo.Comment
+		}
+
+		m.sessionCommentForm = NewSessionCommentForm(m.store, session.Name, currentComment, m.devMode)
+		m.state = stateCommentingSession
+		return m, m.sessionCommentForm.Init()
 	}
 
 	if m.sessionList.SessionToOpenEditor != nil {
@@ -426,6 +445,56 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if status update failed
 		if result.Error != nil {
 			m.setError(fmt.Errorf("failed to update status: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		}
+
+		if !result.Cancelled {
+			// Reload session state
+			sessionState, err := m.store.Load(context.Background())
+			if err != nil {
+				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+				m.sessionList.RefreshFromState()
+				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+			} else {
+				m.sessionState = sessionState
+			}
+			// Refresh session list component
+			m.sessionList.RefreshFromState()
+		}
+
+		return m, m.sessionList.Init()
+	}
+
+	return m, cmd
+}
+
+func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.sessionCommentForm = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	// Forward message to SessionCommentForm
+	newForm, cmd := m.sessionCommentForm.Update(msg)
+	if sf, ok := newForm.(*SessionCommentForm); ok {
+		m.sessionCommentForm = sf
+	}
+
+	// Check if form is completed
+	if m.sessionCommentForm.Completed {
+		result := m.sessionCommentForm.Result()
+
+		// Return to list state
+		m.state = stateList
+		m.sessionCommentForm = nil
+
+		// Check if comment update failed
+		if result.Error != nil {
+			m.setError(fmt.Errorf("failed to update comment: %w", result.Error))
 			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 		}
 
@@ -699,6 +768,10 @@ func (m *Model) View() string {
 	case stateSettingStatus:
 		if m.sessionStatusForm != nil {
 			return m.sessionStatusForm.View()
+		}
+	case stateCommentingSession:
+		if m.sessionCommentForm != nil {
+			return m.sessionCommentForm.View()
 		}
 	}
 	return ""

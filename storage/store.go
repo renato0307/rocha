@@ -157,6 +157,36 @@ func NewStore(dbPath string) (*Store, error) {
 		}
 	}
 
+	// Manually create session_statuses table (AutoMigrate has issues with foreign keys in SQLite)
+	if !migrator.HasTable(&SessionStatus{}) {
+		if err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS session_statuses (
+				session_name TEXT PRIMARY KEY,
+				status TEXT NOT NULL,
+				created_at DATETIME,
+				updated_at DATETIME,
+				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
+			)
+		`).Error; err != nil {
+			return nil, fmt.Errorf("failed to create session_statuses table: %w", err)
+		}
+	}
+
+	// Manually create session_comments table (AutoMigrate has issues with foreign keys in SQLite)
+	if !migrator.HasTable(&SessionComment{}) {
+		if err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS session_comments (
+				session_name TEXT PRIMARY KEY,
+				comment TEXT NOT NULL DEFAULT '',
+				created_at DATETIME,
+				updated_at DATETIME,
+				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
+			)
+		`).Error; err != nil {
+			return nil, fmt.Errorf("failed to create session_comments table: %w", err)
+		}
+	}
+
 	// Configure connection pool after migration
 	// SQLite with WAL mode can handle multiple readers + 1 writer
 	sqlDB, err := db.DB()
@@ -188,12 +218,10 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 				return fmt.Errorf("failed to load flags: %w", err)
 			}
 
-			// Build flag lookup map
-			flagMap := make(map[string]bool)
-			for _, flag := range flags {
-				if flag.IsFlagged {
-					flagMap[flag.SessionName] = true
-				}
+			// Load all comments at once
+			var comments []SessionComment
+			if err := tx.Find(&comments).Error; err != nil {
+				return fmt.Errorf("failed to load comments: %w", err)
 			}
 
 			// Load all session statuses for efficient lookup
@@ -206,10 +234,28 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 				// Table doesn't exist yet, skip status loading
 				logging.Logger.Debug("session_statuses table doesn't exist yet, skipping status loading")
 			}
+
+			// Build flag lookup map
+			flagMap := make(map[string]bool)
+			for _, flag := range flags {
+				if flag.IsFlagged {
+					flagMap[flag.SessionName] = true
+				}
+			}
+
+			// Build status lookup map
 			statusMap := make(map[string]*string)
 			for _, s := range statuses {
 				statusCopy := s.Status
 				statusMap[s.SessionName] = &statusCopy
+			}
+
+			// Build comment lookup map
+			commentMap := make(map[string]string)
+			for _, comment := range comments {
+				if comment.Comment != "" {
+					commentMap[comment.SessionName] = comment.Comment
+				}
 			}
 
 			// Build ordered names list and convert to map
@@ -217,21 +263,22 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 			state.OrderedSessionNames = make([]string, len(sessions))
 
 			for i, sess := range sessions {
-				// Get flag state for top-level session
+				// Get flag state, status, and comment for top-level session
 				isFlagged := flagMap[sess.Name]
+				comment := commentMap[sess.Name]
 
 				// Load nested session if exists (parent_name = this session's name)
 				var nestedSession Session
 				err := tx.Where("parent_name = ?", sess.Name).First(&nestedSession).Error
 				if err == nil {
-					// Nested session found (nested sessions are never flagged and don't have status)
-					nestedInfo := convertToSessionInfo(nestedSession, false, nil)
-					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap)
+					// Nested session found (nested sessions are never flagged, don't have status, and no comment)
+					nestedInfo := convertToSessionInfo(nestedSession, false, nil, "")
+					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap, comment)
 					sessInfo.ShellSession = &nestedInfo
 					state.Sessions[sess.Name] = sessInfo
 				} else if errors.Is(err, gorm.ErrRecordNotFound) {
 					// No nested session
-					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap)
+					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap, comment)
 				} else {
 					return fmt.Errorf("failed to load nested session for %s: %w", sess.Name, err)
 				}
@@ -439,6 +486,43 @@ func (s *Store) ToggleFlag(ctx context.Context, sessionName string) error {
 	}, 3)
 }
 
+// UpdateComment updates the comment for a session (empty string deletes the comment)
+func (s *Store) UpdateComment(ctx context.Context, sessionName, comment string) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if comment == "" {
+				// Empty comment - delete the record if it exists
+				result := tx.Where("session_name = ?", sessionName).Delete(&SessionComment{})
+				// Ignore error if record doesn't exist
+				if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("failed to delete comment: %w", result.Error)
+				}
+				return nil
+			}
+
+			// Non-empty comment - upsert (create or update)
+			var existingComment SessionComment
+			err := tx.Where("session_name = ?", sessionName).First(&existingComment).Error
+
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// No comment record exists, create new one
+				newComment := SessionComment{
+					Comment:     comment,
+					SessionName: sessionName,
+				}
+				return tx.Create(&newComment).Error
+			}
+			if err != nil {
+				return fmt.Errorf("failed to load comment: %w", err)
+			}
+
+			// Update existing comment
+			existingComment.Comment = comment
+			return tx.Save(&existingComment).Error
+		})
+	}, 3)
+}
+
 // AddSession adds a new session to the database at the top (position = min - 1)
 func (s *Store) AddSession(ctx context.Context, sessInfo SessionInfo) error {
 	return withRetry(func() error {
@@ -492,6 +576,7 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	var nestedSession Session
 	var flag SessionFlag
 	var status SessionStatus
+	var comment SessionComment
 	statusMap := make(map[string]*string)
 
 	err := withRetry(func() error {
@@ -516,6 +601,12 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 				return err
 			}
 
+			// Try to get comment
+			err = tx.Where("session_name = ?", name).First(&comment).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
 			// Try to get nested session
 			err = tx.Where("parent_name = ?", name).First(&nestedSession).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -534,11 +625,12 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	}
 
 	isFlagged := flag.IsFlagged
-	info := convertToSessionInfo(session, isFlagged, statusMap)
+	commentText := comment.Comment
+	info := convertToSessionInfo(session, isFlagged, statusMap, commentText)
 
-	// Add nested session if found (nested sessions are never flagged and don't have status)
+	// Add nested session if found (nested sessions are never flagged, don't have status, and no comment)
 	if nestedSession.Name != "" {
-		nestedInfo := convertToSessionInfo(nestedSession, false, nil)
+		nestedInfo := convertToSessionInfo(nestedSession, false, nil, "")
 		info.ShellSession = &nestedInfo
 	}
 
@@ -551,6 +643,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	var allSessions []Session
 	var flags []SessionFlag
 	var statuses []SessionStatus
+	var comments []SessionComment
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -574,6 +667,11 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 				if !strings.Contains(err.Error(), "no such table") {
 					return err
 				}
+			}
+
+			// Get all comments
+			if err := tx.Find(&comments).Error; err != nil {
+				return err
 			}
 
 			return nil
@@ -607,15 +705,24 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 		statusMap[s.SessionName] = &statusCopy
 	}
 
+	// Build comment lookup map
+	commentMap := make(map[string]string)
+	for _, comment := range comments {
+		if comment.Comment != "" {
+			commentMap[comment.SessionName] = comment.Comment
+		}
+	}
+
 	// Convert to SessionInfo with nested sessions
 	result := make([]SessionInfo, len(sessions))
 	for i, sess := range sessions {
 		isFlagged := flagMap[sess.Name]
-		info := convertToSessionInfo(sess, isFlagged, statusMap)
+		comment := commentMap[sess.Name]
+		info := convertToSessionInfo(sess, isFlagged, statusMap, comment)
 
-		// Add nested session if exists (nested sessions are never flagged and don't have status)
+		// Add nested session if exists (nested sessions are never flagged, don't have status, and no comment)
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedInfo := convertToSessionInfo(nested, false, nil)
+			nestedInfo := convertToSessionInfo(nested, false, nil, "")
 			info.ShellSession = &nestedInfo
 		}
 
@@ -655,7 +762,7 @@ func withRetry(fn func() error, maxRetries int) error {
 }
 
 // Helper conversion functions
-func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string) SessionInfo {
+func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string, comment string) SessionInfo {
 	var status *string
 	if statusMap != nil {
 		if s, ok := statusMap[s.Name]; ok {
@@ -665,6 +772,7 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 
 	return SessionInfo{
 		BranchName:   s.BranchName,
+		Comment:      comment,
 		DisplayName:  s.DisplayName,
 		ExecutionID:  s.ExecutionID,
 		GitStats:     nil, // Not persisted
