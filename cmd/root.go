@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
+	"rocha/storage"
 	"rocha/tmux"
 	"rocha/ui"
 
@@ -23,6 +25,7 @@ type CLI struct {
 	Debug        bool             `help:"Enable debug logging to file" short:"d"`
 	DebugFile    string           `help:"Custom path for debug log file (disables automatic cleanup)"`
 	MaxLogFiles  int              `help:"Maximum number of log files to keep (0 = unlimited)" default:"1000"`
+	DBPath       string           `help:"Path to SQLite database" type:"path" default:"~/.rocha/state.db" env:"ROCHA_DB_PATH"`
 
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
@@ -31,6 +34,7 @@ type CLI struct {
 	StartClaude StartClaudeCmd `cmd:"start-claude" help:"Start Claude Code with hooks configured" hidden:""`
 	PlaySound   PlaySoundCmd   `cmd:"play-sound" help:"Play notification sound (cross-platform)" hidden:""`
 	Notify      NotifyCmd      `cmd:"notify" help:"Handle notification event from Claude hooks" hidden:""`
+	Sessions    SessionsCmd    `cmd:"sessions" help:"Manage sessions (list, view, add, del)"`
 }
 
 // AfterApply initializes logging after CLI parsing
@@ -65,7 +69,7 @@ type RunCmd struct {
 }
 
 // Run executes the TUI
-func (r *RunCmd) Run(tmuxClient tmux.Client) error {
+func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Info("Starting rocha TUI")
 
 	// Generate new execution ID for this TUI run
@@ -75,12 +79,20 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 	os.Setenv("ROCHA_EXECUTION_ID", executionID)
 	logging.Logger.Info("Generated new execution ID", "execution_id", executionID)
 
+	// Open database
+	dbPath := expandPath(cli.DBPath)
+	store, err := storage.NewStore(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
 	// Load state
-	st, err := state.Load()
+	st, err := store.Load(context.Background())
 	if err != nil {
 		log.Printf("Warning: failed to load state: %v", err)
 		logging.Logger.Warn("Failed to load state", "error", err)
-		st = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
+		st = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 	logging.Logger.Debug("State loaded", "existing_sessions", len(st.Sessions))
 
@@ -95,18 +107,24 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 			runningNames[i] = sess.Name
 		}
 		logging.Logger.Info("Syncing with running tmux sessions", "count", len(runningNames))
-		if err := state.QueueSyncRunning(runningNames, executionID); err != nil {
-			logging.Logger.Error("Failed to queue sync with running sessions", "error", err)
-		} else {
-			logging.Logger.Debug("Sync with running sessions queued")
+
+		// Update execution ID for running sessions directly in SQLite
+		for _, sessionName := range runningNames {
+			if _, exists := st.Sessions[sessionName]; exists {
+				if err := store.UpdateSession(context.Background(), sessionName, st.Sessions[sessionName].State, executionID); err != nil {
+					logging.Logger.Error("Failed to update session", "error", err, "session", sessionName)
+				} else {
+					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
+				}
+			}
 		}
 
 		// Detect sessions where Claude has exited
 		for _, sessionName := range runningNames {
 			if !isClaudeRunningInSession(sessionName) {
 				logging.Logger.Info("Claude has exited from session", "name", sessionName)
-				if err := state.QueueUpdateSession(sessionName, state.StateExited, executionID); err != nil {
-					logging.Logger.Error("Failed to queue exited state", "error", err, "session", sessionName)
+				if err := store.UpdateSession(context.Background(), sessionName, state.StateExited, executionID); err != nil {
+					logging.Logger.Error("Failed to update exited state", "error", err, "session", sessionName)
 				}
 			}
 		}
@@ -151,26 +169,17 @@ func (r *RunCmd) Run(tmuxClient tmux.Client) error {
 			}
 
 			// Save the updated state with git metadata
-			if err := st.Save(); err != nil {
+			if err := store.Save(context.Background(), st); err != nil {
 				logging.Logger.Error("Failed to save state with git metadata", "error", err)
 			}
 		}
-	}
-
-	// Update state file with new execution ID
-	st.ExecutionID = executionID
-	if err := st.Save(); err != nil {
-		log.Printf("Warning: failed to save state: %v", err)
-		logging.Logger.Error("Failed to save state", "error", err)
-	} else {
-		logging.Logger.Debug("State saved with new execution ID")
 	}
 
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, r.WorktreePath, r.Editor, errorClearDelay),
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
@@ -190,4 +199,15 @@ func isClaudeRunningInSession(sessionName string) bool {
 	cmd := exec.Command("pgrep", "-f", fmt.Sprintf("claude.*notify %s", sessionName))
 	err := cmd.Run()
 	return err == nil // Exit code 0 means process found
+}
+
+// expandPath expands ~ to home directory
+func expandPath(path string) string {
+	if len(path) > 0 && path[0] == '~' {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(homeDir, path[1:])
+		}
+	}
+	return path
 }

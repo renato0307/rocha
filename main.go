@@ -24,6 +24,7 @@ func main() {
 		},
 		kong.UsageOnError(),
 		kong.BindTo(tmuxClient, (*tmux.Client)(nil)),
+		kong.BindTo(&cli, (*cmd.CLI)(nil)),
 	)
 
 	// Execute the selected command

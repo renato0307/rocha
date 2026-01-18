@@ -1,14 +1,17 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
+	"rocha/storage"
 	"rocha/tmux"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,9 +36,10 @@ type SessionFormResult struct {
 // SessionForm is a Bubble Tea component for creating sessions
 type SessionForm struct {
 	sessionManager tmux.SessionManager
+	store          *storage.Store
 	form           *huh.Form
 	worktreePath   string
-	sessionState   *state.SessionState
+	sessionState   *storage.SessionState
 	result         SessionFormResult
 	Completed      bool // Exported so Model can check completion
 	cancelled      bool
@@ -44,13 +48,14 @@ type SessionForm struct {
 }
 
 // NewSessionForm creates a new session creation form
-func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, sessionState *state.SessionState) *SessionForm {
+func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	sf := &SessionForm{
 		sessionManager: sessionManager,
+		store:          store,
 		worktreePath:   worktreePath,
 		sessionState:   sessionState,
 		result: SessionFormResult{
@@ -271,13 +276,26 @@ func (sf *SessionForm) createSession() error {
 
 	// Save session state with git metadata
 	executionID := os.Getenv("ROCHA_EXECUTION_ID")
-	if err := sf.sessionState.UpdateSessionWithGit(tmuxName, sessionName, state.StateWaitingUser, executionID, repoPath, repoInfo, branchName, worktreePath); err != nil {
-		logging.Logger.Error("Failed to save session state", "error", err)
+
+	// Create session info
+	sessionInfo := storage.SessionInfo{
+		Name:         tmuxName,
+		DisplayName:  sessionName,
+		State:        state.StateWaitingUser,
+		ExecutionID:  executionID,
+		LastUpdated:  time.Now().UTC(),
+		RepoPath:     repoPath,
+		RepoInfo:     repoInfo,
+		BranchName:   branchName,
+		WorktreePath: worktreePath,
 	}
 
-	// Add new session to top of manual order
-	if err := sf.sessionState.AddSessionToTop(tmuxName); err != nil {
-		logging.Logger.Error("Failed to add session to top of order", "error", err)
+	sf.sessionState.Sessions[tmuxName] = sessionInfo
+
+	// Add to database (will be added with position 0 by default, appearing at top)
+	if err := sf.store.AddSession(context.Background(), sessionInfo); err != nil {
+		logging.Logger.Error("Failed to add session to database", "error", err)
+		return err
 	}
 
 	logging.Logger.Info("Session created successfully", "name", session.Name)

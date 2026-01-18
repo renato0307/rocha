@@ -1,5 +1,13 @@
 # Go Development Guidelines
 
+## Style
+
+When doing code make sure you:
+- Don't use `interface{}`, use `any`
+- Sort the struct fields alphabetically
+- Split the imports into three groups: stdlib, dependencies, internal imports
+
+
 ## Development Pace
 
 ⏱️ **No urgency.** Take your time. Thoughtful design > speed.

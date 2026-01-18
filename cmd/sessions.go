@@ -1,0 +1,199 @@
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"rocha/storage"
+	"text/tabwriter"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// SessionsCmd manages sessions
+type SessionsCmd struct {
+	List SessionsListCmd `cmd:"list" help:"List all sessions" default:"1"`
+	View SessionsViewCmd `cmd:"view" help:"View a specific session"`
+	Add  SessionsAddCmd  `cmd:"add" help:"Add a new session"`
+	Del  SessionsDelCmd  `cmd:"del" help:"Delete a session"`
+}
+
+// SessionsListCmd lists all sessions
+type SessionsListCmd struct {
+	Format string `help:"Output format: table or json" enum:"table,json" default:"table"`
+}
+
+// Run executes the list command
+func (s *SessionsListCmd) Run(cli *CLI) error {
+	store, err := storage.NewStore(expandPath(cli.DBPath))
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
+	sessions, err := store.ListSessions(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	if s.Format == "json" {
+		data, err := json.MarshalIndent(sessions, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	// Table format
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tDISPLAY NAME\tSTATE\tBRANCH\tREPO\tLAST UPDATED")
+	for _, sess := range sessions {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			sess.Name,
+			sess.DisplayName,
+			sess.State,
+			sess.BranchName,
+			sess.RepoInfo,
+			sess.LastUpdated.Format("2006-01-02 15:04:05"))
+	}
+	w.Flush()
+
+	fmt.Printf("\nTotal: %d sessions\n", len(sessions))
+	return nil
+}
+
+// SessionsViewCmd views a specific session
+type SessionsViewCmd struct {
+	Name   string `arg:"" help:"Name of the session to view"`
+	Format string `help:"Output format: table or json" enum:"table,json" default:"table"`
+}
+
+// Run executes the view command
+func (s *SessionsViewCmd) Run(cli *CLI) error {
+	store, err := storage.NewStore(expandPath(cli.DBPath))
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
+	session, err := store.GetSession(context.Background(), s.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	if s.Format == "json" {
+		data, err := json.MarshalIndent(session, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	// Table format
+	fmt.Printf("Session: %s\n", session.Name)
+	fmt.Printf("Display Name: %s\n", session.DisplayName)
+	fmt.Printf("State: %s\n", session.State)
+	fmt.Printf("Execution ID: %s\n", session.ExecutionID)
+	fmt.Printf("Last Updated: %s\n", session.LastUpdated.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Repo Path: %s\n", session.RepoPath)
+	fmt.Printf("Repo Info: %s\n", session.RepoInfo)
+	fmt.Printf("Branch Name: %s\n", session.BranchName)
+	fmt.Printf("Worktree Path: %s\n", session.WorktreePath)
+
+	if session.ShellSession != nil {
+		fmt.Printf("\nShell Session:\n")
+		fmt.Printf("  Name: %s\n", session.ShellSession.Name)
+		fmt.Printf("  Display Name: %s\n", session.ShellSession.DisplayName)
+		fmt.Printf("  State: %s\n", session.ShellSession.State)
+		fmt.Printf("  Last Updated: %s\n", session.ShellSession.LastUpdated.Format("2006-01-02 15:04:05"))
+	}
+
+	return nil
+}
+
+// SessionsAddCmd adds a new session
+type SessionsAddCmd struct {
+	Name         string `arg:"" help:"Name of the session to add"`
+	DisplayName  string `help:"Display name for the session" default:""`
+	State        string `help:"Initial state" enum:"idle,working,waiting,exited" default:"idle"`
+	RepoPath     string `help:"Repository path" default:""`
+	RepoInfo     string `help:"Repository info" default:""`
+	BranchName   string `help:"Branch name" default:""`
+	WorktreePath string `help:"Worktree path" default:""`
+}
+
+// Run executes the add command
+func (s *SessionsAddCmd) Run(cli *CLI) error {
+	store, err := storage.NewStore(expandPath(cli.DBPath))
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
+	displayName := s.DisplayName
+	if displayName == "" {
+		displayName = s.Name
+	}
+
+	sessInfo := storage.SessionInfo{
+		Name:         s.Name,
+		DisplayName:  displayName,
+		State:        s.State,
+		ExecutionID:  uuid.New().String(),
+		LastUpdated:  time.Now().UTC(),
+		RepoPath:     s.RepoPath,
+		RepoInfo:     s.RepoInfo,
+		BranchName:   s.BranchName,
+		WorktreePath: s.WorktreePath,
+	}
+
+	if err := store.AddSession(context.Background(), sessInfo); err != nil {
+		return fmt.Errorf("failed to add session: %w", err)
+	}
+
+	fmt.Printf("✓ Session '%s' added successfully\n", s.Name)
+	return nil
+}
+
+// SessionsDelCmd deletes a session
+type SessionsDelCmd struct {
+	Name  string `arg:"" help:"Name of the session to delete"`
+	Force bool   `help:"Force deletion without confirmation" short:"f"`
+}
+
+// Run executes the del command
+func (s *SessionsDelCmd) Run(cli *CLI) error {
+	store, err := storage.NewStore(expandPath(cli.DBPath))
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
+	// Check if session exists
+	_, err = store.GetSession(context.Background(), s.Name)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	// Ask for confirmation unless --force is used
+	if !s.Force {
+		fmt.Printf("Are you sure you want to delete session '%s'? (y/N): ", s.Name)
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			fmt.Println("Cancelled")
+			return nil
+		}
+	}
+
+	if err := store.DeleteSession(context.Background(), s.Name); err != nil {
+		return fmt.Errorf("failed to delete session: %w", err)
+	}
+
+	fmt.Printf("✓ Session '%s' deleted successfully\n", s.Name)
+	return nil
+}
