@@ -34,15 +34,16 @@ type SessionState struct {
 
 // SessionInfo represents the state of a single session
 type SessionInfo struct {
-	Name         string    `json:"name"`          // Tmux session name (no spaces)
-	DisplayName  string    `json:"display_name"`  // Display name (with spaces)
-	State        string    `json:"state"`         // "waiting" or "working"
-	ExecutionID  string    `json:"execution_id"`  // Which rocha run owns this state
-	LastUpdated  time.Time `json:"last_updated"`
-	RepoPath     string    `json:"repo_path"`     // Original repository path (if in git repo)
-	RepoInfo     string    `json:"repo_info"`     // GitHub owner/repo (e.g., "owner/repo")
-	BranchName   string    `json:"branch_name"`   // Git branch name (if worktree created)
-	WorktreePath string    `json:"worktree_path"` // Path to worktree if created
+	Name         string        `json:"name"`                    // Tmux session name (no spaces)
+	ShellSession *SessionInfo  `json:"shell_session,omitempty"` // Nested shell session info (optional)
+	DisplayName  string        `json:"display_name"`            // Display name (with spaces)
+	State        string        `json:"state"`                   // "waiting" or "working"
+	ExecutionID  string        `json:"execution_id"`            // Which rocha run owns this state
+	LastUpdated  time.Time     `json:"last_updated"`
+	RepoPath     string        `json:"repo_path"`     // Original repository path (if in git repo)
+	RepoInfo     string        `json:"repo_info"`     // GitHub owner/repo (e.g., "owner/repo")
+	BranchName   string        `json:"branch_name"`   // Git branch name (if worktree created)
+	WorktreePath string        `json:"worktree_path"` // Path to worktree if created
 }
 
 // StateEvent represents an event to be applied to state
@@ -203,7 +204,14 @@ func processQueueEvents(state *SessionState) error {
 		}
 	}
 
-	// Clear queue after processing
+	// Save state after applying events (before clearing queue for safety)
+	if len(events) > 0 {
+		if err := state.Save(); err != nil {
+			logging.Logger.Warn("Failed to save state after applying events", "error", err)
+		}
+	}
+
+	// Clear queue after processing and saving
 	if err := file.Truncate(0); err != nil {
 		return fmt.Errorf("failed to clear queue: %w", err)
 	}
@@ -301,14 +309,27 @@ func Load() (*SessionState, error) {
 		state.Sessions = make(map[string]SessionInfo)
 	}
 
-	// Process queued events before returning
+	// Process queued events before returning (this will save state if events were processed)
 	if err := processQueueEvents(&state); err != nil {
 		logging.Logger.Warn("Failed to process queue events", "error", err)
 	}
 
-	// Save updated state after processing queue
-	if err := state.Save(); err != nil {
-		logging.Logger.Warn("Failed to save state after processing queue", "error", err)
+	// Clean up orphaned shell sessions (sessions ending with "-shell")
+	// that exist as top-level entries (shouldn't exist with new nested structure)
+	hadOrphans := false
+	for name := range state.Sessions {
+		if len(name) > 6 && name[len(name)-6:] == "-shell" {
+			logging.Logger.Warn("Removing orphaned shell session from state", "name", name)
+			delete(state.Sessions, name)
+			hadOrphans = true
+		}
+	}
+
+	// Save state if we cleaned up orphaned sessions
+	if hadOrphans {
+		if err := state.Save(); err != nil {
+			logging.Logger.Warn("Failed to save state after cleanup", "error", err)
+		}
 	}
 
 	return &state, nil
@@ -397,7 +418,10 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 		s.Sessions = make(map[string]SessionInfo)
 	}
 
-	s.Sessions[name] = SessionInfo{
+	// Get existing session to preserve ShellSession field
+	existing, exists := s.Sessions[name]
+
+	sessionInfo := SessionInfo{
 		Name:         name,
 		DisplayName:  displayName,
 		State:        state,
@@ -408,6 +432,13 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 		BranchName:   branchName,
 		WorktreePath: worktreePath,
 	}
+
+	// Preserve ShellSession if it exists
+	if exists {
+		sessionInfo.ShellSession = existing.ShellSession
+	}
+
+	s.Sessions[name] = sessionInfo
 
 	return s.Save()
 }
@@ -441,6 +472,7 @@ func (s *SessionState) RenameSession(oldName, newName, newDisplayName string) er
 		RepoInfo:     oldInfo.RepoInfo,
 		BranchName:   oldInfo.BranchName,
 		WorktreePath: oldInfo.WorktreePath,
+		ShellSession: oldInfo.ShellSession, // Preserve shell session
 	}
 
 	// Remove old entry and add new entry

@@ -36,45 +36,34 @@ func NewClient() *DefaultClient {
 	}
 }
 
-// Create creates a new tmux session with the given name
-// If worktreePath is provided (non-empty), the session will start in that directory
-func (c *DefaultClient) Create(name string, worktreePath string) (*Session, error) {
-	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath)
-
-	// Check if session already exists
+// createBaseSession creates a tmux session without running rocha start-claude
+// This is the common logic shared by Create() and CreateShellSession()
+func (c *DefaultClient) createBaseSession(name string, worktreePath string) error {
 	if c.Exists(name) {
-		logging.Logger.Warn("Session already exists", "name", name)
-		return nil, ErrSessionExists
+		return ErrSessionExists
 	}
 
-	// Create a new detached tmux session starting with a shell
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "bash"
 	}
-	logging.Logger.Debug("Creating tmux session with shell", "shell", shell)
 
-	// Build tmux command with optional working directory
 	var cmd *exec.Cmd
 	if worktreePath != "" {
-		logging.Logger.Info("Starting session in worktree directory", "path", worktreePath)
 		cmd = exec.Command("tmux", "new-session", "-d", "-s", name, "-c", worktreePath, shell)
 	} else {
 		cmd = exec.Command("tmux", "new-session", "-d", "-s", name, shell)
 	}
 
 	if err := cmd.Run(); err != nil {
-		logging.Logger.Error("Failed to create tmux session", "error", err, "name", name)
-		return nil, fmt.Errorf("failed to create tmux session: %w", err)
+		return fmt.Errorf("failed to create tmux session: %w", err)
 	}
 
-	// Bind Ctrl+Q as an additional detach shortcut for this session
 	if err := c.BindKey("root", "C-q", "detach-client"); err != nil {
 		logging.Logger.Warn("Failed to bind Ctrl+Q key", "error", err)
 	}
 
-	logging.Logger.Debug("Waiting for tmux session to be ready")
-	// Wait for session to be created
+	// Wait for session to be ready
 	timeout := time.After(2 * time.Second)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -82,60 +71,81 @@ func (c *DefaultClient) Create(name string, worktreePath string) (*Session, erro
 	for {
 		select {
 		case <-timeout:
-			logging.Logger.Error("Timeout waiting for session", "name", name)
-			return nil, fmt.Errorf("timeout waiting for session %s to be created", name)
+			return fmt.Errorf("timeout waiting for session %s to be created", name)
 		case <-ticker.C:
 			if c.Exists(name) {
-				logging.Logger.Debug("Tmux session ready", "name", name)
-				// Session created successfully
-				// Now automatically start claude with hooks in the session
-				rochaBin, err := os.Executable()
-				if err != nil {
-					rochaBin = "rocha" // Fallback to PATH
-					logging.Logger.Warn("Could not get rocha executable path, using PATH", "error", err)
-				}
-				logging.Logger.Debug("Rocha binary path", "path", rochaBin)
-
-				// Set session name in environment and start claude with hooks
-				envVars := fmt.Sprintf("ROCHA_SESSION_NAME=%s", name)
-
-				// Add debug environment variables if set
-				if debugEnabled := os.Getenv("ROCHA_DEBUG"); debugEnabled == "1" {
-					envVars += " ROCHA_DEBUG=1"
-					if debugFile := os.Getenv("ROCHA_DEBUG_FILE"); debugFile != "" {
-						envVars += fmt.Sprintf(" ROCHA_DEBUG_FILE=%q", debugFile)
-					}
-					if maxLogFiles := os.Getenv("ROCHA_MAX_LOG_FILES"); maxLogFiles != "" {
-						envVars += fmt.Sprintf(" ROCHA_MAX_LOG_FILES=%s", maxLogFiles)
-					}
-				}
-
-				// Add execution ID if set
-				if execID := os.Getenv("ROCHA_EXECUTION_ID"); execID != "" {
-					envVars += fmt.Sprintf(" ROCHA_EXECUTION_ID=%s", execID)
-				}
-
-				var startCmd string
-				if worktreePath != "" {
-					// Explicitly cd to worktree directory before starting Claude
-					logging.Logger.Info("Starting Claude in worktree directory", "path", worktreePath)
-					startCmd = fmt.Sprintf("cd %q && clear && %s %s start-claude", worktreePath, envVars, rochaBin)
-				} else {
-					startCmd = fmt.Sprintf("clear && %s %s start-claude", envVars, rochaBin)
-				}
-				logging.Logger.Debug("Sending start command to session", "command", startCmd)
-				if err := c.SendKeys(name, startCmd, "Enter"); err != nil {
-					logging.Logger.Error("Failed to send start command", "error", err)
-				} else {
-					logging.Logger.Info("Session created and Claude started", "name", name)
-				}
-				return &Session{
-					Name:      name,
-					CreatedAt: time.Now(),
-				}, nil
+				return nil
 			}
 		}
 	}
+}
+
+// Create creates a new tmux session with the given name
+// If worktreePath is provided (non-empty), the session will start in that directory
+func (c *DefaultClient) Create(name string, worktreePath string) (*Session, error) {
+	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath)
+
+	if err := c.createBaseSession(name, worktreePath); err != nil {
+		return nil, err
+	}
+
+	// Start Claude in the session
+	rochaBin, err := os.Executable()
+	if err != nil {
+		rochaBin = "rocha"
+		logging.Logger.Warn("Could not get rocha executable path, using PATH", "error", err)
+	}
+	logging.Logger.Debug("Rocha binary path", "path", rochaBin)
+
+	// Set session name in environment and start claude with hooks
+	envVars := fmt.Sprintf("ROCHA_SESSION_NAME=%s", name)
+
+	// Add debug environment variables if set
+	if debugEnabled := os.Getenv("ROCHA_DEBUG"); debugEnabled == "1" {
+		envVars += " ROCHA_DEBUG=1"
+		if debugFile := os.Getenv("ROCHA_DEBUG_FILE"); debugFile != "" {
+			envVars += fmt.Sprintf(" ROCHA_DEBUG_FILE=%q", debugFile)
+		}
+		if maxLogFiles := os.Getenv("ROCHA_MAX_LOG_FILES"); maxLogFiles != "" {
+			envVars += fmt.Sprintf(" ROCHA_MAX_LOG_FILES=%s", maxLogFiles)
+		}
+	}
+
+	// Add execution ID if set
+	if execID := os.Getenv("ROCHA_EXECUTION_ID"); execID != "" {
+		envVars += fmt.Sprintf(" ROCHA_EXECUTION_ID=%s", execID)
+	}
+
+	var startCmd string
+	if worktreePath != "" {
+		logging.Logger.Info("Starting Claude in worktree directory", "path", worktreePath)
+		startCmd = fmt.Sprintf("cd %q && clear && %s %s start-claude", worktreePath, envVars, rochaBin)
+	} else {
+		startCmd = fmt.Sprintf("clear && %s %s start-claude", envVars, rochaBin)
+	}
+	logging.Logger.Debug("Sending start command to session", "command", startCmd)
+	if err := c.SendKeys(name, startCmd, "Enter"); err != nil {
+		logging.Logger.Error("Failed to send start command", "error", err)
+	} else {
+		logging.Logger.Info("Session created and Claude started", "name", name)
+	}
+
+	return &Session{
+		Name:      name,
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+// CreateShellSession creates a plain shell session without rocha start-claude
+func (c *DefaultClient) CreateShellSession(name string, worktreePath string) (*Session, error) {
+	logging.Logger.Info("Creating shell tmux session", "name", name, "worktree_path", worktreePath)
+
+	if err := c.createBaseSession(name, worktreePath); err != nil {
+		return nil, err
+	}
+
+	logging.Logger.Info("Shell session created", "name", name)
+	return &Session{Name: name, CreatedAt: time.Now()}, nil
 }
 
 // Exists checks if the tmux session exists
