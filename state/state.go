@@ -27,23 +27,26 @@ const (
 
 // SessionState represents the persistent state of all Claude sessions
 type SessionState struct {
-	ExecutionID string                 `json:"execution_id"` // UUID for current rocha run
-	Sessions    map[string]SessionInfo `json:"sessions"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ExecutionID         string                 `json:"execution_id"` // UUID for current rocha run
+	Sessions            map[string]SessionInfo `json:"sessions"`
+	UpdatedAt           time.Time              `json:"updated_at"`
+	SortOrder           string                 `json:"sort_order"`                      // Session list sort order: "name", "updated", "created", "state"
+	OrderedSessionNames []string               `json:"ordered_session_names,omitempty"` // Manual order of sessions
 }
 
 // SessionInfo represents the state of a single session
 type SessionInfo struct {
-	Name         string      `json:"name"`          // Tmux session name (no spaces)
-	DisplayName  string      `json:"display_name"`  // Display name (with spaces)
-	State        string      `json:"state"`         // "waiting" or "working"
-	ExecutionID  string      `json:"execution_id"`  // Which rocha run owns this state
-	LastUpdated  time.Time   `json:"last_updated"`
-	RepoPath     string      `json:"repo_path"`     // Original repository path (if in git repo)
-	RepoInfo     string      `json:"repo_info"`     // GitHub owner/repo (e.g., "owner/repo")
-	BranchName   string      `json:"branch_name"`   // Git branch name (if worktree created)
-	WorktreePath string      `json:"worktree_path"` // Path to worktree if created
-	GitStats     interface{} `json:"-"`             // Git statistics cache (not persisted, type will be *git.GitStats)
+	Name         string       `json:"name"`                    // Tmux session name (no spaces)
+	ShellSession *SessionInfo `json:"shell_session,omitempty"` // Nested shell session info (optional)
+	DisplayName  string       `json:"display_name"`            // Display name (with spaces)
+	State        string       `json:"state"`                   // "waiting" or "working"
+	ExecutionID  string       `json:"execution_id"`            // Which rocha run owns this state
+	LastUpdated  time.Time    `json:"last_updated"`
+	RepoPath     string       `json:"repo_path"`               // Original repository path (if in git repo)
+	RepoInfo     string       `json:"repo_info"`               // GitHub owner/repo (e.g., "owner/repo")
+	BranchName   string       `json:"branch_name"`             // Git branch name (if worktree created)
+	WorktreePath string       `json:"worktree_path"`           // Path to worktree if created
+	GitStats     interface{}  `json:"-"`                       // Git statistics cache (not persisted, type will be *git.GitStats)
 }
 
 // StateEvent represents an event to be applied to state
@@ -398,7 +401,10 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 		s.Sessions = make(map[string]SessionInfo)
 	}
 
-	s.Sessions[name] = SessionInfo{
+	// Get existing session to preserve ShellSession field
+	existing, exists := s.Sessions[name]
+
+	sessionInfo := SessionInfo{
 		Name:         name,
 		DisplayName:  displayName,
 		State:        state,
@@ -409,6 +415,52 @@ func (s *SessionState) UpdateSessionWithGit(name, displayName, state, executionI
 		BranchName:   branchName,
 		WorktreePath: worktreePath,
 	}
+
+	// Preserve ShellSession if it exists
+	if exists {
+		sessionInfo.ShellSession = existing.ShellSession
+	}
+
+	s.Sessions[name] = sessionInfo
+
+	return s.Save()
+}
+
+// RenameSession renames a session by updating both tmux name (map key) and display name
+// The old session is removed and a new entry is created with the new name as key
+func (s *SessionState) RenameSession(oldName, newName, newDisplayName string) error {
+	if s.Sessions == nil {
+		return fmt.Errorf("no sessions in state")
+	}
+
+	// Get existing session info
+	oldInfo, exists := s.Sessions[oldName]
+	if !exists {
+		return fmt.Errorf("session %s not found in state", oldName)
+	}
+
+	// Check if new name already exists
+	if _, exists := s.Sessions[newName]; exists && newName != oldName {
+		return fmt.Errorf("session %s already exists", newName)
+	}
+
+	// Create new entry with updated names
+	newInfo := SessionInfo{
+		Name:         newName,
+		DisplayName:  newDisplayName,
+		State:        oldInfo.State,
+		ExecutionID:  oldInfo.ExecutionID,
+		LastUpdated:  time.Now(),
+		RepoPath:     oldInfo.RepoPath,
+		RepoInfo:     oldInfo.RepoInfo,
+		BranchName:   oldInfo.BranchName,
+		WorktreePath: oldInfo.WorktreePath,
+		ShellSession: oldInfo.ShellSession, // Preserve shell session
+	}
+
+	// Remove old entry and add new entry
+	delete(s.Sessions, oldName)
+	s.Sessions[newName] = newInfo
 
 	return s.Save()
 }
@@ -493,6 +545,75 @@ func (s *SessionState) SyncWithRunning(runningSessionNames []string, newExecutio
 		// If not running in tmux, keep the session in state unchanged
 		// so it can be restarted later
 	}
+
+	return s.Save()
+}
+
+// AddSessionToTop adds a session to the top of the manual order list
+// If the session is already in the list, it moves it to the top
+func (s *SessionState) AddSessionToTop(sessionName string) error {
+	// Remove from current position if it exists
+	for i, name := range s.OrderedSessionNames {
+		if name == sessionName {
+			s.OrderedSessionNames = append(s.OrderedSessionNames[:i], s.OrderedSessionNames[i+1:]...)
+			break
+		}
+	}
+
+	// Add to top
+	s.OrderedSessionNames = append([]string{sessionName}, s.OrderedSessionNames...)
+
+	return s.Save()
+}
+
+// MoveSessionUp moves a session up one position in the manual order
+// Returns error if session is already at the top or not found
+func (s *SessionState) MoveSessionUp(sessionName string) error {
+	// Find session in order list
+	idx := -1
+	for i, name := range s.OrderedSessionNames {
+		if name == sessionName {
+			idx = i
+			break
+		}
+	}
+
+	if idx == -1 {
+		return fmt.Errorf("session %s not found in order list", sessionName)
+	}
+
+	if idx == 0 {
+		return nil // Already at top, no-op
+	}
+
+	// Swap with previous
+	s.OrderedSessionNames[idx], s.OrderedSessionNames[idx-1] = s.OrderedSessionNames[idx-1], s.OrderedSessionNames[idx]
+
+	return s.Save()
+}
+
+// MoveSessionDown moves a session down one position in the manual order
+// Returns error if session is already at the bottom or not found
+func (s *SessionState) MoveSessionDown(sessionName string) error {
+	// Find session in order list
+	idx := -1
+	for i, name := range s.OrderedSessionNames {
+		if name == sessionName {
+			idx = i
+			break
+		}
+	}
+
+	if idx == -1 {
+		return fmt.Errorf("session %s not found in order list", sessionName)
+	}
+
+	if idx == len(s.OrderedSessionNames)-1 {
+		return nil // Already at bottom, no-op
+	}
+
+	// Swap with next
+	s.OrderedSessionNames[idx], s.OrderedSessionNames[idx+1] = s.OrderedSessionNames[idx+1], s.OrderedSessionNames[idx]
 
 	return s.Save()
 }
