@@ -64,26 +64,26 @@ const (
 )
 
 type Model struct {
-	devMode            bool           // Development mode (shows version info in dialogs)
-	editor             string         // Editor to open sessions in
-	err                error
-	errorClearDelay    time.Duration  // Duration before errors auto-clear
-	form               *huh.Form      // Form for worktree removal confirmation
-	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
-	height             int
-	sessionForm        *SessionForm   // Session creation form
-	sessionList        *SessionList   // Session list component
-	sessionRenameForm  *SessionRenameForm // Session rename form
-	sessionCommentForm *SessionCommentForm // Session comment form
-	sessionState       *storage.SessionState // State data for git metadata and status
-	sessionStatusForm  *SessionStatusForm // Session status form
-	sessionToKill      *tmux.Session  // Session being killed (for worktree removal)
-	state              uiState
-	statusConfig       *StatusConfig  // Status configuration for implementation statuses
-	store              *storage.Store // Storage for persistent state
-	tmuxClient         tmux.Client
-	width              int
-	worktreePath       string
+	devMode             bool           // Development mode (shows version info in dialogs)
+	editor              string         // Editor to open sessions in
+	err                 error
+	errorClearDelay     time.Duration  // Duration before errors auto-clear
+	formRemoveWorktree  *bool          // Worktree removal decision (pointer to persist across updates)
+	height              int
+	sessionCommentForm  *Dialog        // Session comment dialog
+	sessionForm         *Dialog        // Session creation dialog
+	sessionList         *SessionList   // Session list component
+	sessionRenameForm   *Dialog        // Session rename dialog
+	sessionState        *storage.SessionState // State data for git metadata and status
+	sessionStatusForm   *Dialog        // Session status dialog
+	sessionToKill       *tmux.Session  // Session being killed (for worktree removal)
+	state               uiState
+	statusConfig        *StatusConfig  // Status configuration for implementation statuses
+	store               *storage.Store // Storage for persistent state
+	tmuxClient          tmux.Client
+	width               int
+	worktreeRemovalForm *Dialog        // Worktree removal dialog
+	worktreePath        string
 }
 
 func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, devMode bool) *Model {
@@ -205,9 +205,9 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessionToKill = session
 			removeWorktree := false
 			m.formRemoveWorktree = &removeWorktree
-			m.form = m.createWorktreeRemovalForm(sessionInfo.WorktreePath)
+			m.worktreeRemovalForm = m.createWorktreeRemovalDialog(sessionInfo.WorktreePath)
 			m.state = stateConfirmingWorktreeRemoval
-			return m, m.form.Init()
+			return m, m.worktreeRemovalForm.Init()
 		} else {
 			return m, m.killSession(session)
 		}
@@ -223,7 +223,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentDisplayName = sessionInfo.DisplayName
 		}
 
-		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName, m.devMode)
+		contentForm := NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName)
+		m.sessionRenameForm = NewDialog("Rename Session", contentForm, m.devMode)
 		m.state = stateRenamingSession
 		return m, m.sessionRenameForm.Init()
 	}
@@ -238,7 +239,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentStatus = sessionInfo.Status
 		}
 
-		m.sessionStatusForm = NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig, m.devMode)
+		contentForm := NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig)
+		m.sessionStatusForm = NewDialog("Set Status", contentForm, m.devMode)
 		m.state = stateSettingStatus
 		return m, m.sessionStatusForm.Init()
 	}
@@ -253,7 +255,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentComment = sessionInfo.Comment
 		}
 
-		m.sessionCommentForm = NewSessionCommentForm(m.store, session.Name, currentComment, m.devMode)
+		contentForm := NewSessionCommentForm(m.store, session.Name, currentComment)
+		m.sessionCommentForm = NewDialog("Edit Session Comment", contentForm, m.devMode)
 		m.state = stateCommentingSession
 		return m, m.sessionCommentForm.Init()
 	}
@@ -301,7 +304,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		m.sessionForm = NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.devMode)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState)
+		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
 	}
@@ -325,44 +329,44 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Forward message to SessionForm
-	newForm, cmd := m.sessionForm.Update(msg)
-	if sf, ok := newForm.(*SessionForm); ok {
-		m.sessionForm = sf
-	}
+	// Forward message to Dialog
+	updated, cmd := m.sessionForm.Update(msg)
+	m.sessionForm = updated.(*Dialog)
 
-	// Check if form is completed
-	if m.sessionForm.Completed {
-		result := m.sessionForm.Result()
+	// Access wrapped content to check completion
+	if content, ok := m.sessionForm.Content().(*SessionForm); ok {
+		if content.Completed {
+			result := content.Result()
 
-		// Return to list state
-		m.state = stateList
-		m.sessionForm = nil
+			// Return to list state
+			m.state = stateList
+			m.sessionForm = nil
 
-		// Check if session creation failed
-		if result.Error != nil {
-			m.setError(fmt.Errorf("failed to create session: %w", result.Error))
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		if !result.Cancelled {
-			// Reload session state
-			sessionState, err := m.store.Load(context.Background())
-			if err != nil {
-				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-				log.Printf("Warning: failed to reload session state: %v", err)
-				m.sessionList.RefreshFromState()
+			// Check if session creation failed
+			if result.Error != nil {
+				m.setError(fmt.Errorf("failed to create session: %w", result.Error))
 				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			} else {
-				m.sessionState = sessionState
 			}
-			// Refresh session list component
-			m.sessionList.RefreshFromState()
-			// Select the newly added session (always at position 0)
-			m.sessionList.list.Select(0)
-		}
 
-		return m, m.sessionList.Init()
+			if !result.Cancelled {
+				// Reload session state
+				sessionState, err := m.store.Load(context.Background())
+				if err != nil {
+					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					log.Printf("Warning: failed to reload session state: %v", err)
+					m.sessionList.RefreshFromState()
+					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				} else {
+					m.sessionState = sessionState
+				}
+				// Refresh session list component
+				m.sessionList.RefreshFromState()
+				// Select the newly added session (always at position 0)
+				m.sessionList.list.Select(0)
+			}
+
+			return m, m.sessionList.Init()
+		}
 	}
 
 	return m, cmd
@@ -378,41 +382,41 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Forward message to SessionRenameForm
-	newForm, cmd := m.sessionRenameForm.Update(msg)
-	if sf, ok := newForm.(*SessionRenameForm); ok {
-		m.sessionRenameForm = sf
-	}
+	// Forward message to Dialog
+	updated, cmd := m.sessionRenameForm.Update(msg)
+	m.sessionRenameForm = updated.(*Dialog)
 
-	// Check if form is completed
-	if m.sessionRenameForm.Completed {
-		result := m.sessionRenameForm.Result()
+	// Access wrapped content to check completion
+	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok {
+		if content.Completed {
+			result := content.Result()
 
-		// Return to list state
-		m.state = stateList
-		m.sessionRenameForm = nil
+			// Return to list state
+			m.state = stateList
+			m.sessionRenameForm = nil
 
-		// Check if rename failed
-		if result.Error != nil {
-			m.setError(fmt.Errorf("failed to rename session: %w", result.Error))
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		if !result.Cancelled {
-			// Reload session state
-			sessionState, err := m.store.Load(context.Background())
-			if err != nil {
-				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-				m.sessionList.RefreshFromState()
+			// Check if rename failed
+			if result.Error != nil {
+				m.setError(fmt.Errorf("failed to rename session: %w", result.Error))
 				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			} else {
-				m.sessionState = sessionState
 			}
-			// Refresh session list component
-			m.sessionList.RefreshFromState()
-		}
 
-		return m, m.sessionList.Init()
+			if !result.Cancelled {
+				// Reload session state
+				sessionState, err := m.store.Load(context.Background())
+				if err != nil {
+					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.sessionList.RefreshFromState()
+					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				} else {
+					m.sessionState = sessionState
+				}
+				// Refresh session list component
+				m.sessionList.RefreshFromState()
+			}
+
+			return m, m.sessionList.Init()
+		}
 	}
 
 	return m, cmd
@@ -428,41 +432,41 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Forward message to SessionStatusForm
-	newForm, cmd := m.sessionStatusForm.Update(msg)
-	if sf, ok := newForm.(*SessionStatusForm); ok {
-		m.sessionStatusForm = sf
-	}
+	// Forward message to Dialog
+	updated, cmd := m.sessionStatusForm.Update(msg)
+	m.sessionStatusForm = updated.(*Dialog)
 
-	// Check if form is completed
-	if m.sessionStatusForm.Completed {
-		result := m.sessionStatusForm.Result()
+	// Access wrapped content to check completion
+	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok {
+		if content.Completed {
+			result := content.Result()
 
-		// Return to list state
-		m.state = stateList
-		m.sessionStatusForm = nil
+			// Return to list state
+			m.state = stateList
+			m.sessionStatusForm = nil
 
-		// Check if status update failed
-		if result.Error != nil {
-			m.setError(fmt.Errorf("failed to update status: %w", result.Error))
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		if !result.Cancelled {
-			// Reload session state
-			sessionState, err := m.store.Load(context.Background())
-			if err != nil {
-				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-				m.sessionList.RefreshFromState()
+			// Check if status update failed
+			if result.Error != nil {
+				m.setError(fmt.Errorf("failed to update status: %w", result.Error))
 				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			} else {
-				m.sessionState = sessionState
 			}
-			// Refresh session list component
-			m.sessionList.RefreshFromState()
-		}
 
-		return m, m.sessionList.Init()
+			if !result.Cancelled {
+				// Reload session state
+				sessionState, err := m.store.Load(context.Background())
+				if err != nil {
+					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.sessionList.RefreshFromState()
+					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				} else {
+					m.sessionState = sessionState
+				}
+				// Refresh session list component
+				m.sessionList.RefreshFromState()
+			}
+
+			return m, m.sessionList.Init()
+		}
 	}
 
 	return m, cmd
@@ -478,41 +482,41 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Forward message to SessionCommentForm
-	newForm, cmd := m.sessionCommentForm.Update(msg)
-	if sf, ok := newForm.(*SessionCommentForm); ok {
-		m.sessionCommentForm = sf
-	}
+	// Forward message to Dialog
+	updated, cmd := m.sessionCommentForm.Update(msg)
+	m.sessionCommentForm = updated.(*Dialog)
 
-	// Check if form is completed
-	if m.sessionCommentForm.Completed {
-		result := m.sessionCommentForm.Result()
+	// Access wrapped content to check completion
+	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok {
+		if content.Completed {
+			result := content.Result()
 
-		// Return to list state
-		m.state = stateList
-		m.sessionCommentForm = nil
+			// Return to list state
+			m.state = stateList
+			m.sessionCommentForm = nil
 
-		// Check if comment update failed
-		if result.Error != nil {
-			m.setError(fmt.Errorf("failed to update comment: %w", result.Error))
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		if !result.Cancelled {
-			// Reload session state
-			sessionState, err := m.store.Load(context.Background())
-			if err != nil {
-				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-				m.sessionList.RefreshFromState()
+			// Check if comment update failed
+			if result.Error != nil {
+				m.setError(fmt.Errorf("failed to update comment: %w", result.Error))
 				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			} else {
-				m.sessionState = sessionState
 			}
-			// Refresh session list component
-			m.sessionList.RefreshFromState()
-		}
 
-		return m, m.sessionList.Init()
+			if !result.Cancelled {
+				// Reload session state
+				sessionState, err := m.store.Load(context.Background())
+				if err != nil {
+					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.sessionList.RefreshFromState()
+					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				} else {
+					m.sessionState = sessionState
+				}
+				// Refresh session list component
+				m.sessionList.RefreshFromState()
+			}
+
+			return m, m.sessionList.Init()
+		}
 	}
 
 	return m, cmd
@@ -654,7 +658,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
 			m.state = stateList
-			m.form = nil
+			m.worktreeRemovalForm = nil
 			m.sessionToKill = nil
 			m.formRemoveWorktree = nil
 			return m, nil
@@ -662,24 +666,24 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 	}
 
 	// Safety check for nil form
-	if m.form == nil {
+	if m.worktreeRemovalForm == nil {
 		m.state = stateList
 		m.sessionToKill = nil
 		return m, nil
 	}
 
-	// Forward message to form
-	form, cmd := m.form.Update(msg)
-	if f, ok := form.(*huh.Form); ok {
-		m.form = f
-	}
+	// Forward message to Dialog
+	updated, cmd := m.worktreeRemovalForm.Update(msg)
+	m.worktreeRemovalForm = updated.(*Dialog)
 
-	// Check if form completed
-	if m.form.State == huh.StateCompleted {
-		removeWorktree := *m.formRemoveWorktree // Dereference pointer
-		session := m.sessionToKill
+	// Access wrapped huh.Form to check completion
+	if form, ok := m.worktreeRemovalForm.Content().(*huh.Form); ok {
+		// Check if form completed
+		if form.State == huh.StateCompleted {
+			removeWorktree := *m.formRemoveWorktree // Dereference pointer
+			session := m.sessionToKill
 
-		logging.Logger.Info("Worktree removal decision", "remove", removeWorktree, "session", session.Name)
+			logging.Logger.Info("Worktree removal decision", "remove", removeWorktree, "session", session.Name)
 
 		// Get worktree path and repo path from session info
 		sessionInfo := m.sessionState.Sessions[session.Name]
@@ -701,27 +705,28 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 			logging.Logger.Info("Keeping worktree", "path", worktreePath)
 		}
 
-		// Kill the session
-		killCmd := m.killSession(session)
+			// Kill the session
+			killCmd := m.killSession(session)
 
-		// Reset state
-		m.state = stateList
-		m.form = nil
-		m.sessionToKill = nil
-		m.formRemoveWorktree = nil
+			// Reset state
+			m.state = stateList
+			m.worktreeRemovalForm = nil
+			m.sessionToKill = nil
+			m.formRemoveWorktree = nil
 
-		// If there was a worktree error, add clearErrorAfterDelay to the batch
-		if worktreeErr {
-			return m, tea.Batch(killCmd, m.clearErrorAfterDelay())
+			// If there was a worktree error, add clearErrorAfterDelay to the batch
+			if worktreeErr {
+				return m, tea.Batch(killCmd, m.clearErrorAfterDelay())
+			}
+			return m, killCmd
 		}
-		return m, killCmd
 	}
 
 	return m, cmd
 }
 
 // createWorktreeRemovalForm creates a confirmation form for removing a worktree
-func (m *Model) createWorktreeRemovalForm(worktreePath string) *huh.Form {
+func (m *Model) createWorktreeRemovalDialog(worktreePath string) *Dialog {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
@@ -733,7 +738,7 @@ func (m *Model) createWorktreeRemovalForm(worktreePath string) *huh.Form {
 		),
 	)
 
-	return form
+	return NewDialog("Remove Worktree", form, m.devMode)
 }
 
 func (m *Model) View() string {
@@ -758,8 +763,8 @@ func (m *Model) View() string {
 			return m.sessionForm.View()
 		}
 	case stateConfirmingWorktreeRemoval:
-		if m.form != nil {
-			return renderDialogHeader(m.devMode, "Remove Worktree") + m.form.View()
+		if m.worktreeRemovalForm != nil {
+			return m.worktreeRemovalForm.View()
 		}
 	case stateRenamingSession:
 		if m.sessionRenameForm != nil {
