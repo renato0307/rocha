@@ -40,3 +40,11 @@ type SessionStatus struct {
 	Status      string `gorm:"not null"`         // Implementation status (spec, plan, implement, review, done)
 	UpdatedAt   time.Time
 }
+
+// SessionComment represents a comment/note for a session (1-to-1 with Session)
+type SessionComment struct {
+	Comment     string `gorm:"not null;default:''"`
+	CreatedAt   time.Time
+	SessionName string `gorm:"primaryKey"`
+	UpdatedAt   time.Time
+}

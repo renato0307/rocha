@@ -11,6 +11,7 @@ type SessionState struct {
 // SessionInfo represents a session (compatible with old state package)
 type SessionInfo struct {
 	BranchName   string
+	Comment      string
 	DisplayName  string
 	ExecutionID  string
 	GitStats     interface{}
