@@ -25,7 +25,6 @@ type SessionCommentForm struct {
 	Completed      bool
 	cancelled      bool
 	currentComment string
-	devMode        bool
 	form           *huh.Form
 	result         SessionCommentFormResult
 	sessionName    string
@@ -33,10 +32,9 @@ type SessionCommentForm struct {
 }
 
 // NewSessionCommentForm creates a new session comment form
-func NewSessionCommentForm(store *storage.Store, sessionName, currentComment string, devMode bool) *SessionCommentForm {
+func NewSessionCommentForm(store *storage.Store, sessionName, currentComment string) *SessionCommentForm {
 	sf := &SessionCommentForm{
 		currentComment: currentComment,
-		devMode:        devMode,
 		sessionName:    sessionName,
 		store:          store,
 		result: SessionCommentFormResult{
@@ -96,7 +94,7 @@ func (sf *SessionCommentForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (sf *SessionCommentForm) View() string {
 	if sf.form != nil {
-		return renderDialogHeader(sf.devMode, "Edit Session Comment") + sf.form.View()
+		return sf.form.View()
 	}
 	return ""
 }

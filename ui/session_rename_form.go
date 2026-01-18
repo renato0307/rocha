@@ -60,7 +60,6 @@ type SessionRenameForm struct {
 	Completed          bool
 	cancelled          bool
 	currentDisplayName string // Current display name for reference
-	devMode            bool
 	form               *huh.Form
 	oldTmuxName        string // Immutable - the session we're renaming
 	result             SessionRenameFormResult
@@ -70,10 +69,9 @@ type SessionRenameForm struct {
 }
 
 // NewSessionRenameForm creates a new session rename form
-func NewSessionRenameForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string, devMode bool) *SessionRenameForm {
+func NewSessionRenameForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string) *SessionRenameForm {
 	sf := &SessionRenameForm{
 		currentDisplayName: currentDisplayName,
-		devMode:            devMode,
 		oldTmuxName:        oldTmuxName,
 		result: SessionRenameFormResult{
 			OldTmuxName: oldTmuxName,
@@ -145,7 +143,7 @@ func (sf *SessionRenameForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (sf *SessionRenameForm) View() string {
 	if sf.form != nil {
-		return renderDialogHeader(sf.devMode, "Rename Session") + sf.form.View()
+		return sf.form.View()
 	}
 	return ""
 }

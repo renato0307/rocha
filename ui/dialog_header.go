@@ -55,6 +55,11 @@ func renderHeader(devMode bool, subtitle string) string {
 
 // renderDialogHeader creates a header for dialogs with a form title.
 // This is a convenience wrapper around renderHeader for backward compatibility.
+//
+// NOTE: This function should ONLY be called by the Dialog wrapper in dialog.go.
+// Do not call this function directly from form components. Instead, wrap your
+// form component in a Dialog using NewDialog(), which will automatically add
+// the header. This enforces consistent headers "by design" across all dialogs.
 func renderDialogHeader(devMode bool, formTitle string) string {
 	return renderHeader(devMode, formTitle)
 }
