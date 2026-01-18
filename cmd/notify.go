@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"rocha/logging"
 	"rocha/sound"
 	"rocha/state"
+	"rocha/storage"
 )
 
 // NotifyCmd handles notification events from Claude hooks
@@ -19,7 +21,7 @@ type NotifyCmd struct {
 }
 
 // Run executes the notification handler
-func (n *NotifyCmd) Run() error {
+func (n *NotifyCmd) Run(cli *CLI) error {
 	// Always initialize hook-specific logging for easier debugging
 	hookLogFile, err := logging.InitHookLogger(n.SessionName, n.EventType)
 	if err != nil {
@@ -28,24 +30,30 @@ func (n *NotifyCmd) Run() error {
 		logging.Logger.Info("Hook logger initialized", "log_file", hookLogFile)
 	}
 
-	// Determine execution ID: flag > env var > state file > "unknown"
+	// Get database path
+	dbPath := expandPath(cli.DBPath)
+
+	// Determine execution ID: flag > env var > database > "unknown"
 	executionID := n.ExecutionID
 	if executionID == "" {
 		executionID = os.Getenv("ROCHA_EXECUTION_ID")
 		if executionID == "" {
-			// Load state file to find execution ID for this session
-			st, err := state.Load()
+			// Load from database to find execution ID for this session
+			store, err := storage.NewStore(dbPath)
 			if err == nil {
-				if session, exists := st.Sessions[n.SessionName]; exists {
+				defer store.Close()
+				session, err := store.GetSession(context.Background(), n.SessionName)
+				if err == nil {
 					executionID = session.ExecutionID
 					logging.Logger.Info("Using execution ID from session state", "execution_id", executionID)
 				} else {
-					executionID = st.ExecutionID
-					logging.Logger.Info("Using global execution ID from state", "execution_id", executionID)
+					// Session not found, use unknown
+					executionID = "unknown"
+					logging.Logger.Warn("Could not determine execution ID", "error", err)
 				}
 			} else {
 				executionID = "unknown"
-				logging.Logger.Warn("Could not determine execution ID", "error", err)
+				logging.Logger.Warn("Could not open database", "error", err)
 			}
 		}
 	}
@@ -93,14 +101,22 @@ func (n *NotifyCmd) Run() error {
 		"event", n.EventType,
 		"state", sessionState)
 
-	// Queue session state update
-	if err := state.QueueUpdateSession(n.SessionName, sessionState, executionID); err != nil {
-		log.Printf("Warning: failed to queue session state update: %v", err)
-		logging.Logger.Error("Failed to queue session state update", "error", err)
+	// Update session state directly in SQLite (NO MORE EVENT QUEUE!)
+	store, err := storage.NewStore(dbPath)
+	if err != nil {
+		log.Printf("Warning: failed to open database: %v", err)
+		logging.Logger.Error("Failed to open database", "error", err)
+		return nil // Don't fail notification on state errors
+	}
+	defer store.Close()
+
+	if err := store.UpdateSession(context.Background(), n.SessionName, sessionState, executionID); err != nil {
+		log.Printf("Warning: failed to update session state: %v", err)
+		logging.Logger.Error("Failed to update session state", "error", err)
 		return nil // Don't fail notification on state errors
 	}
 
-	logging.Logger.Info("Session state update queued successfully",
+	logging.Logger.Info("Session state updated successfully (direct SQLite write)",
 		"session", n.SessionName,
 		"state", sessionState,
 		"execution_id", executionID)

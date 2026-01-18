@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
+	"rocha/storage"
 	"rocha/tmux"
 	"rocha/version"
 	"sort"
@@ -50,10 +52,10 @@ func (i SessionItem) Description() string {
 
 // SessionDelegate is a custom delegate for rendering session items
 type SessionDelegate struct {
-	sessionState *state.SessionState
+	sessionState *storage.SessionState
 }
 
-func newSessionDelegate(sessionState *state.SessionState) SessionDelegate {
+func newSessionDelegate(sessionState *storage.SessionState) SessionDelegate {
 	return SessionDelegate{sessionState: sessionState}
 }
 
@@ -168,7 +170,8 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 type SessionList struct {
 	list         list.Model
 	tmuxClient   tmux.Client
-	sessionState *state.SessionState
+	store        *storage.Store         // Storage for persistent state
+	sessionState *storage.SessionState
 	err          error
 	editor       string // Editor to open sessions in
 
@@ -195,12 +198,12 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, editor string) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string) *SessionList {
 	// Load session state
-	sessionState, err := state.Load()
+	sessionState, err := store.Load(context.Background())
 	if err != nil {
 		logging.Logger.Warn("Failed to load session state", "error", err)
-		sessionState = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
+		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 
 	// Build items from state
@@ -220,6 +223,7 @@ func NewSessionList(tmuxClient tmux.Client, editor string) *SessionList {
 	return &SessionList{
 		list:         l,
 		tmuxClient:   tmuxClient,
+		store:        store,
 		sessionState: sessionState,
 		err:          err,
 		editor:       editor,
@@ -258,41 +262,34 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return sl, pollStateCmd()
 
 	case checkStateMsg:
-		// Auto-refresh: Check if state file has changed
-		newState, err := state.Load()
+		// Auto-refresh: Check if state has changed
+		newState, err := sl.store.Load(context.Background())
 		if err != nil {
 			// Continue polling even on error
 			return sl, pollStateCmd()
 		}
 
-		// Only update if state actually changed
-		if !newState.UpdatedAt.Equal(sl.sessionState.UpdatedAt) {
-			// Preserve GitStats cache from old state
-			for name, newInfo := range newState.Sessions {
-				if oldInfo, exists := sl.sessionState.Sessions[name]; exists {
-					newInfo.GitStats = oldInfo.GitStats
-					newState.Sessions[name] = newInfo
-				}
+		// Preserve GitStats cache from old state
+		for name, newInfo := range newState.Sessions {
+			if oldInfo, exists := sl.sessionState.Sessions[name]; exists {
+				newInfo.GitStats = oldInfo.GitStats
+				newState.Sessions[name] = newInfo
 			}
-
-			sl.sessionState = newState
-
-			// Update delegate with new state
-			delegate := newSessionDelegate(newState)
-			sl.list.SetDelegate(delegate)
-
-			// Rebuild items
-			items := buildListItems(newState, sl.tmuxClient)
-			cmd := sl.list.SetItems(items)
-
-			// Request git stats for visible sessions
-			gitStatsCmd := sl.requestGitStatsForVisible()
-			return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
 		}
 
-		// Even if state didn't change, try to fetch git stats
+		sl.sessionState = newState
+
+		// Update delegate with new state
+		delegate := newSessionDelegate(newState)
+		sl.list.SetDelegate(delegate)
+
+		// Rebuild items
+		items := buildListItems(newState, sl.tmuxClient)
+		cmd := sl.list.SetItems(items)
+
+		// Request git stats for visible sessions
 		gitStatsCmd := sl.requestGitStatsForVisible()
-		return sl, tea.Batch(pollStateCmd(), gitStatsCmd)
+		return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
 
 	case error:
 		sl.err = msg
@@ -447,7 +444,7 @@ func (sl *SessionList) View() string {
 
 // RefreshFromState reloads the session list from state
 func (sl *SessionList) RefreshFromState() {
-	sessionState, err := state.Load()
+	sessionState, err := sl.store.Load(context.Background())
 	if err != nil {
 		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		logging.Logger.Error("Failed to refresh session state", "error", err)
@@ -481,7 +478,7 @@ func pollStateCmd() tea.Cmd {
 }
 
 // buildListItems converts SessionState to list items
-func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []list.Item {
+func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client) []list.Item {
 	var items []list.Item
 
 	// Build sessions from state
@@ -494,21 +491,29 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 		}
 	}
 
-	// Initialize OrderedSessionNames if empty (first time)
-	if len(sessionState.OrderedSessionNames) == 0 && len(sessionsMap) > 0 {
-		// Get all session names and sort alphabetically for initial order
-		var names []string
-		for name := range sessionsMap {
-			names = append(names, name)
+	// Build ordered sessions list using OrderedSessionNames from database
+	var sessions []*tmux.Session
+	orderedSet := make(map[string]bool)
+
+	// Add sessions in database order
+	for _, name := range sessionState.OrderedSessionNames {
+		if session, exists := sessionsMap[name]; exists {
+			sessions = append(sessions, session)
+			orderedSet[name] = true
 		}
-		sort.Strings(names)
-		sessionState.OrderedSessionNames = names
-		sessionState.Save() // Persist the initial order
 	}
 
-	// Apply manual order
-	var sessions []*tmux.Session
-	sessions = applyManualOrder(sessionsMap, sessionState.OrderedSessionNames)
+	// Add any new sessions not yet in database order (alphabetically at end)
+	var unordered []string
+	for name := range sessionsMap {
+		if !orderedSet[name] {
+			unordered = append(unordered, name)
+		}
+	}
+	sort.Strings(unordered)
+	for _, name := range unordered {
+		sessions = append(sessions, sessionsMap[name])
+	}
 
 	// Convert to list items
 	for _, session := range sessions {
@@ -569,37 +574,6 @@ func buildListItems(sessionState *state.SessionState, tmuxClient tmux.Client) []
 	}
 
 	return items
-}
-
-// applyManualOrder orders sessions according to OrderedSessionNames
-// Sessions in the order list come first, followed by unordered sessions alphabetically
-func applyManualOrder(sessionsMap map[string]*tmux.Session, orderedNames []string) []*tmux.Session {
-	var ordered []*tmux.Session
-	orderedSet := make(map[string]bool)
-
-	// Add sessions in manual order
-	for _, name := range orderedNames {
-		if session, exists := sessionsMap[name]; exists {
-			ordered = append(ordered, session)
-			orderedSet[name] = true
-		}
-	}
-
-	// Find sessions not in order list and add them alphabetically at end
-	var unordered []string
-	for name := range sessionsMap {
-		if !orderedSet[name] {
-			unordered = append(unordered, name)
-		}
-	}
-	sort.Strings(unordered)
-
-	// Append unordered sessions
-	for _, name := range unordered {
-		ordered = append(ordered, sessionsMap[name])
-	}
-
-	return ordered
 }
 
 // renderStatusLegend renders the status legend with counts
@@ -669,10 +643,16 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 		return nil // Already at top
 	}
 
-	// Move session up in state
-	if err := sl.sessionState.MoveSessionUp(item.Session.Name); err != nil {
-		logging.Logger.Warn("Failed to move session up", "session", item.Session.Name, "error", err)
+	// Get previous item
+	items := sl.list.Items()
+	prevItem, ok := items[currentIndex-1].(SessionItem)
+	if !ok {
 		return nil
+	}
+
+	// Swap positions in database
+	if err := sl.store.SwapPositions(context.Background(), item.Session.Name, prevItem.Session.Name); err != nil {
+		logging.Logger.Warn("Failed to swap session positions", "error", err)
 	}
 
 	// Reload state and rebuild list
@@ -697,10 +677,15 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 		return nil // Already at bottom
 	}
 
-	// Move session down in state
-	if err := sl.sessionState.MoveSessionDown(item.Session.Name); err != nil {
-		logging.Logger.Warn("Failed to move session down", "session", item.Session.Name, "error", err)
+	// Get next item
+	nextItem, ok := items[currentIndex+1].(SessionItem)
+	if !ok {
 		return nil
+	}
+
+	// Swap positions in database
+	if err := sl.store.SwapPositions(context.Background(), item.Session.Name, nextItem.Session.Name); err != nil {
+		logging.Logger.Warn("Failed to swap session positions", "error", err)
 	}
 
 	// Reload state and rebuild list

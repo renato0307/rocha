@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +9,7 @@ import (
 	"syscall"
 
 	"rocha/logging"
-	"rocha/state"
+	"rocha/storage"
 )
 
 // StartClaudeCmd starts Claude Code with hooks configured
@@ -17,7 +18,7 @@ type StartClaudeCmd struct {
 }
 
 // Run executes Claude with hooks configuration
-func (s *StartClaudeCmd) Run() error {
+func (s *StartClaudeCmd) Run(cli *CLI) error {
 	// Get the path to the rocha binary
 	rochaBin, err := os.Executable()
 	if err != nil {
@@ -32,23 +33,37 @@ func (s *StartClaudeCmd) Run() error {
 
 	// Load current state to get ExecutionID for this session
 	var executionID string
-	st, err := state.Load()
+	dbPath := expandPath(cli.DBPath)
+	store, err := storage.NewStore(dbPath)
 	if err != nil {
-		logging.Logger.Warn("Failed to load state for execution ID", "error", err)
+		logging.Logger.Warn("Failed to open database for execution ID", "error", err)
 		// Fall back to environment variable
 		executionID = os.Getenv("ROCHA_EXECUTION_ID")
 		if executionID == "" {
 			executionID = "unknown"
 		}
 	} else {
-		// Get ExecutionID from session info
-		if session, exists := st.Sessions[sessionName]; exists {
-			executionID = session.ExecutionID
-			logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
+		defer store.Close()
+		st, err := store.Load(context.Background())
+		if err != nil {
+			logging.Logger.Warn("Failed to load state for execution ID", "error", err)
+			executionID = os.Getenv("ROCHA_EXECUTION_ID")
+			if executionID == "" {
+				executionID = "unknown"
+			}
 		} else {
-			// Use global execution ID
-			executionID = st.ExecutionID
-			logging.Logger.Info("Using global execution ID", "execution_id", executionID)
+			// Get ExecutionID from session info
+			if session, exists := st.Sessions[sessionName]; exists {
+				executionID = session.ExecutionID
+				logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
+			} else {
+				// Session not found, fallback to env or unknown
+				executionID = os.Getenv("ROCHA_EXECUTION_ID")
+				if executionID == "" {
+					executionID = "unknown"
+				}
+				logging.Logger.Warn("Session not found, using fallback execution ID", "execution_id", executionID)
+			}
 		}
 	}
 

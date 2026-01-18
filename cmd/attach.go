@@ -1,15 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
+	"rocha/storage"
 	"rocha/tmux"
 )
 
@@ -22,8 +25,16 @@ type AttachCmd struct {
 }
 
 // Run executes the attach command
-func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
+func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Info("Attach command started")
+
+	// Open database
+	dbPath := expandPath(cli.DBPath)
+	store, err := storage.NewStore(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
 
 	// Step 1: Auto-detect parameters from current directory
 	cwd, err := os.Getwd()
@@ -81,8 +92,8 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 		"worktree_path", worktreePath)
 
 	// Step 3.5: Check for duplicate sessions with same branch or worktree
-	st, err := state.Load()
-	if err != nil && !os.IsNotExist(err) {
+	st, err := store.Load(context.Background())
+	if err != nil {
 		logging.Logger.Warn("Failed to load state for duplicate check", "error", err)
 	}
 	if st != nil && st.Sessions != nil {
@@ -117,21 +128,21 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 		fmt.Printf("Attaching to existing session '%s'\n", sessionName)
 	}
 
-	// Step 5: Update state.json
+	// Step 5: Update database
 	// Reload state in case it changed
-	st, err = state.Load()
-	if err != nil && !os.IsNotExist(err) {
+	st, err = store.Load(context.Background())
+	if err != nil {
 		logging.Logger.Warn("Failed to load state", "error", err)
 	}
 	if st == nil {
-		st = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
+		st = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 
 	// Create or update session info - preserve DisplayName and State if session exists
 	sessionInfo, exists := st.Sessions[sessionName]
 	if exists {
 		// Session exists - preserve State and DisplayName, update timestamp and git metadata
-		sessionInfo.LastUpdated = time.Now()
+		sessionInfo.LastUpdated = time.Now().UTC()
 
 		// Update git metadata if provided
 		if branchName != "" {
@@ -148,18 +159,16 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 		}
 	} else {
 		// New session - create with "waiting" state, hooks will set "working" if needed
-		// Use current TUI's execution ID from state
-		executionID := st.ExecutionID
-		if executionID == "" {
-			executionID = "unknown"
-			logging.Logger.Warn("No execution ID in state, using 'unknown'")
-		}
-		sessionInfo = state.SessionInfo{
+		// Generate new execution ID for this session
+		executionID := uuid.New().String()
+		logging.Logger.Info("Creating new session with execution ID", "execution_id", executionID)
+
+		sessionInfo = storage.SessionInfo{
 			Name:         sessionName,
 			DisplayName:  sessionName,
 			State:        state.StateWaitingUser,
 			ExecutionID:  executionID,
-			LastUpdated:  time.Now(),
+			LastUpdated:  time.Now().UTC(),
 			BranchName:   branchName,
 			WorktreePath: worktreePath,
 			RepoPath:     repoPath,
@@ -169,7 +178,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client) error {
 
 	st.Sessions[sessionName] = sessionInfo
 
-	if err := st.Save(); err != nil {
+	if err := store.Save(context.Background(), st); err != nil {
 		logging.Logger.Error("Failed to save state", "error", err)
 		// Continue anyway - session is created
 	}

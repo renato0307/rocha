@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"rocha/editor"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
+	"rocha/storage"
 	"rocha/tmux"
 	"time"
 
@@ -61,8 +63,9 @@ const (
 
 type Model struct {
 	tmuxClient         tmux.Client
+	store              *storage.Store // Storage for persistent state
 	sessionList        *SessionList   // Session list component
-	sessionState       *state.SessionState // State data for git metadata and status
+	sessionState       *storage.SessionState // State data for git metadata and status
 	state              uiState
 	width              int
 	height             int
@@ -77,21 +80,22 @@ type Model struct {
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
 }
 
-func NewModel(tmuxClient tmux.Client, worktreePath string, editor string, errorClearDelay time.Duration) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration) *Model {
 	// Load session state - this is the source of truth
-	sessionState, stateErr := state.Load()
+	sessionState, stateErr := store.Load(context.Background())
 	var errMsg error
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
 		errMsg = fmt.Errorf("failed to load state: %w", stateErr)
-		sessionState = &state.SessionState{Sessions: make(map[string]state.SessionInfo)}
+		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, editor)
+	sessionList := NewSessionList(tmuxClient, store, editor)
 
 	return &Model{
 		tmuxClient:      tmuxClient,
+		store:           store,
 		sessionList:     sessionList,
 		sessionState:    sessionState,
 		state:           stateList,
@@ -207,7 +211,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentDisplayName = sessionInfo.DisplayName
 		}
 
-		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.sessionState, session.Name, currentDisplayName)
+		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName)
 		m.state = stateRenamingSession
 		return m, m.sessionRenameForm.Init()
 	}
@@ -232,7 +236,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		m.sessionForm = NewSessionForm(m.tmuxClient, m.worktreePath, m.sessionState)
+		m.sessionForm = NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
 	}
@@ -278,7 +282,7 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Reload session state
-			sessionState, err := state.Load()
+			sessionState, err := m.store.Load(context.Background())
 			if err != nil {
 				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 				log.Printf("Warning: failed to reload session state: %v", err)
@@ -329,7 +333,7 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Reload session state
-			sessionState, err := state.Load()
+			sessionState, err := m.store.Load(context.Background())
 			if err != nil {
 				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 				m.sessionList.RefreshFromState()
@@ -411,13 +415,13 @@ func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 	}
 
 	// Create nested SessionInfo for shell session
-	shellInfo := state.SessionInfo{
+	shellInfo := storage.SessionInfo{
 		Name:         shellSessionName,
 		ShellSession: nil, // Shell sessions don't have their own shells
 		DisplayName:  "",  // No display name for shell sessions
 		State:        state.StateIdle,
 		ExecutionID:  sessionInfo.ExecutionID,
-		LastUpdated:  time.Now(),
+		LastUpdated:  time.Now().UTC(),
 		RepoPath:     sessionInfo.RepoPath,
 		RepoInfo:     sessionInfo.RepoInfo,
 		BranchName:   sessionInfo.BranchName,
@@ -428,7 +432,7 @@ func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 	sessionInfo.ShellSession = &shellInfo
 	m.sessionState.Sessions[session.Name] = sessionInfo
 
-	if err := m.sessionState.Save(); err != nil {
+	if err := m.store.Save(context.Background(), m.sessionState); err != nil {
 		logging.Logger.Warn("Failed to save shell session to state", "error", err)
 	}
 
@@ -462,12 +466,13 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	}
 
 	// Remove session from state
-	st, err := state.Load()
+	st, err := m.store.Load(context.Background())
 	if err != nil {
 		log.Printf("Warning: failed to load state: %v", err)
 	} else {
-		if err := st.RemoveSession(session.Name); err != nil {
-			log.Printf("Warning: failed to remove session from state: %v", err)
+		delete(st.Sessions, session.Name)
+		if err := m.store.Save(context.Background(), st); err != nil {
+			log.Printf("Warning: failed to save state: %w", err)
 		}
 		m.sessionState = st
 	}
