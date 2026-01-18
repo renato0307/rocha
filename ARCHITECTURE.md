@@ -16,7 +16,7 @@ graph TB
 
     subgraph "Business Logic"
         TMUX[Tmux Client<br/>tmux/]
-        STATE[State Manager<br/>state/]
+        STORAGE[Storage Layer<br/>storage/]
         GIT[Git Operations<br/>git/]
         EDITOR[Editor Opener<br/>editor/]
     end
@@ -29,20 +29,20 @@ graph TB
     subgraph "External"
         TMUXCLI[tmux CLI]
         GITCLI[git CLI]
-        FS[File System<br/>state.json]
+        DB[SQLite Database<br/>rocha.db]
         LOGFS[Log Files]
     end
 
     CLI --> TUI
     CLI --> TMUX
     CLI --> GIT
-    CLI --> STATE
+    CLI --> STORAGE
     TUI --> TMUX
-    TUI --> STATE
+    TUI --> STORAGE
     TUI --> GIT
     TUI --> EDITOR
     TMUX --> TMUXCLI
-    STATE --> FS
+    STORAGE --> DB
     GIT --> GITCLI
 
     %% Cross-cutting concerns (dotted lines)
@@ -91,12 +91,22 @@ classDiagram
         +SendKeys()
     }
 
-    class StateManager {
-        +AddSession()
-        +RemoveSession()
-        +Sync()
+    class Store {
         +Load()
-        +GetCounts()
+        +Save()
+        +UpdateSession()
+        +UpdateSessionStatus()
+        +SwapPositions()
+        +ToggleFlag()
+        +GetSession()
+        +ListSessions()
+    }
+
+    class StatusConfig {
+        +Statuses: []string
+        +Colors: []string
+        +GetColor()
+        +GetNextStatus()
     }
 
     class Git {
@@ -111,6 +121,8 @@ classDiagram
         +View()
         +sessionList: SessionList
         +sessionForm: SessionForm
+        +sessionStatusForm: SessionStatusForm
+        +statusConfig: StatusConfig
     }
 
     class SessionList {
@@ -118,6 +130,7 @@ classDiagram
         +Update()
         +View()
         +RefreshFromState()
+        +cycleSessionStatus()
         -pollStateCmd() "Every 2s"
     }
 
@@ -129,18 +142,31 @@ classDiagram
         +createSessionCmd() "Async creation"
     }
 
+    class SessionStatusForm {
+        +Init()
+        +Update()
+        +View()
+        +Result()
+        +updateStatus() "Update status in DB"
+    }
+
     DefaultClient ..|> Client
     Model --> Client
-    Model --> StateManager
+    Model --> Store
     Model --> Git
+    Model --> StatusConfig
     Model --> SessionList
     Model --> SessionForm
-    SessionList --> StateManager
+    Model --> SessionStatusForm
+    SessionList --> Store
     SessionList --> Client
-    SessionForm --> StateManager
+    SessionList --> StatusConfig
+    SessionForm --> Store
     SessionForm --> Client
+    SessionStatusForm --> Store
+    SessionStatusForm --> StatusConfig
 
-    note for SessionList "Auto-refreshes every 2s\nby checking state.json\ntimestamp (UpdatedAt)"
+    note for SessionList "Auto-refreshes every 2s\nby checking database\nupdates (UpdatedAt)"
 ```
 
 ## Data Flow
@@ -180,46 +206,46 @@ sequenceDiagram
 sequenceDiagram
     participant Claude
     participant Hook
-    participant State
+    participant Storage
     participant TUI
 
     Note over Claude,TUI: Session starts
     Claude->>Hook: SessionStart event
-    Hook->>State: rocha notify start
-    State->>State: Set StateIdle (○)
+    Hook->>Storage: rocha notify start
+    Storage->>Storage: Update StateIdle (○) in DB
 
     loop Every 2 seconds
-        TUI->>State: Check state.json timestamp
-        State-->>TUI: UpdatedAt changed
+        TUI->>Storage: Load() from database
+        Storage-->>TUI: Session data with UpdatedAt
         TUI->>TUI: Reload & display ○ (yellow)
     end
 
     Note over Claude,TUI: User submits prompt
     Claude->>Hook: UserPromptSubmit event
-    Hook->>State: rocha notify prompt
-    State->>State: Set StateWorking (●)
-    TUI->>State: Poll detects change
+    Hook->>Storage: rocha notify prompt
+    Storage->>Storage: Update StateWorking (●) in DB
+    TUI->>Storage: Poll detects change
     TUI->>TUI: Display ● (green)
 
     Note over Claude,TUI: Claude finishes task
     Claude->>Hook: Stop event
-    Hook->>State: rocha notify stop
-    State->>State: Set StateIdle (○)
-    TUI->>State: Poll detects change
+    Hook->>Storage: rocha notify stop
+    Storage->>Storage: Update StateIdle (○) in DB
+    TUI->>Storage: Poll detects change
     TUI->>TUI: Display ○ (yellow)
 
     Note over Claude,TUI: Claude needs input
     Claude->>Hook: Notification event
-    Hook->>State: rocha notify notification
-    State->>State: Set StateWaitingUser (◐)
-    TUI->>State: Poll detects change
+    Hook->>Storage: rocha notify notification
+    Storage->>Storage: Update StateWaitingUser (◐) in DB
+    TUI->>Storage: Poll detects change
     TUI->>TUI: Display ◐ (red)
 
     Note over Claude,TUI: Claude exits
     Claude->>Hook: SessionEnd event
-    Hook->>State: rocha notify end
-    State->>State: Set StateExited (■)
-    TUI->>State: Poll detects change
+    Hook->>Storage: rocha notify end
+    Storage->>Storage: Update StateExited (■) in DB
+    TUI->>Storage: Poll detects change
     TUI->>TUI: Display ■ (gray)
 ```
 
@@ -234,6 +260,47 @@ Claude Code hooks trigger state transitions:
 | `Stop` | `rocha notify stop` | `StateIdle` | ○ (yellow) | Claude finished working |
 | `Notification` | `rocha notify notification` | `StateWaitingUser` | ◐ (red) | Claude needs user input |
 | `SessionEnd` | `rocha notify end` | `StateExited` | ■ (gray) | Claude has exited |
+
+### Session Status Update Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant TUI
+    participant Storage
+    participant DB
+
+    Note over User,DB: Option 1: Form-based status selection
+    User->>TUI: Press 's' on session
+    TUI->>TUI: Show SessionStatusForm
+    User->>TUI: Select status or <clear>
+    TUI->>Storage: UpdateSessionStatus()
+    Storage->>DB: Upsert/Delete in session_statuses table
+    Storage-->>TUI: Success
+    TUI->>Storage: Load() to refresh
+    TUI->>TUI: Display colored status [status]
+
+    Note over User,DB: Option 2: Quick status cycling
+    User->>TUI: Press Shift+S on session
+    TUI->>TUI: cycleSessionStatus()
+    TUI->>Storage: UpdateSessionStatus(next_status)
+    Storage->>DB: Upsert/Delete in session_statuses table
+    Storage-->>TUI: Success
+    TUI->>TUI: Immediately refresh (checkStateMsg)
+    TUI->>TUI: Display colored status [status]
+```
+
+#### Status Feature Details
+
+- **Storage**: Status stored in separate `session_statuses` table (1-to-1 with sessions)
+- **Customization**:
+  - `--statuses` flag: Comma-separated status names (default: "spec,plan,implement,review,done")
+  - `--status-colors` flag: ANSI color codes for each status (default: "141,33,214,226,46")
+- **Display**: Status shown in brackets next to session name with color coding
+- **Keyboard shortcuts**:
+  - `s`: Open status selection form with `<clear>` option
+  - `Shift+S`: Cycle through statuses (nil → first → ... → last → nil)
+- **Restrictions**: Only top-level sessions can have status (nested/shell sessions excluded)
 
 ## Packages
 
@@ -251,9 +318,11 @@ CLI command handlers using Kong framework.
 
 #### ui/
 Bubble Tea TUI with component architecture.
-- **SessionList** - Uses bubbles/list component, auto-refresh (2s poll), fuzzy filtering, status symbols (●○◐■)
+- **SessionList** - Uses bubbles/list component, auto-refresh (2s poll), fuzzy filtering, status symbols (●○◐■), status display with colors
 - **SessionForm** - Session creation forms
-- **Model** - Orchestrates states (list, creating, confirming)
+- **SessionStatusForm** - Status selection form with `<clear>` option
+- **StatusConfig** - Configuration for status names, colors, and cycling logic
+- **Model** - Orchestrates states (list, creating, confirming, settingStatus)
 
 #### tmux/
 Tmux abstraction layer with dependency injection.
@@ -261,11 +330,19 @@ Tmux abstraction layer with dependency injection.
 - `DefaultClient` - Implementation via tmux CLI
 - `Monitor` - Background session monitoring
 
-#### state/
-Persistent session state management.
-- JSON storage with file locking
-- Session metadata (git info, status, timestamps)
-- Four states: `WaitingUser` (◐), `Idle` (○), `Working` (●), `Exited` (■)
+#### storage/
+Persistent session storage using SQLite.
+- **Store** - GORM-based database abstraction with ACID guarantees
+- **Schema** - Session, SessionFlag, SessionStatus tables
+- **Types** - SessionInfo and SessionState for business logic
+- SQLite with WAL mode for concurrent access
+- Atomic transactions with retry logic for busy database scenarios
+- Session metadata (git info, status, timestamps, flags)
+- Four session states: `WaitingUser` (◐), `Idle` (○), `Working` (●), `Exited` (■)
+- Separate tables for:
+  - **sessions** - Core session data with position ordering
+  - **session_flags** - Flag/marker for important sessions
+  - **session_statuses** - Implementation status tracking (1-to-1 with sessions)
 
 #### git/
 Git worktree operations.
@@ -304,6 +381,8 @@ graph LR
         BUBBLES[bubbles - Components]
         HUH[huh - Forms]
         LG[lipgloss - Styles]
+        GORM[gorm - ORM]
+        SQLITE[go-sqlite3 - Driver]
     end
 
     subgraph "System Tools"
@@ -318,6 +397,8 @@ graph LR
     APP --> BUBBLES
     APP --> HUH
     APP --> LG
+    APP --> GORM
+    APP --> SQLITE
     APP --> TMUX
     APP --> GIT
     APP -.-> CLAUDE
@@ -330,8 +411,9 @@ graph LR
 - `bubbles` - Pre-built TUI components (list, textinput, etc.)
 - `huh` - Form components
 - `lipgloss` - Styling
+- `gorm` - ORM for database operations with transaction support
+- `go-sqlite3` - SQLite driver for Go (CGo-based)
 - `uuid` - UUID generation
-- `unix` - File locking
 
 **External Tools:**
 - `tmux` - Terminal multiplexer (required)

@@ -59,28 +59,31 @@ const (
 	stateCreatingSession
 	stateConfirmingWorktreeRemoval
 	stateRenamingSession
+	stateSettingStatus
 )
 
 type Model struct {
-	tmuxClient         tmux.Client
-	store              *storage.Store // Storage for persistent state
-	sessionList        *SessionList   // Session list component
-	sessionState       *storage.SessionState // State data for git metadata and status
-	state              uiState
-	width              int
-	height             int
-	err                error
-	worktreePath       string
 	editor             string         // Editor to open sessions in
+	err                error
 	errorClearDelay    time.Duration  // Duration before errors auto-clear
 	form               *huh.Form      // Form for worktree removal confirmation
-	sessionForm        *SessionForm   // Session creation form
-	sessionRenameForm  *SessionRenameForm // Session rename form
-	sessionToKill      *tmux.Session  // Session being killed (for worktree removal)
 	formRemoveWorktree *bool          // Worktree removal decision (pointer to persist across updates)
+	height             int
+	sessionForm        *SessionForm   // Session creation form
+	sessionList        *SessionList   // Session list component
+	sessionRenameForm  *SessionRenameForm // Session rename form
+	sessionState       *storage.SessionState // State data for git metadata and status
+	sessionStatusForm  *SessionStatusForm // Session status form
+	sessionToKill      *tmux.Session  // Session being killed (for worktree removal)
+	state              uiState
+	statusConfig       *StatusConfig  // Status configuration for implementation statuses
+	store              *storage.Store // Storage for persistent state
+	tmuxClient         tmux.Client
+	width              int
+	worktreePath       string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background())
 	var errMsg error
@@ -91,18 +94,19 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	}
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig)
 
 	return &Model{
-		tmuxClient:      tmuxClient,
-		store:           store,
+		editor:          editor,
+		err:             errMsg,
+		errorClearDelay: errorClearDelay,
 		sessionList:     sessionList,
 		sessionState:    sessionState,
 		state:           stateList,
-		err:             errMsg,
+		statusConfig:    statusConfig,
+		store:           store,
+		tmuxClient:      tmuxClient,
 		worktreePath:    worktreePath,
-		editor:          editor,
-		errorClearDelay: errorClearDelay,
 	}
 }
 
@@ -121,6 +125,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConfirmingWorktreeRemoval(msg)
 	case stateRenamingSession:
 		return m.updateRenamingSession(msg)
+	case stateSettingStatus:
+		return m.updateSettingStatus(msg)
 	}
 	return m, nil
 }
@@ -214,6 +220,21 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName)
 		m.state = stateRenamingSession
 		return m, m.sessionRenameForm.Init()
+	}
+
+	if m.sessionList.SessionToSetStatus != nil {
+		session := m.sessionList.SessionToSetStatus
+		m.sessionList.SessionToSetStatus = nil // Clear
+
+		// Get current status
+		var currentStatus *string
+		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
+			currentStatus = sessionInfo.Status
+		}
+
+		m.sessionStatusForm = NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig)
+		m.state = stateSettingStatus
+		return m, m.sessionStatusForm.Init()
 	}
 
 	if m.sessionList.SessionToOpenEditor != nil {
@@ -351,6 +372,56 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if rename failed
 		if result.Error != nil {
 			m.setError(fmt.Errorf("failed to rename session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		}
+
+		if !result.Cancelled {
+			// Reload session state
+			sessionState, err := m.store.Load(context.Background())
+			if err != nil {
+				m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+				m.sessionList.RefreshFromState()
+				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+			} else {
+				m.sessionState = sessionState
+			}
+			// Refresh session list component
+			m.sessionList.RefreshFromState()
+		}
+
+		return m, m.sessionList.Init()
+	}
+
+	return m, cmd
+}
+
+func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.sessionStatusForm = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	// Forward message to SessionStatusForm
+	newForm, cmd := m.sessionStatusForm.Update(msg)
+	if sf, ok := newForm.(*SessionStatusForm); ok {
+		m.sessionStatusForm = sf
+	}
+
+	// Check if form is completed
+	if m.sessionStatusForm.Completed {
+		result := m.sessionStatusForm.Result()
+
+		// Return to list state
+		m.state = stateList
+		m.sessionStatusForm = nil
+
+		// Check if status update failed
+		if result.Error != nil {
+			m.setError(fmt.Errorf("failed to update status: %w", result.Error))
 			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 		}
 
@@ -620,6 +691,10 @@ func (m *Model) View() string {
 	case stateRenamingSession:
 		if m.sessionRenameForm != nil {
 			return m.sessionRenameForm.View()
+		}
+	case stateSettingStatus:
+		if m.sessionStatusForm != nil {
+			return m.sessionStatusForm.View()
 		}
 	}
 	return ""

@@ -32,3 +32,11 @@ type SessionFlag struct {
 	SessionName string     `gorm:"primaryKey"`
 	UpdatedAt   time.Time
 }
+
+// SessionStatus represents the implementation status for a session (1-to-1 with Session)
+type SessionStatus struct {
+	CreatedAt   time.Time
+	SessionName string `gorm:"primaryKey;index"` // Foreign key to Session.Name
+	Status      string `gorm:"not null"`         // Implementation status (spec, plan, implement, review, done)
+	UpdatedAt   time.Time
+}
