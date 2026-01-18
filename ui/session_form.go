@@ -81,12 +81,6 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 	// Only add worktree options if in a git repo
 	if isGit {
 		fields = append(fields,
-			huh.NewConfirm().
-				Title("Create worktree?").
-				Description("Creates an isolated git worktree for this session").
-				Value(&sf.result.CreateWorktree).
-				Affirmative("Yes").
-				Negative("No"),
 			huh.NewNote().
 				Title("Suggested branch name").
 				DescriptionFunc(func() string {
@@ -97,9 +91,15 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 					}
 					return "(waiting for session name...)"
 				}, &sf.result.SessionName),
+			huh.NewConfirm().
+				Title("Create worktree?").
+				Description("Creates an isolated git worktree for this session").
+				Value(&sf.result.CreateWorktree).
+				Affirmative("Yes").
+				Negative("No"),
 			huh.NewInput().
-				Title("Branch name").
-				Description("Leave empty to use suggestion above, or provide your own. Must match git naming rules.").
+				Title("Override branch name").
+				Description("Leave empty to use suggested name above. Must match git naming rules.").
 				Value(&sf.result.BranchName).
 				Validate(func(s string) error {
 					if s == "" {
