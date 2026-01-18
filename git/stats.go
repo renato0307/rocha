@@ -83,19 +83,6 @@ func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) 
 		return nil
 	})
 
-	// Fetch last commit
-	g.Go(func() error {
-		hash, message, err := getLastCommit(ctx, worktreePath)
-		if err != nil {
-			logging.Logger.Debug("Failed to get last commit", "error", err)
-			// Non-fatal - continue with other stats
-			return nil
-		}
-		stats.CommitHash = hash
-		stats.CommitMessage = message
-		return nil
-	})
-
 	// Fetch PR number (optional, requires gh CLI)
 	g.Go(func() error {
 		prNumber, err := getPRNumber(ctx, worktreePath)
@@ -119,7 +106,6 @@ func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) 
 		"behind", stats.Behind,
 		"additions", stats.Additions,
 		"deletions", stats.Deletions,
-		"commit", stats.CommitHash,
 		"pr", stats.PRNumber)
 
 	return stats, nil

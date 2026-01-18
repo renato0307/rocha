@@ -42,6 +42,12 @@ var (
 
 	exitedIconStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8")) // Gray - Claude has exited
+
+	additionsStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("2")) // Green for additions
+
+	deletionsStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("1")) // Red for deletions
 )
 
 type uiState int
