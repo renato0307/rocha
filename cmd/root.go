@@ -62,6 +62,7 @@ func (c *CLI) AfterApply() error {
 
 // RunCmd starts the TUI application
 type RunCmd struct {
+	Dev             bool   `help:"Enable development mode (shows version info in dialogs)"`
 	Editor          string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 	ErrorClearDelay int    `help:"Seconds before error messages auto-clear" default:"10"`
 	StatusColors    string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
@@ -136,7 +137,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
 	statusConfig := ui.NewStatusConfig(r.Statuses, r.StatusIcons, r.StatusColors)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig),
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, r.Dev),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)

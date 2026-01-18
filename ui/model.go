@@ -63,6 +63,7 @@ const (
 )
 
 type Model struct {
+	devMode            bool           // Development mode (shows version info in dialogs)
 	editor             string         // Editor to open sessions in
 	err                error
 	errorClearDelay    time.Duration  // Duration before errors auto-clear
@@ -83,7 +84,7 @@ type Model struct {
 	worktreePath       string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, devMode bool) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background())
 	var errMsg error
@@ -94,9 +95,10 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	}
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, devMode)
 
 	return &Model{
+		devMode:         devMode,
 		editor:          editor,
 		err:             errMsg,
 		errorClearDelay: errorClearDelay,
@@ -217,7 +219,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentDisplayName = sessionInfo.DisplayName
 		}
 
-		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName)
+		m.sessionRenameForm = NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName, m.devMode)
 		m.state = stateRenamingSession
 		return m, m.sessionRenameForm.Init()
 	}
@@ -232,7 +234,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentStatus = sessionInfo.Status
 		}
 
-		m.sessionStatusForm = NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig)
+		m.sessionStatusForm = NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig, m.devMode)
 		m.state = stateSettingStatus
 		return m, m.sessionStatusForm.Init()
 	}
@@ -280,7 +282,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		m.sessionForm = NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState)
+		m.sessionForm = NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.devMode)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
 	}
@@ -688,7 +690,7 @@ func (m *Model) View() string {
 		}
 	case stateConfirmingWorktreeRemoval:
 		if m.form != nil {
-			return m.form.View()
+			return renderDialogHeader(m.devMode, "Remove Worktree") + m.form.View()
 		}
 	case stateRenamingSession:
 		if m.sessionRenameForm != nil {

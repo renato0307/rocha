@@ -35,33 +35,35 @@ type SessionFormResult struct {
 
 // SessionForm is a Bubble Tea component for creating sessions
 type SessionForm struct {
-	sessionManager tmux.SessionManager
-	store          *storage.Store
-	form           *huh.Form
-	worktreePath   string
-	sessionState   *storage.SessionState
-	result         SessionFormResult
 	Completed      bool // Exported so Model can check completion
 	cancelled      bool
 	creating       bool // True when session creation is in progress
+	devMode        bool
+	form           *huh.Form
+	result         SessionFormResult
+	sessionManager tmux.SessionManager
+	sessionState   *storage.SessionState
 	spinner        spinner.Model
+	store          *storage.Store
+	worktreePath   string
 }
 
 // NewSessionForm creates a new session creation form
-func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState) *SessionForm {
+func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, devMode bool) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	sf := &SessionForm{
-		sessionManager: sessionManager,
-		store:          store,
-		worktreePath:   worktreePath,
-		sessionState:   sessionState,
+		devMode:        devMode,
 		result: SessionFormResult{
 			CreateWorktree: true, // Default to true
 		},
-		spinner: s,
+		sessionManager: sessionManager,
+		sessionState:   sessionState,
+		spinner:        s,
+		store:          store,
+		worktreePath:   worktreePath,
 	}
 
 	// Check if we're in a git repository
@@ -192,10 +194,10 @@ func (sf *SessionForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (sf *SessionForm) View() string {
 	if sf.creating {
-		return fmt.Sprintf("\n%s Creating session...\n", sf.spinner.View())
+		return renderDialogHeader(sf.devMode, "Create Session") + fmt.Sprintf("\n%s Creating session...\n", sf.spinner.View())
 	}
 	if sf.form != nil {
-		return sf.form.View()
+		return renderDialogHeader(sf.devMode, "Create Session") + sf.form.View()
 	}
 	return ""
 }
