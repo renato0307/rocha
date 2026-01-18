@@ -329,8 +329,8 @@ func (sl *SessionList) View() string {
 	// Add custom help (status legend first, then keys)
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
-	helpText += "↑/k: up • ↓/j: down • Shift+↑/K: move up • Shift+↓/J: move down • /: filter • n: new • r: rename • x: kill • q: quit\n"
-	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨)"
+	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • x: kill\n"
+	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨) • q: quit"
 
 	s += helpStyle.Render(helpText)
 
