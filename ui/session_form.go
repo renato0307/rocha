@@ -195,6 +195,11 @@ func (sf *SessionForm) createSession() error {
 		logging.Logger.Error("Failed to save session state", "error", err)
 	}
 
+	// Add new session to top of manual order
+	if err := sf.sessionState.AddSessionToTop(tmuxName); err != nil {
+		logging.Logger.Error("Failed to add session to top of order", "error", err)
+	}
+
 	logging.Logger.Info("Session created successfully", "name", session.Name)
 	return nil
 }
