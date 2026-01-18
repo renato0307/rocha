@@ -22,6 +22,7 @@ type SessionStatusFormResult struct {
 type SessionStatusForm struct {
 	Completed    bool
 	cancelled    bool
+	devMode      bool
 	form         *huh.Form
 	result       SessionStatusFormResult
 	selectedItem string // Holds the selected option (status name or "<clear>")
@@ -31,14 +32,15 @@ type SessionStatusForm struct {
 }
 
 // NewSessionStatusForm creates a new session status form
-func NewSessionStatusForm(store *storage.Store, sessionName string, currentStatus *string, statusConfig *StatusConfig) *SessionStatusForm {
+func NewSessionStatusForm(store *storage.Store, sessionName string, currentStatus *string, statusConfig *StatusConfig, devMode bool) *SessionStatusForm {
 	sf := &SessionStatusForm{
-		sessionName:  sessionName,
-		statusConfig: statusConfig,
-		store:        store,
+		devMode:      devMode,
 		result: SessionStatusFormResult{
 			SessionName: sessionName,
 		},
+		sessionName:  sessionName,
+		statusConfig: statusConfig,
+		store:        store,
 	}
 
 	// Build status options
@@ -110,7 +112,7 @@ func (sf *SessionStatusForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (sf *SessionStatusForm) View() string {
 	if sf.form != nil {
-		return sf.form.View()
+		return renderDialogHeader(sf.devMode, "Set Status") + sf.form.View()
 	}
 	return ""
 }

@@ -57,28 +57,30 @@ type SessionRenameFormResult struct {
 
 // SessionRenameForm is a Bubble Tea component for renaming sessions
 type SessionRenameForm struct {
-	sessionManager     tmux.SessionManager
-	store              *storage.Store
-	sessionState       *storage.SessionState
-	form               *huh.Form
-	oldTmuxName        string // Immutable - the session we're renaming
-	currentDisplayName string // Current display name for reference
-	result             SessionRenameFormResult
 	Completed          bool
 	cancelled          bool
+	currentDisplayName string // Current display name for reference
+	devMode            bool
+	form               *huh.Form
+	oldTmuxName        string // Immutable - the session we're renaming
+	result             SessionRenameFormResult
+	sessionManager     tmux.SessionManager
+	sessionState       *storage.SessionState
+	store              *storage.Store
 }
 
 // NewSessionRenameForm creates a new session rename form
-func NewSessionRenameForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string) *SessionRenameForm {
+func NewSessionRenameForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string, devMode bool) *SessionRenameForm {
 	sf := &SessionRenameForm{
-		sessionManager:     sessionManager,
-		store:              store,
-		sessionState:       sessionState,
-		oldTmuxName:        oldTmuxName,
 		currentDisplayName: currentDisplayName,
+		devMode:            devMode,
+		oldTmuxName:        oldTmuxName,
 		result: SessionRenameFormResult{
 			OldTmuxName: oldTmuxName,
 		},
+		sessionManager: sessionManager,
+		sessionState:   sessionState,
+		store:          store,
 	}
 
 	// Build form with single input field
@@ -143,7 +145,7 @@ func (sf *SessionRenameForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (sf *SessionRenameForm) View() string {
 	if sf.form != nil {
-		return sf.form.View()
+		return renderDialogHeader(sf.devMode, "Rename Session") + sf.form.View()
 	}
 	return ""
 }

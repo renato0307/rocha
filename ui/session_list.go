@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
+	"time"
+
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
-	"rocha/version"
-	"sort"
-	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -185,26 +185,23 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 // SessionList is a Bubble Tea component for displaying and managing sessions
 type SessionList struct {
-	list         list.Model
-	tmuxClient   tmux.Client
-	store        *storage.Store         // Storage for persistent state
-	sessionState *storage.SessionState
-	err          error
+	devMode      bool
 	editor       string // Editor to open sessions in
-
-	// Window dimensions
-	width  int
-	height int
+	err          error
+	fetchingGitStats bool // Prevent concurrent fetches
+	list         list.Model
+	sessionState *storage.SessionState
+	statusConfig *StatusConfig
+	store        *storage.Store         // Storage for persistent state
+	tmuxClient   tmux.Client
 
 	// Escape handling for filter clearing
 	escPressCount int
 	escPressTime  time.Time
 
-	// Git stats fetching
-	fetchingGitStats bool // Prevent concurrent fetches
-
-	// Status configuration
-	statusConfig *StatusConfig
+	// Window dimensions
+	height int
+	width  int
 
 	// Result fields - set by component, read by Model
 	RequestNewSession    bool          // User pressed 'n'
@@ -220,7 +217,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, devMode bool) *SessionList {
 	// Load session state
 	sessionState, err := store.Load(context.Background())
 	if err != nil {
@@ -243,13 +240,14 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 	l.SetShowHelp(false) // We'll render our own help
 
 	return &SessionList{
-		list:         l,
-		tmuxClient:   tmuxClient,
-		store:        store,
-		sessionState: sessionState,
-		err:          err,
+		devMode:      devMode,
 		editor:       editor,
+		err:          err,
+		list:         l,
+		sessionState: sessionState,
 		statusConfig: statusConfig,
+		store:        store,
+		tmuxClient:   tmuxClient,
 	}
 }
 
@@ -457,10 +455,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (sl *SessionList) View() string {
 	var s string
 
-	// Add custom header
-	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("Rocha")
-	s += titleText + "\n"
-	s += normalStyle.Render(version.Tagline) + "\n\n"
+	// Add custom header (reuses renderHeader for consistency)
+	s += renderHeader(sl.devMode, "") + "\n"
 
 	// Render list
 	s += sl.list.View()
