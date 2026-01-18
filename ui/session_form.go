@@ -37,9 +37,9 @@ type SessionForm struct {
 	worktreePath   string
 	sessionState   *state.SessionState
 	result         SessionFormResult
-	Completed      bool    // Exported so Model can check completion
+	Completed      bool // Exported so Model can check completion
 	cancelled      bool
-	creating       bool    // True when session creation is in progress
+	creating       bool // True when session creation is in progress
 	spinner        spinner.Model
 }
 
@@ -65,7 +65,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 
 	logging.Logger.Debug("Creating session form", "is_git_repo", isGit, "cwd", cwd)
 
-	// Build form fields
+	// Build form fields - all in one group
 	fields := []huh.Field{
 		huh.NewInput().
 			Title("Session name").
@@ -87,14 +87,23 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 				Value(&sf.result.CreateWorktree).
 				Affirmative("Yes").
 				Negative("No"),
+			huh.NewNote().
+				Title("Suggested branch name").
+				DescriptionFunc(func() string {
+					if sf.result.SessionName != "" {
+						if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
+							return fmt.Sprintf("→ %s", sanitized)
+						}
+					}
+					return "(waiting for session name...)"
+				}, &sf.result.SessionName),
 			huh.NewInput().
 				Title("Branch name").
-				Description("Leave empty to auto-generate. Must match git naming rules.").
+				Description("Leave empty to use suggestion above, or provide your own. Must match git naming rules.").
 				Value(&sf.result.BranchName).
-				Placeholder("(auto-generated)").
 				Validate(func(s string) error {
 					if s == "" {
-						return nil // Empty is OK, will auto-generate
+						return nil // Empty is OK, will use suggested name
 					}
 					// Validate user-provided name
 					if err := git.ValidateBranchName(s); err != nil {
@@ -213,14 +222,14 @@ func (sf *SessionForm) createSession() error {
 			repoInfo = git.GetRepoInfo(repo)
 			logging.Logger.Info("Extracted repo info", "repo_info", repoInfo)
 
-			// Auto-generate branch name if not provided
+			// Auto-generate branch name if not provided (user left field empty)
 			if branchName == "" {
 				var err error
 				branchName, err = git.SanitizeBranchName(sessionName)
 				if err != nil {
 					return fmt.Errorf("failed to generate branch name from session name: %w", err)
 				}
-				logging.Logger.Info("Auto-generated branch name", "branch", branchName)
+				logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
 			}
 
 			// Expand worktree base path
