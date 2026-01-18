@@ -14,7 +14,7 @@ var validBranchNameChars = regexp.MustCompile(`^[a-zA-Z0-9._/-]+$`)
 
 // invalidBranchNameChars matches characters that should be replaced with hyphens
 // Includes: spaces, special characters not allowed in branch names
-var invalidBranchNameChars = regexp.MustCompile(`[\s~^:?*\[\]\\{}#@]+`)
+var invalidBranchNameChars = regexp.MustCompile(`[\s~^:?*\[\]\\{}#@()]+`)
 
 // consecutiveHyphens matches two or more consecutive hyphens
 var consecutiveHyphens = regexp.MustCompile(`-{2,}`)
