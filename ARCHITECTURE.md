@@ -124,6 +124,7 @@ classDiagram
         +Update()
         +View()
         +Result()
+        +createSessionCmd() "Async creation"
     }
 
     DefaultClient ..|> Client
@@ -148,15 +149,19 @@ classDiagram
 sequenceDiagram
     participant User
     participant TUI
+    participant Cmd as tea.Cmd<br/>(Background)
     participant Tmux
     participant State
     participant Git
 
     User->>TUI: Create session
-    TUI->>Git: Create worktree
-    TUI->>Tmux: Create tmux session
-    TUI->>State: Save metadata
+    TUI->>Cmd: createSessionCmd()
+    Note over TUI: UI remains responsive
+    Cmd->>Git: Create worktree
+    Cmd->>Tmux: Create tmux session
+    Cmd->>State: Save metadata
     State->>State: Write state.json
+    Cmd->>TUI: sessionCreatedMsg
 
     User->>TUI: Attach to session
     TUI->>Tmux: Attach
