@@ -50,6 +50,10 @@ For all available commands and options, run `rocha --help`.
 - `alt+1` to `alt+7` - Quick attach to sessions by number
 - `alt+enter` - Open shell session (⌨) for the selected session
 - `r` - Rename session
+- `c` - Add/edit comment on session
+- `f` - Toggle flag (mark session as important)
+- `s` - Cycle through statuses quickly (working → idle → waiting → exited)
+- `shift+s` - Set status (interactive form to choose status)
 - `o` - Open session in your editor
 - `x` - Kill session
 - `↑/↓` or `j/k` - Navigate
