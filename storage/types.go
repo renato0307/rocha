@@ -21,5 +21,6 @@ type SessionInfo struct {
 	RepoPath     string
 	ShellSession *SessionInfo
 	State        string
+	Status       *string // Implementation status (nil = no status set)
 	WorktreePath string
 }

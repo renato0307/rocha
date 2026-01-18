@@ -196,6 +196,22 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 				}
 			}
 
+			// Load all session statuses for efficient lookup
+			// Note: table might not exist yet on first run with new schema
+			var statuses []SessionStatus
+			if err := tx.Find(&statuses).Error; err != nil {
+				if !strings.Contains(err.Error(), "no such table") {
+					return fmt.Errorf("failed to load session statuses: %w", err)
+				}
+				// Table doesn't exist yet, skip status loading
+				logging.Logger.Debug("session_statuses table doesn't exist yet, skipping status loading")
+			}
+			statusMap := make(map[string]*string)
+			for _, s := range statuses {
+				statusCopy := s.Status
+				statusMap[s.SessionName] = &statusCopy
+			}
+
 			// Build ordered names list and convert to map
 			state.Sessions = make(map[string]SessionInfo)
 			state.OrderedSessionNames = make([]string, len(sessions))
@@ -208,14 +224,14 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 				var nestedSession Session
 				err := tx.Where("parent_name = ?", sess.Name).First(&nestedSession).Error
 				if err == nil {
-					// Nested session found (nested sessions are never flagged)
-					nestedInfo := convertToSessionInfo(nestedSession, false)
-					sessInfo := convertToSessionInfo(sess, isFlagged)
+					// Nested session found (nested sessions are never flagged and don't have status)
+					nestedInfo := convertToSessionInfo(nestedSession, false, nil)
+					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap)
 					sessInfo.ShellSession = &nestedInfo
 					state.Sessions[sess.Name] = sessInfo
 				} else if errors.Is(err, gorm.ErrRecordNotFound) {
 					// No nested session
-					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged)
+					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap)
 				} else {
 					return fmt.Errorf("failed to load nested session for %s: %w", sess.Name, err)
 				}
@@ -311,6 +327,50 @@ func (s *Store) UpdateSession(ctx context.Context, name, state, executionID stri
 			if result.RowsAffected == 0 {
 				return fmt.Errorf("session %s not found", name)
 			}
+			return nil
+		})
+	}, 3)
+}
+
+// UpdateSessionStatus updates the status of a single session atomically
+// Note: Only top-level sessions can have status, nested sessions cannot
+func (s *Store) UpdateSessionStatus(ctx context.Context, name string, status *string) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// First check if session exists and is not nested
+			var session Session
+			if err := tx.Where("name = ?", name).First(&session).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("session %s not found", name)
+				}
+				return err
+			}
+
+			// Reject status updates for nested sessions
+			if session.ParentName != nil {
+				return fmt.Errorf("cannot set status on nested session %s", name)
+			}
+
+			if status == nil || *status == "" {
+				// Delete the status entry if status is nil or empty
+				if err := tx.Where("session_name = ?", name).Delete(&SessionStatus{}).Error; err != nil {
+					// Ignore "no such table" errors on first run
+					if !strings.Contains(err.Error(), "no such table") {
+						return fmt.Errorf("failed to delete session status: %w", err)
+					}
+				}
+			} else {
+				// Upsert the status
+				sessionStatus := SessionStatus{
+					SessionName: name,
+					Status:      *status,
+				}
+				// Use Save which will insert or update
+				if err := tx.Save(&sessionStatus).Error; err != nil {
+					return fmt.Errorf("failed to save session status: %w", err)
+				}
+			}
+
 			return nil
 		})
 	}, 3)
@@ -431,6 +491,8 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	var session Session
 	var nestedSession Session
 	var flag SessionFlag
+	var status SessionStatus
+	statusMap := make(map[string]*string)
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -442,6 +504,15 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 			// Try to get flag
 			err := tx.Where("session_name = ?", name).First(&flag).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
+			// Try to get status
+			err = tx.Where("session_name = ?", name).First(&status).Error
+			if err == nil {
+				statusCopy := status.Status
+				statusMap[name] = &statusCopy
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) && !strings.Contains(err.Error(), "no such table") {
 				return err
 			}
 
@@ -463,11 +534,11 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	}
 
 	isFlagged := flag.IsFlagged
-	info := convertToSessionInfo(session, isFlagged)
+	info := convertToSessionInfo(session, isFlagged, statusMap)
 
-	// Add nested session if found (nested sessions are never flagged)
+	// Add nested session if found (nested sessions are never flagged and don't have status)
 	if nestedSession.Name != "" {
-		nestedInfo := convertToSessionInfo(nestedSession, false)
+		nestedInfo := convertToSessionInfo(nestedSession, false, nil)
 		info.ShellSession = &nestedInfo
 	}
 
@@ -479,6 +550,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	var sessions []Session
 	var allSessions []Session
 	var flags []SessionFlag
+	var statuses []SessionStatus
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -495,6 +567,13 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 			// Get all flags
 			if err := tx.Find(&flags).Error; err != nil {
 				return err
+			}
+
+			// Get all statuses
+			if err := tx.Find(&statuses).Error; err != nil {
+				if !strings.Contains(err.Error(), "no such table") {
+					return err
+				}
 			}
 
 			return nil
@@ -521,15 +600,22 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 		}
 	}
 
+	// Build status lookup map
+	statusMap := make(map[string]*string)
+	for _, s := range statuses {
+		statusCopy := s.Status
+		statusMap[s.SessionName] = &statusCopy
+	}
+
 	// Convert to SessionInfo with nested sessions
 	result := make([]SessionInfo, len(sessions))
 	for i, sess := range sessions {
 		isFlagged := flagMap[sess.Name]
-		info := convertToSessionInfo(sess, isFlagged)
+		info := convertToSessionInfo(sess, isFlagged, statusMap)
 
-		// Add nested session if exists (nested sessions are never flagged)
+		// Add nested session if exists (nested sessions are never flagged and don't have status)
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedInfo := convertToSessionInfo(nested, false)
+			nestedInfo := convertToSessionInfo(nested, false, nil)
 			info.ShellSession = &nestedInfo
 		}
 
@@ -569,7 +655,14 @@ func withRetry(fn func() error, maxRetries int) error {
 }
 
 // Helper conversion functions
-func convertToSessionInfo(s Session, isFlagged bool) SessionInfo {
+func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string) SessionInfo {
+	var status *string
+	if statusMap != nil {
+		if s, ok := statusMap[s.Name]; ok {
+			status = s
+		}
+	}
+
 	return SessionInfo{
 		BranchName:   s.BranchName,
 		DisplayName:  s.DisplayName,
@@ -582,6 +675,7 @@ func convertToSessionInfo(s Session, isFlagged bool) SessionInfo {
 		RepoPath:     s.RepoPath,
 		ShellSession: nil,
 		State:        s.State,
+		Status:       status,
 		WorktreePath: s.WorktreePath,
 	}
 }

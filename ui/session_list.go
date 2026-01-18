@@ -34,6 +34,7 @@ type SessionItem struct {
 	IsFlagged       bool
 	Session         *tmux.Session
 	State           string
+	Status          *string // Implementation status
 }
 
 // FilterValue implements list.Item
@@ -54,10 +55,14 @@ func (i SessionItem) Description() string {
 // SessionDelegate is a custom delegate for rendering session items
 type SessionDelegate struct {
 	sessionState *storage.SessionState
+	statusConfig *StatusConfig
 }
 
-func newSessionDelegate(sessionState *storage.SessionState) SessionDelegate {
-	return SessionDelegate{sessionState: sessionState}
+func newSessionDelegate(sessionState *storage.SessionState, statusConfig *StatusConfig) SessionDelegate {
+	return SessionDelegate{
+		sessionState: sessionState,
+		statusConfig: statusConfig,
+	}
 }
 
 // Height implements list.ItemDelegate
@@ -117,6 +122,14 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// Add shell session indicator at the end
 	if item.HasShellSession {
 		line1 += " ⌨"
+	}
+
+	// Add implementation status if set (with color-coded brackets)
+	if item.Status != nil && *item.Status != "" {
+		statusColor := d.statusConfig.GetColor(*item.Status)
+		line1 += " " + lipgloss.NewStyle().
+			Foreground(lipgloss.Color(statusColor)).
+			Render("[" + *item.Status + "]")
 	}
 
 	// Build second line: git ref (indented to align with session name)
@@ -190,6 +203,9 @@ type SessionList struct {
 	// Git stats fetching
 	fetchingGitStats bool // Prevent concurrent fetches
 
+	// Status configuration
+	statusConfig *StatusConfig
+
 	// Result fields - set by component, read by Model
 	RequestNewSession    bool          // User pressed 'n'
 	RequestTestError     bool          // User pressed 'alt+e' (test command)
@@ -198,12 +214,13 @@ type SessionList struct {
 	SessionToKill        *tmux.Session // Session user wants to kill
 	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
 	SessionToRename      *tmux.Session // Session user wants to rename
+	SessionToSetStatus   *tmux.Session // Session user wants to set status for
 	SessionToToggleFlag  *tmux.Session // Session user wants to toggle flag
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig) *SessionList {
 	// Load session state
 	sessionState, err := store.Load(context.Background())
 	if err != nil {
@@ -212,10 +229,10 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string)
 	}
 
 	// Build items from state
-	items := buildListItems(sessionState, tmuxClient)
+	items := buildListItems(sessionState, tmuxClient, statusConfig)
 
 	// Create delegate
-	delegate := newSessionDelegate(sessionState)
+	delegate := newSessionDelegate(sessionState, statusConfig)
 
 	// Create list with reasonable default size (will be resized on WindowSizeMsg)
 	// Initial height: assume 40 line terminal - 12 lines for header/help = 28
@@ -232,6 +249,7 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string)
 		sessionState: sessionState,
 		err:          err,
 		editor:       editor,
+		statusConfig: statusConfig,
 	}
 }
 
@@ -251,9 +269,9 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Rebuild items with updated stats
-		delegate := newSessionDelegate(sl.sessionState)
+		delegate := newSessionDelegate(sl.sessionState, sl.statusConfig)
 		sl.list.SetDelegate(delegate)
-		items := buildListItems(sl.sessionState, sl.tmuxClient)
+		items := buildListItems(sl.sessionState, sl.tmuxClient, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
 
 		// Mark fetching as done and continue polling
@@ -285,11 +303,11 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sl.sessionState = newState
 
 		// Update delegate with new state
-		delegate := newSessionDelegate(newState)
+		delegate := newSessionDelegate(newState, sl.statusConfig)
 		sl.list.SetDelegate(delegate)
 
 		// Rebuild items
-		items := buildListItems(newState, sl.tmuxClient)
+		items := buildListItems(newState, sl.tmuxClient, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
 
 		// Request git stats for visible sessions
@@ -343,6 +361,18 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToToggleFlag = item.Session
 				return sl, nil
+			}
+
+		case "s":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToSetStatus = item.Session
+				return sl, nil
+			}
+
+		case "S":
+			// Shift+S: Cycle through statuses
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				return sl, sl.cycleSessionStatus(item.Session.Name)
 			}
 
 		case "K": // Shift+K (uppercase K)
@@ -473,11 +503,11 @@ func (sl *SessionList) RefreshFromState() {
 	sl.sessionState = sessionState
 
 	// Update delegate
-	delegate := newSessionDelegate(sessionState)
+	delegate := newSessionDelegate(sessionState, sl.statusConfig)
 	sl.list.SetDelegate(delegate)
 
 	// Rebuild items
-	items := buildListItems(sessionState, sl.tmuxClient)
+	items := buildListItems(sessionState, sl.tmuxClient, sl.statusConfig)
 	sl.list.SetItems(items)
 }
 
@@ -489,7 +519,7 @@ func pollStateCmd() tea.Cmd {
 }
 
 // buildListItems converts SessionState to list items
-func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client) []list.Item {
+func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client, statusConfig *StatusConfig) []list.Item {
 	var items []list.Item
 
 	// Build sessions from state
@@ -577,6 +607,7 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client) 
 			IsFlagged:       info.IsFlagged,
 			Session:         session,
 			State:           info.State,
+			Status:          info.Status,
 		})
 	}
 
@@ -811,4 +842,38 @@ func (sl *SessionList) requestGitStatsForVisible() tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+// cycleSessionStatus cycles the status of a session to the next value
+func (sl *SessionList) cycleSessionStatus(sessionName string) tea.Cmd {
+	// Get current status from session state
+	var currentStatus *string
+	if sessionInfo, ok := sl.sessionState.Sessions[sessionName]; ok {
+		currentStatus = sessionInfo.Status
+	}
+
+	// Get next status in cycle
+	nextStatus := sl.statusConfig.GetNextStatus(currentStatus)
+
+	// Update in database
+	if err := sl.store.UpdateSessionStatus(context.Background(), sessionName, nextStatus); err != nil {
+		logging.Logger.Error("Failed to cycle session status", "error", err, "session", sessionName)
+		return nil
+	}
+
+	// Log the change
+	currentStr := "nil"
+	if currentStatus != nil {
+		currentStr = *currentStatus
+	}
+	nextStr := "nil"
+	if nextStatus != nil {
+		nextStr = *nextStatus
+	}
+	logging.Logger.Info("Cycled session status", "session", sessionName, "from", currentStr, "to", nextStr)
+
+	// Refresh list immediately to show new status
+	return func() tea.Msg {
+		return checkStateMsg{}
+	}
 }
