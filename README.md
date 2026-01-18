@@ -1,6 +1,14 @@
 # Rocha
 
-I'm Rocha, and I manage coding agents
+I'm Rocha, and I manage coding agents.
+In practical terms, I'm a tmux-based session manager for Claude Code CLI.
+
+## Requirements
+
+- tmux
+- Claude Code CLI (`claude`)
+- git (optional, for worktree support)
+- Go 1.23+ (only if building from source)
 
 ## Quick Start
 
@@ -22,18 +30,32 @@ For all available commands and options, run `rocha --help`.
 
 ## What You Can Do
 - **Switch between Claude sessions** - Keep multiple conversations organized
+- **Shell sessions** - Open a separate shell (⌨) for each Claude session
+- **Rename sessions** - Give your sessions meaningful names
+- **Manual ordering** - Organize sessions by moving them up/down
+- **Quick attach** - Jump to sessions 1-7 with alt+number keys
+- **Editor integration** - Open sessions directly in your editor
+- **Filter sessions** - Search sessions by name or git branch
 - **Get sound alerts** - Hear when Claude finishes and needs your input
 - **See status in tmux** - Show active/waiting sessions in your status bar
-- **Never lose context** - Sessions persist until you kill them
+- **Session states** - Track which sessions are working, idle, waiting, or exited
 - **Git worktree support** - Each session can have its own isolated branch and workspace
+- **Git stats** - See PR info, ahead/behind commits, and changes at a glance
 
 ## Key Bindings
 
 **In the list:**
 - `n` - New session
 - `Enter` - Attach to session
+- `alt+1` to `alt+7` - Quick attach to sessions by number
+- `alt+enter` - Open shell session (⌨) for the selected session
+- `r` - Rename session
+- `o` - Open session in your editor
 - `x` - Kill session
 - `↑/↓` or `j/k` - Navigate
+- `shift+↑/↓` or `shift+j/k` - Move session up/down in list
+- `/` - Filter/search sessions
+- `esc` (twice) - Clear filter
 - `q` - Quit
 
 **Inside a session:**
@@ -53,11 +75,7 @@ Worktrees are stored in `~/.rocha/worktrees/` by default.
 
 ## Status Bar (Optional)
 
-Show session counts in your tmux status bar:
-```bash
-rocha setup
-source ~/.zshrc  # or ~/.bashrc
-```
+The `rocha setup` command adds session counts to your tmux status bar.
 
 You'll see `W:2 A:1` meaning 2 sessions waiting for input, 1 actively working.
 
@@ -65,59 +83,20 @@ Or add manually to `~/.tmux.conf`:
 ```bash
 set -g status-right "Claude: #(rocha status) | %H:%M"
 set -g status-interval 1
-set -g mouse on  # Enable mouse support
 ```
 
 ## Building from Source
 
-### Prerequisites
-- Go 1.25.6 or later
-- Git
-
-### Using Make (recommended)
 ```bash
-make build          # Build with version info
 make install        # Build and install to ~/.local/bin
-make snapshot       # Test release build locally
+make build          # Build only
+go build -o rocha . # Build with Go directly
 ```
 
-### Using Go directly
-```bash
-go build -o rocha .
-```
-
-### Check Version
+Check your installation:
 ```bash
 rocha --version
 ```
-
-## Release Process (for maintainers)
-
-Releases are automated via GitHub Actions:
-
-1. Create and push a version tag:
-   ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
-   ```
-
-2. GitHub Actions automatically:
-   - Builds binaries for linux/darwin on amd64/arm64
-   - Creates a GitHub release with changelog
-   - Uploads binaries and checksums
-
-3. Test locally before tagging:
-   ```bash
-   make snapshot
-   ./dist/rocha_linux_amd64_v1/rocha --version
-   ```
-
-## Requirements
-
-- tmux
-- git (for worktree support)
-- Claude Code CLI (`claude`)
-- Go 1.25.6+ (for building from source)
 
 ## Troubleshooting
 
@@ -134,3 +113,17 @@ Logs go to:
 ## License
 
 GPL v3
+
+## Release Process (Maintainers)
+
+Create and push a version tag to trigger automated release:
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+Test locally first:
+```bash
+make snapshot
+./dist/rocha_linux_amd64_v1/rocha --version
+```
