@@ -23,3 +23,12 @@ type Session struct {
 	// Transient fields
 	GitStats interface{} `gorm:"-" json:"-"`
 }
+
+// SessionFlag represents a flag/marker for a session (extension table)
+type SessionFlag struct {
+	CreatedAt   time.Time
+	FlaggedAt   *time.Time `gorm:"default:null"`
+	IsFlagged   bool       `gorm:"not null;default:false"`
+	SessionName string     `gorm:"primaryKey"`
+	UpdatedAt   time.Time
+}

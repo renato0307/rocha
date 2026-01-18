@@ -234,6 +234,29 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.sessionList.Init()
 	}
 
+	if m.sessionList.SessionToToggleFlag != nil {
+		session := m.sessionList.SessionToToggleFlag
+		m.sessionList.SessionToToggleFlag = nil
+
+		if err := m.store.ToggleFlag(context.Background(), session.Name); err != nil {
+			m.err = fmt.Errorf("failed to toggle flag: %w", err)
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		}
+
+		// Reload session state
+		sessionState, err := m.store.Load(context.Background())
+		if err != nil {
+			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
+			m.sessionList.RefreshFromState()
+			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		}
+		m.sessionState = sessionState
+
+		// Refresh UI
+		m.sessionList.RefreshFromState()
+		return m, m.sessionList.Init()
+	}
+
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
 		m.sessionForm = NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState)

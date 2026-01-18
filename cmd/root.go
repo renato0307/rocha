@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
-	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/storage"
@@ -87,17 +86,16 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	}
 	defer store.Close()
 
-	// Load state
+	// Load state for initial session info
 	st, err := store.Load(context.Background())
 	if err != nil {
-		log.Printf("Warning: failed to load state: %v", err)
-		logging.Logger.Warn("Failed to load state", "error", err)
+		log.Printf("Warning: failed to load session state: %v", err)
+		logging.Logger.Warn("Failed to load session state", "error", err)
 		st = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 	logging.Logger.Debug("State loaded", "existing_sessions", len(st.Sessions))
 
 	// Sync with running tmux sessions
-	// Update execution ID for sessions that are currently running
 	runningSessions, err := tmuxClient.List()
 	if err != nil {
 		logging.Logger.Warn("Failed to list tmux sessions", "error", err)
@@ -108,10 +106,10 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		}
 		logging.Logger.Info("Syncing with running tmux sessions", "count", len(runningNames))
 
-		// Update execution ID for running sessions directly in SQLite
+		// Update execution ID for running sessions directly in database
 		for _, sessionName := range runningNames {
-			if _, exists := st.Sessions[sessionName]; exists {
-				if err := store.UpdateSession(context.Background(), sessionName, st.Sessions[sessionName].State, executionID); err != nil {
+			if sessionInfo, exists := st.Sessions[sessionName]; exists {
+				if err := store.UpdateSession(context.Background(), sessionName, sessionInfo.State, executionID); err != nil {
 					logging.Logger.Error("Failed to update session", "error", err, "session", sessionName)
 				} else {
 					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
@@ -126,51 +124,6 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 				if err := store.UpdateSession(context.Background(), sessionName, state.StateExited, executionID); err != nil {
 					logging.Logger.Error("Failed to update exited state", "error", err, "session", sessionName)
 				}
-			}
-		}
-
-		// Detect and update git metadata for running sessions with worktrees
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			worktreeBase := filepath.Join(homeDir, ".rocha", "worktrees")
-			logging.Logger.Debug("Detecting git metadata for running sessions", "worktree_base", worktreeBase)
-
-			for _, sessionName := range runningNames {
-				session, exists := st.Sessions[sessionName]
-				if !exists {
-					continue
-				}
-
-				// Check if worktree exists for this session
-				worktreePath := filepath.Join(worktreeBase, sessionName)
-				if _, err := os.Stat(worktreePath); err == nil {
-					// Worktree exists - detect git metadata
-					logging.Logger.Debug("Detecting git metadata for session", "name", sessionName, "worktree_path", worktreePath)
-
-					branchName := git.GetBranchName(worktreePath)
-					isRepo, repoRoot := git.IsGitRepo(worktreePath)
-
-					if isRepo && branchName != "" {
-						repoInfo := git.GetRepoInfo(repoRoot)
-
-						// Update session with detected metadata
-						session.WorktreePath = worktreePath
-						session.BranchName = branchName
-						session.RepoPath = repoRoot
-						session.RepoInfo = repoInfo
-
-						st.Sessions[sessionName] = session
-						logging.Logger.Info("Updated git metadata for session",
-							"name", sessionName,
-							"branch", branchName,
-							"repo", repoInfo)
-					}
-				}
-			}
-
-			// Save the updated state with git metadata
-			if err := store.Save(context.Background(), st); err != nil {
-				logging.Logger.Error("Failed to save state with git metadata", "error", err)
 			}
 		}
 	}
