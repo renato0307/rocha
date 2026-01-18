@@ -82,14 +82,13 @@ func NewSessionForm(sessionManager tmux.SessionManager, worktreePath string, ses
 	if isGit {
 		fields = append(fields,
 			huh.NewNote().
-				Title("Suggested branch name").
 				DescriptionFunc(func() string {
 					if sf.result.SessionName != "" {
 						if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
-							return fmt.Sprintf("→ %s", sanitized)
+							return fmt.Sprintf("Suggested branch name: %s", sanitized)
 						}
 					}
-					return "(waiting for session name...)"
+					return "Suggested branch name: (waiting for session name...)"
 				}, &sf.result.SessionName),
 			huh.NewConfirm().
 				Title("Create worktree?").
