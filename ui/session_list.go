@@ -234,6 +234,29 @@ func (sl *SessionList) Init() tea.Cmd {
 // Update handles messages for the session list component
 func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case git.GitStatsReadyMsg:
+		// Git stats successfully fetched
+		if info, exists := sl.sessionState.Sessions[msg.SessionName]; exists {
+			info.GitStats = msg.Stats
+			sl.sessionState.Sessions[msg.SessionName] = info
+		}
+
+		// Rebuild items with updated stats
+		delegate := newSessionDelegate(sl.sessionState)
+		sl.list.SetDelegate(delegate)
+		items := buildListItems(sl.sessionState, sl.tmuxClient)
+		cmd := sl.list.SetItems(items)
+
+		// Mark fetching as done and continue polling
+		sl.fetchingGitStats = false
+		return sl, tea.Batch(cmd, pollStateCmd())
+
+	case git.GitStatsErrorMsg:
+		// Git stats fetch failed - log and continue
+		logging.Logger.Debug("Git stats fetch failed", "session", msg.SessionName, "error", msg.Err)
+		sl.fetchingGitStats = false
+		return sl, pollStateCmd()
+
 	case checkStateMsg:
 		// Auto-refresh: Check if state file has changed
 		newState, err := state.Load()
@@ -261,10 +284,15 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Rebuild items
 			items := buildListItems(newState, sl.tmuxClient)
 			cmd := sl.list.SetItems(items)
-			return sl, tea.Batch(cmd, pollStateCmd())
+
+			// Request git stats for visible sessions
+			gitStatsCmd := sl.requestGitStatsForVisible()
+			return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
 		}
 
-		return sl, pollStateCmd()
+		// Even if state didn't change, try to fetch git stats
+		gitStatsCmd := sl.requestGitStatsForVisible()
+		return sl, tea.Batch(pollStateCmd(), gitStatsCmd)
 
 	case error:
 		sl.err = msg
