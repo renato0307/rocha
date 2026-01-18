@@ -30,18 +30,32 @@ For all available commands and options, run `rocha --help`.
 
 ## What You Can Do
 - **Switch between Claude sessions** - Keep multiple conversations organized
+- **Shell sessions** - Open a separate shell (⌨) for each Claude session
+- **Rename sessions** - Give your sessions meaningful names
+- **Manual ordering** - Organize sessions by moving them up/down
+- **Quick attach** - Jump to sessions 1-7 with alt+number keys
+- **Editor integration** - Open sessions directly in your editor
+- **Filter sessions** - Search sessions by name or git branch
 - **Get sound alerts** - Hear when Claude finishes and needs your input
 - **See status in tmux** - Show active/waiting sessions in your status bar
-- **Never lose context** - Sessions persist until you kill them
+- **Session states** - Track which sessions are working, idle, waiting, or exited
 - **Git worktree support** - Each session can have its own isolated branch and workspace
+- **Git stats** - See PR info, ahead/behind commits, and changes at a glance
 
 ## Key Bindings
 
 **In the list:**
 - `n` - New session
 - `Enter` - Attach to session
+- `alt+1` to `alt+7` - Quick attach to sessions by number
+- `alt+enter` - Open shell session (⌨) for the selected session
+- `r` - Rename session
+- `o` - Open session in your editor
 - `x` - Kill session
 - `↑/↓` or `j/k` - Navigate
+- `shift+↑/↓` or `shift+j/k` - Move session up/down in list
+- `/` - Filter/search sessions
+- `esc` (twice) - Clear filter
 - `q` - Quit
 
 **Inside a session:**
