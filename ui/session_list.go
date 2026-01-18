@@ -397,15 +397,16 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "s":
+			// s: Cycle through statuses (default/quick action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToSetStatus = item.Session
-				return sl, nil
+				return sl, sl.cycleSessionStatus(item.Session.Name)
 			}
 
 		case "S":
-			// Shift+S: Cycle through statuses
+			// Shift+S: Open status form (edit action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				return sl, sl.cycleSessionStatus(item.Session.Name)
+				sl.SessionToSetStatus = item.Session
+				return sl, nil
 			}
 
 		case "K": // Shift+K (uppercase K)
@@ -506,8 +507,9 @@ func (sl *SessionList) View() string {
 	// Add custom help (status legend first, then keys)
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
-	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • c: comment • f: flag • x: kill\n"
-	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨) • o: open editor • q: quit"
+	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter\n"
+	helpText += "n: new • r: rename • c: comment (⌨) • f: flag (⚑) • s: cycle status • shift+s: set status • x: kill\n"
+	helpText += "enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • q: quit"
 
 	s += helpStyle.Render(helpText)
 
