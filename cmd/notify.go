@@ -16,7 +16,7 @@ import (
 // NotifyCmd handles notification events from Claude hooks
 type NotifyCmd struct {
 	SessionName string `arg:"" help:"Name of the session triggering the notification"`
-	EventType   string `arg:"" help:"Type of event: stop, prompt, start" default:"stop"`
+	EventType   string `arg:"" help:"Type of event: stop, prompt, working, start, notification, end" default:"stop"`
 	ExecutionID string `help:"Execution ID from parent rocha TUI" optional:""`
 }
 
@@ -89,6 +89,8 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		sessionState = state.StateIdle // Session started and ready for input
 	case "prompt":
 		sessionState = state.StateWorking // User submitted prompt
+	case "working":
+		sessionState = state.StateWorking // Claude is actively working (after answering question)
 	case "end":
 		sessionState = state.StateExited // Claude has exited
 	default:

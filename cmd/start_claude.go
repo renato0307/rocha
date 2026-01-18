@@ -129,6 +129,18 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					},
 				},
 			},
+			// PostToolUse: When AskUserQuestion tool completes (user has answered)
+			"PostToolUse": []map[string]interface{}{
+				{
+					"matcher": "AskUserQuestion",
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s working --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
 		},
 	}
 
