@@ -248,6 +248,16 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 			// Save sessions
 			for _, sessInfo := range state.Sessions {
 				session := convertFromSessionInfo(sessInfo)
+
+				// Preserve position field from existing session
+				var existing Session
+				err := tx.Where("name = ?", session.Name).First(&existing).Error
+				if err == nil {
+					// Session exists, preserve position
+					session.Position = existing.Position
+				}
+				// If session doesn't exist (err != nil), position will be 0 which is fine for new sessions
+
 				if err := tx.Save(&session).Error; err != nil {
 					return fmt.Errorf("failed to save session %s: %w", sessInfo.Name, err)
 				}
@@ -257,6 +267,14 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 				if sessInfo.ShellSession != nil {
 					nested := convertFromSessionInfo(*sessInfo.ShellSession)
 					nested.ParentName = &sessInfo.Name // Set parent relationship
+
+					// Preserve position field from existing nested session
+					var existingNested Session
+					err := tx.Where("name = ?", nested.Name).First(&existingNested).Error
+					if err == nil {
+						nested.Position = existingNested.Position
+					}
+
 					if err := tx.Save(&nested).Error; err != nil {
 						return fmt.Errorf("failed to save nested session for %s: %w", sessInfo.Name, err)
 					}
@@ -321,7 +339,6 @@ func (s *Store) SwapPositions(ctx context.Context, name1, name2 string) error {
 			if err := tx.Model(&Session{}).Where("name = ?", name2).Update("position", session2.Position).Error; err != nil {
 				return fmt.Errorf("failed to update position for %s: %w", name2, err)
 			}
-
 			return nil
 		})
 	}, 3)

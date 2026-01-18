@@ -345,10 +345,10 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
-		case "shift+up", "shift+k":
+		case "K": // Shift+K (uppercase K)
 			return sl, sl.moveSelectedUp()
 
-		case "shift+down", "shift+j":
+		case "J": // Shift+J (uppercase J)
 			return sl, sl.moveSelectedDown()
 
 		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
@@ -660,6 +660,7 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 	// Swap positions in database
 	if err := sl.store.SwapPositions(context.Background(), item.Session.Name, prevItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
+		return nil
 	}
 
 	// Reload state and rebuild list
@@ -693,6 +694,7 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 	// Swap positions in database
 	if err := sl.store.SwapPositions(context.Background(), item.Session.Name, nextItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
+		return nil
 	}
 
 	// Reload state and rebuild list
