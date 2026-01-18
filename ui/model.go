@@ -253,7 +253,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentComment = sessionInfo.Comment
 		}
 
-		m.sessionCommentForm = NewSessionCommentForm(m.store, session.Name, currentComment)
+		m.sessionCommentForm = NewSessionCommentForm(m.store, session.Name, currentComment, m.devMode)
 		m.state = stateCommentingSession
 		return m, m.sessionCommentForm.Init()
 	}

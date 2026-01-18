@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"rocha/logging"
 	"rocha/storage"
@@ -24,6 +25,7 @@ type SessionCommentForm struct {
 	Completed      bool
 	cancelled      bool
 	currentComment string
+	devMode        bool
 	form           *huh.Form
 	result         SessionCommentFormResult
 	sessionName    string
@@ -31,9 +33,10 @@ type SessionCommentForm struct {
 }
 
 // NewSessionCommentForm creates a new session comment form
-func NewSessionCommentForm(store *storage.Store, sessionName, currentComment string) *SessionCommentForm {
+func NewSessionCommentForm(store *storage.Store, sessionName, currentComment string, devMode bool) *SessionCommentForm {
 	sf := &SessionCommentForm{
 		currentComment: currentComment,
+		devMode:        devMode,
 		sessionName:    sessionName,
 		store:          store,
 		result: SessionCommentFormResult{
@@ -93,7 +96,7 @@ func (sf *SessionCommentForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (sf *SessionCommentForm) View() string {
 	if sf.form != nil {
-		return sf.form.View()
+		return renderDialogHeader(sf.devMode, "Edit Session Comment") + sf.form.View()
 	}
 	return ""
 }
@@ -105,7 +108,8 @@ func (sf *SessionCommentForm) Result() SessionCommentFormResult {
 
 // updateComment performs the actual comment update operation
 func (sf *SessionCommentForm) updateComment() error {
-	newComment := sf.result.NewComment
+	// Trim whitespace - empty after trim means delete
+	newComment := strings.TrimSpace(sf.result.NewComment)
 
 	logging.Logger.Info("Updating session comment",
 		"session_name", sf.sessionName,
