@@ -12,7 +12,7 @@
 - [ ] Implement current directory detection in add-session
 - [ ] Implement git branch detection in add-session
 - [ ] Add session state persistence in add-session
-- [ ] Validate branch names (git-compliant naming)
+- [x] Validate branch names (git-compliant naming)
 
 ## attach - Session Attachment
 
@@ -23,13 +23,13 @@
 
 ## Auto-refresh Feature
 
-- [ ] Implement auto-update of session list when session status changes
+- [x] Implement auto-update of session list when session status changes
 
 ## UI Improvements
 
 - [ ] Allow mouse selection on the session list
 - [ ] Implement copy/paste functionality
-- [ ] Allow filtering session list with sticky filters
+- [x] Allow filtering session list with sticky filters
 - [x] Configure tmux to allow mouse scroll
 
 ## Configuration and State Management
