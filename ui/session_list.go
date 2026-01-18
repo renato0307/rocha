@@ -273,23 +273,41 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sl.sessionState.Sessions[msg.SessionName] = info
 		}
 
+		// Mark fetching as done
+		sl.fetchingGitStats = false
+
+		// Skip list rebuild when user is actively filtering to prevent flickering
+		// Don't schedule new poll - let existing poll timer continue
+		if sl.list.FilterState() == list.Filtering {
+			return sl, nil
+		}
+
 		// Rebuild items with updated stats
 		delegate := newSessionDelegate(sl.sessionState, sl.statusConfig)
 		sl.list.SetDelegate(delegate)
 		items := buildListItems(sl.sessionState, sl.tmuxClient, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
 
-		// Mark fetching as done and continue polling
-		sl.fetchingGitStats = false
 		return sl, tea.Batch(cmd, pollStateCmd())
 
 	case git.GitStatsErrorMsg:
 		// Git stats fetch failed - log and continue
 		logging.Logger.Debug("Git stats fetch failed", "session", msg.SessionName, "error", msg.Err)
 		sl.fetchingGitStats = false
+
+		// Don't schedule new poll when filtering to prevent poll accumulation
+		if sl.list.FilterState() == list.Filtering {
+			return sl, nil
+		}
 		return sl, pollStateCmd()
 
 	case checkStateMsg:
+		// Skip refresh when user is actively filtering to prevent flickering
+		// Don't schedule new poll - let existing poll timer continue
+		if sl.list.FilterState() == list.Filtering {
+			return sl, nil
+		}
+
 		// Auto-refresh: Check if state has changed
 		newState, err := sl.store.Load(context.Background())
 		if err != nil {
@@ -321,6 +339,11 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case error:
 		sl.err = msg
+
+		// Don't schedule new poll when filtering to prevent poll accumulation
+		if sl.list.FilterState() == list.Filtering {
+			return sl, nil
+		}
 		return sl, pollStateCmd()
 
 	case tea.KeyMsg:
@@ -341,9 +364,10 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// For all other keys during filtering, delegate to list immediately
+			// Don't schedule new polls to prevent exponential poll accumulation
 			var cmd tea.Cmd
 			sl.list, cmd = sl.list.Update(msg)
-			return sl, tea.Batch(cmd, pollStateCmd())
+			return sl, cmd
 		}
 
 		// Normal shortcut processing when NOT filtering
@@ -486,6 +510,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to list for normal handling
 	var cmd tea.Cmd
 	sl.list, cmd = sl.list.Update(msg)
+
+	// Skip polling when user is actively typing in filter to prevent flickering
+	if sl.list.FilterState() == list.Filtering {
+		return sl, cmd
+	}
+
 	return sl, tea.Batch(cmd, pollStateCmd())
 }
 
