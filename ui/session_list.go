@@ -28,11 +28,12 @@ type sessionListDetachedMsg struct{} // Session list returned from attached stat
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
-	Session         *tmux.Session
 	DisplayName     string
 	GitRef          string
-	State           string
 	HasShellSession bool // Track if shell session exists
+	IsFlagged       bool
+	Session         *tmux.Session
+	State           string
 }
 
 // FilterValue implements list.Item
@@ -108,11 +109,14 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	line1 := fmt.Sprintf("%s %02d. %s %s", cursor, index+1, statusIcon, item.DisplayName)
 	line1 = normalStyle.Render(line1)
 
+	// Add flag indicator if flagged
+	if item.IsFlagged {
+		line1 += " ⚑"
+	}
+
 	// Add shell session indicator at the end
 	if item.HasShellSession {
-		line1 += " " + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")).
-			Render("⌨")
+		line1 += " ⌨"
 	}
 
 	// Build second line: git ref (indented to align with session name)
@@ -187,13 +191,14 @@ type SessionList struct {
 	fetchingGitStats bool // Prevent concurrent fetches
 
 	// Result fields - set by component, read by Model
+	RequestNewSession    bool          // User pressed 'n'
+	RequestTestError     bool          // User pressed 'alt+e' (test command)
 	SelectedSession      *tmux.Session // Session user wants to attach to
 	SelectedShellSession *tmux.Session // Session user wants shell session for
 	SessionToKill        *tmux.Session // Session user wants to kill
-	SessionToRename      *tmux.Session // Session user wants to rename
 	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
-	RequestNewSession    bool          // User pressed 'n'
-	RequestTestError     bool          // User pressed 'alt+e' (test command)
+	SessionToRename      *tmux.Session // Session user wants to rename
+	SessionToToggleFlag  *tmux.Session // Session user wants to toggle flag
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
 
@@ -334,6 +339,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
+		case "f":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToToggleFlag = item.Session
+				return sl, nil
+			}
+
 		case "shift+up", "shift+k":
 			return sl, sl.moveSelectedUp()
 
@@ -434,7 +445,7 @@ func (sl *SessionList) View() string {
 	// Add custom help (status legend first, then keys)
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
-	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • x: kill\n"
+	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • n: new • r: rename • f: flag • x: kill\n"
 	helpText += "enter/alt+1-7: attach • ctrl+q: detach • alt+enter: shell (⌨) • o: open editor • q: quit"
 
 	s += helpStyle.Render(helpText)
@@ -560,11 +571,12 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client) 
 		}
 
 		items = append(items, SessionItem{
-			Session:         session,
 			DisplayName:     displayName,
 			GitRef:          gitRef,
-			State:           info.State,
 			HasShellSession: hasShell,
+			IsFlagged:       info.IsFlagged,
+			Session:         session,
+			State:           info.State,
 		})
 	}
 

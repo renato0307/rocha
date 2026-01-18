@@ -133,13 +133,27 @@ func NewStore(dbPath string) (*Store, error) {
 	db.Exec("PRAGMA synchronous=NORMAL")
 	db.Exec("PRAGMA foreign_keys=ON")
 
-	// Auto-migrate schema first
-	if err := db.AutoMigrate(
-		&Session{},
-	); err != nil {
-		// Ignore "index already exists" errors (GORM sometimes reports this incorrectly)
+	// Auto-migrate Session table first
+	if err := db.AutoMigrate(&Session{}); err != nil {
 		if !strings.Contains(err.Error(), "already exists") {
-			return nil, fmt.Errorf("failed to migrate schema: %w", err)
+			return nil, fmt.Errorf("failed to migrate Session schema: %w", err)
+		}
+	}
+
+	// Manually create session_flags table (AutoMigrate has issues with foreign keys in SQLite)
+	migrator := db.Migrator()
+	if !migrator.HasTable(&SessionFlag{}) {
+		if err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS session_flags (
+				session_name TEXT PRIMARY KEY,
+				is_flagged INTEGER NOT NULL DEFAULT 0,
+				flagged_at DATETIME,
+				created_at DATETIME,
+				updated_at DATETIME,
+				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
+			)
+		`).Error; err != nil {
+			return nil, fmt.Errorf("failed to create session_flags table: %w", err)
 		}
 	}
 
@@ -168,23 +182,40 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 				return fmt.Errorf("failed to load sessions: %w", err)
 			}
 
+			// Load all flags at once
+			var flags []SessionFlag
+			if err := tx.Find(&flags).Error; err != nil {
+				return fmt.Errorf("failed to load flags: %w", err)
+			}
+
+			// Build flag lookup map
+			flagMap := make(map[string]bool)
+			for _, flag := range flags {
+				if flag.IsFlagged {
+					flagMap[flag.SessionName] = true
+				}
+			}
+
 			// Build ordered names list and convert to map
 			state.Sessions = make(map[string]SessionInfo)
 			state.OrderedSessionNames = make([]string, len(sessions))
 
 			for i, sess := range sessions {
+				// Get flag state for top-level session
+				isFlagged := flagMap[sess.Name]
+
 				// Load nested session if exists (parent_name = this session's name)
 				var nestedSession Session
 				err := tx.Where("parent_name = ?", sess.Name).First(&nestedSession).Error
 				if err == nil {
-					// Nested session found
-					nestedInfo := convertToSessionInfo(nestedSession)
-					sessInfo := convertToSessionInfo(sess)
+					// Nested session found (nested sessions are never flagged)
+					nestedInfo := convertToSessionInfo(nestedSession, false)
+					sessInfo := convertToSessionInfo(sess, isFlagged)
 					sessInfo.ShellSession = &nestedInfo
 					state.Sessions[sess.Name] = sessInfo
 				} else if errors.Is(err, gorm.ErrRecordNotFound) {
 					// No nested session
-					state.Sessions[sess.Name] = convertToSessionInfo(sess)
+					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged)
 				} else {
 					return fmt.Errorf("failed to load nested session for %s: %w", sess.Name, err)
 				}
@@ -296,6 +327,41 @@ func (s *Store) SwapPositions(ctx context.Context, name1, name2 string) error {
 	}, 3)
 }
 
+// ToggleFlag toggles the flag state for a session
+func (s *Store) ToggleFlag(ctx context.Context, sessionName string) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var flag SessionFlag
+			err := tx.Where("session_name = ?", sessionName).First(&flag).Error
+
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// No flag record exists, create as flagged
+				now := time.Now().UTC()
+				flag = SessionFlag{
+					IsFlagged:   true,
+					SessionName: sessionName,
+					FlaggedAt:   &now,
+				}
+				return tx.Create(&flag).Error
+			}
+			if err != nil {
+				return fmt.Errorf("failed to load flag: %w", err)
+			}
+
+			// Toggle existing flag
+			flag.IsFlagged = !flag.IsFlagged
+			if flag.IsFlagged {
+				now := time.Now().UTC()
+				flag.FlaggedAt = &now
+			} else {
+				flag.FlaggedAt = nil
+			}
+
+			return tx.Save(&flag).Error
+		})
+	}, 3)
+}
+
 // AddSession adds a new session to the database at the top (position = min - 1)
 func (s *Store) AddSession(ctx context.Context, sessInfo SessionInfo) error {
 	return withRetry(func() error {
@@ -347,6 +413,7 @@ func (s *Store) DeleteSession(ctx context.Context, name string) error {
 func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, error) {
 	var session Session
 	var nestedSession Session
+	var flag SessionFlag
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -355,8 +422,14 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 				return err
 			}
 
+			// Try to get flag
+			err := tx.Where("session_name = ?", name).First(&flag).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
 			// Try to get nested session
-			err := tx.Where("parent_name = ?", name).First(&nestedSession).Error
+			err = tx.Where("parent_name = ?", name).First(&nestedSession).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
@@ -372,11 +445,12 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 		return nil, err
 	}
 
-	info := convertToSessionInfo(session)
+	isFlagged := flag.IsFlagged
+	info := convertToSessionInfo(session, isFlagged)
 
-	// Add nested session if found
+	// Add nested session if found (nested sessions are never flagged)
 	if nestedSession.Name != "" {
-		nestedInfo := convertToSessionInfo(nestedSession)
+		nestedInfo := convertToSessionInfo(nestedSession, false)
 		info.ShellSession = &nestedInfo
 	}
 
@@ -387,6 +461,7 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	var sessions []Session
 	var allSessions []Session
+	var flags []SessionFlag
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -397,6 +472,11 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 
 			// Get all sessions (including nested) for efficient lookup
 			if err := tx.Find(&allSessions).Error; err != nil {
+				return err
+			}
+
+			// Get all flags
+			if err := tx.Find(&flags).Error; err != nil {
 				return err
 			}
 
@@ -416,14 +496,23 @@ func (s *Store) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 		}
 	}
 
+	// Build flag lookup map
+	flagMap := make(map[string]bool)
+	for _, flag := range flags {
+		if flag.IsFlagged {
+			flagMap[flag.SessionName] = true
+		}
+	}
+
 	// Convert to SessionInfo with nested sessions
 	result := make([]SessionInfo, len(sessions))
 	for i, sess := range sessions {
-		info := convertToSessionInfo(sess)
+		isFlagged := flagMap[sess.Name]
+		info := convertToSessionInfo(sess, isFlagged)
 
-		// Add nested session if exists
+		// Add nested session if exists (nested sessions are never flagged)
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedInfo := convertToSessionInfo(nested)
+			nestedInfo := convertToSessionInfo(nested, false)
 			info.ShellSession = &nestedInfo
 		}
 
@@ -463,18 +552,20 @@ func withRetry(fn func() error, maxRetries int) error {
 }
 
 // Helper conversion functions
-func convertToSessionInfo(s Session) SessionInfo {
+func convertToSessionInfo(s Session, isFlagged bool) SessionInfo {
 	return SessionInfo{
-		Name:         s.Name,
-		DisplayName:  s.DisplayName,
-		State:        s.State,
-		ExecutionID:  s.ExecutionID,
-		LastUpdated:  s.LastUpdated,
-		RepoPath:     s.RepoPath,
-		RepoInfo:     s.RepoInfo,
 		BranchName:   s.BranchName,
-		WorktreePath: s.WorktreePath,
+		DisplayName:  s.DisplayName,
+		ExecutionID:  s.ExecutionID,
 		GitStats:     nil, // Not persisted
+		IsFlagged:    isFlagged,
+		LastUpdated:  s.LastUpdated,
+		Name:         s.Name,
+		RepoInfo:     s.RepoInfo,
+		RepoPath:     s.RepoPath,
+		ShellSession: nil,
+		State:        s.State,
+		WorktreePath: s.WorktreePath,
 	}
 }
 
