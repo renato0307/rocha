@@ -337,6 +337,8 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Refresh session list component
 			m.sessionList.RefreshFromState()
+			// Select the newly added session (always at position 0)
+			m.sessionList.list.Select(0)
 		}
 
 		return m, m.sessionList.Init()
