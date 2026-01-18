@@ -7,7 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"rocha/config"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/storage"
@@ -34,10 +37,50 @@ type CLI struct {
 	PlaySound   PlaySoundCmd   `cmd:"play-sound" help:"Play notification sound (cross-platform)" hidden:""`
 	Notify      NotifyCmd      `cmd:"notify" help:"Handle notification event from Claude hooks" hidden:""`
 	Sessions    SessionsCmd    `cmd:"sessions" help:"Manage sessions (list, view, add, del)"`
+
+	// Internal field for settings (not a flag)
+	settings *config.Settings `kong:"-"`
 }
 
-// AfterApply initializes logging after CLI parsing
+// SetSettings sets the settings on the CLI struct
+func (c *CLI) SetSettings(settings *config.Settings) {
+	c.settings = settings
+}
+
+// AfterApply initializes logging after CLI parsing and applies settings
 func (c *CLI) AfterApply() error {
+	// Apply settings with proper precedence: CLI flags > env vars > settings.json > defaults
+	// Only apply if flag is at default value and env var is not set
+
+	if c.settings != nil {
+		// Apply DBPath setting
+		if c.DBPath == "~/.rocha/state.db" {
+			if _, hasEnv := os.LookupEnv("ROCHA_DB_PATH"); !hasEnv {
+				if c.settings.DBPath != "" {
+					c.DBPath = c.settings.DBPath
+				}
+			}
+		}
+
+		// Apply MaxLogFiles setting
+		if c.MaxLogFiles == 1000 {
+			if _, hasEnv := os.LookupEnv("ROCHA_MAX_LOG_FILES"); !hasEnv {
+				if c.settings.MaxLogFiles != nil {
+					c.MaxLogFiles = *c.settings.MaxLogFiles
+				}
+			}
+		}
+
+		// Apply Debug setting
+		if !c.Debug {
+			if _, hasEnv := os.LookupEnv("ROCHA_DEBUG"); !hasEnv {
+				if c.settings.Debug != nil && *c.settings.Debug {
+					c.Debug = true
+				}
+			}
+		}
+	}
+
 	// Initialize logging first and get the log file path
 	logFilePath, err := logging.Initialize(c.Debug, c.DebugFile, c.MaxLogFiles)
 	if err != nil {
@@ -73,6 +116,50 @@ type RunCmd struct {
 
 // Run executes the TUI
 func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
+	// Apply RunCmd-specific settings with proper precedence
+	// Only apply if flag is at default value and env var is not set
+
+	if cli.settings != nil {
+		// Apply Editor setting
+		if r.Editor == "code" {
+			if _, hasEnv := os.LookupEnv("ROCHA_EDITOR"); !hasEnv {
+				if cli.settings.Editor != "" {
+					r.Editor = cli.settings.Editor
+				}
+			}
+		}
+
+		// Apply ErrorClearDelay setting
+		if r.ErrorClearDelay == 10 {
+			if cli.settings.ErrorClearDelay != nil {
+				r.ErrorClearDelay = *cli.settings.ErrorClearDelay
+			}
+		}
+
+		// Apply Statuses setting
+		if r.Statuses == "spec,plan,implement,review,done" {
+			if len(cli.settings.Statuses) > 0 {
+				// Convert StringArray to comma-separated string
+				r.Statuses = strings.Join(cli.settings.Statuses, ",")
+			}
+		}
+
+		// Apply StatusColors setting
+		if r.StatusColors == "141,33,214,226,46" {
+			if len(cli.settings.StatusColors) > 0 {
+				// Convert StringArray to comma-separated string
+				r.StatusColors = strings.Join(cli.settings.StatusColors, ",")
+			}
+		}
+
+		// Apply WorktreePath setting
+		if r.WorktreePath == "~/.rocha/worktrees" {
+			if cli.settings.WorktreePath != "" {
+				r.WorktreePath = cli.settings.WorktreePath
+			}
+		}
+	}
+
 	logging.Logger.Info("Starting rocha TUI")
 
 	// Generate new execution ID for this TUI run
