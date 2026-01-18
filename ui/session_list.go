@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os"
+	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/tmux"
@@ -177,6 +179,9 @@ type SessionList struct {
 	// Escape handling for filter clearing
 	escPressCount int
 	escPressTime  time.Time
+
+	// Git stats fetching
+	fetchingGitStats bool // Prevent concurrent fetches
 
 	// Result fields - set by component, read by Model
 	SelectedSession      *tmux.Session // Session user wants to attach to
