@@ -15,8 +15,8 @@ var (
 
 // SessionManager handles session lifecycle operations
 type SessionManager interface {
-	Create(name string, worktreePath string) (*Session, error)
-	CreateShellSession(name string, worktreePath string) (*Session, error)
+	Create(name string, worktreePath string, statusPosition string) (*Session, error)
+	CreateShellSession(name string, worktreePath string, statusPosition string) (*Session, error)
 	Exists(name string) bool
 	List() ([]*Session, error)
 	Kill(name string) error
@@ -41,8 +41,9 @@ type PaneOperations interface {
 
 // Configurator handles tmux configuration operations
 type Configurator interface {
-	SourceFile(configPath string) error
 	BindKey(table, key, command string) error
+	SetOption(sessionName, option, value string) error
+	SourceFile(configPath string) error
 }
 
 // Client is a composite interface for commands that need multiple operations

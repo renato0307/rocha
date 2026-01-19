@@ -4,6 +4,11 @@ import (
 	"time"
 )
 
+const (
+	// DefaultStatusPosition is the default tmux status bar position
+	DefaultStatusPosition = "bottom"
+)
+
 // Session represents a tmux session (data-only struct)
 type Session struct {
 	Name      string
@@ -17,7 +22,7 @@ var defaultClient = NewClient()
 // If worktreePath is provided (non-empty), the session will start in that directory
 // This is a backward-compatible wrapper around DefaultClient.Create
 func NewSession(name string, worktreePath string) (*Session, error) {
-	return defaultClient.Create(name, worktreePath)
+	return defaultClient.Create(name, worktreePath, DefaultStatusPosition)
 }
 
 // List returns all active tmux sessions

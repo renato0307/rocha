@@ -222,11 +222,13 @@ type SessionList struct {
 	fetchingGitStats bool // Prevent concurrent fetches
 	keys             KeyMap
 	list             list.Model
-	sessionState     *storage.SessionState
-	statusConfig     *StatusConfig
-	store            *storage.Store // Storage for persistent state
-	timestampMode    TimestampMode
-	tmuxClient       tmux.Client
+	sessionState       *storage.SessionState
+	statusConfig       *StatusConfig
+	store              *storage.Store // Storage for persistent state
+	timestampMode      TimestampMode
+	tmuxClient         tmux.Client
+	tmuxStatusPosition string
+	worktreePath       string
 
 	// Escape handling for filter clearing
 	escPressCount int
@@ -256,7 +258,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, worktreePath string, tmuxStatusPosition string) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := store.Load(context.Background(), false)
 	if err != nil {
@@ -279,17 +281,19 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 	l.SetShowHelp(false) // We'll render our own help
 
 	return &SessionList{
-		devMode:         devMode,
-		editor:          editor,
-		err:             err,
-		keys:            keys,
-		list:            l,
-		sessionState:    sessionState,
-		statusConfig:    statusConfig,
-		store:           store,
-		timestampConfig: timestampConfig,
-		timestampMode:   timestampMode,
-		tmuxClient:      tmuxClient,
+		devMode:            devMode,
+		editor:             editor,
+		err:                err,
+		keys:               keys,
+		list:               l,
+		sessionState:       sessionState,
+		statusConfig:       statusConfig,
+		store:              store,
+		timestampConfig:    timestampConfig,
+		timestampMode:      timestampMode,
+		tmuxClient:         tmuxClient,
+		tmuxStatusPosition: tmuxStatusPosition,
+		worktreePath:       worktreePath,
 	}
 }
 
@@ -852,7 +856,7 @@ func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
 	}
 
 	// Recreate the session
-	if _, err := sl.tmuxClient.Create(session.Name, worktreePath); err != nil {
+	if _, err := sl.tmuxClient.Create(session.Name, worktreePath, sl.tmuxStatusPosition); err != nil {
 		sl.err = fmt.Errorf("failed to recreate session: %w", err)
 		return false
 	}

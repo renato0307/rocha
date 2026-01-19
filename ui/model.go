@@ -96,12 +96,13 @@ type Model struct {
 	timestampConfig           *TimestampColorConfig // Timestamp color configuration
 	timestampMode             TimestampMode
 	tmuxClient                tmux.Client
+	tmuxStatusPosition        string
 	width                     int
 	worktreeRemovalForm       *Dialog // Worktree removal dialog
 	worktreePath              string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
 	var errMsg error
@@ -123,23 +124,24 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	keys := NewKeyMap()
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, worktreePath, tmuxStatusPosition)
 
 	return &Model{
-		devMode:         devMode,
-		editor:          editor,
-		err:             errMsg,
-		errorClearDelay: errorClearDelay,
-		keys:            keys,
-		sessionList:     sessionList,
-		sessionState:    sessionState,
-		state:           stateList,
-		statusConfig:    statusConfig,
-		store:           store,
-		timestampConfig: timestampConfig,
-		timestampMode:   initialMode,
-		tmuxClient:      tmuxClient,
-		worktreePath:    worktreePath,
+		devMode:            devMode,
+		editor:             editor,
+		err:                errMsg,
+		errorClearDelay:    errorClearDelay,
+		keys:               keys,
+		sessionList:        sessionList,
+		sessionState:       sessionState,
+		state:              stateList,
+		statusConfig:       statusConfig,
+		store:              store,
+		timestampConfig:    timestampConfig,
+		timestampMode:      initialMode,
+		tmuxClient:         tmuxClient,
+		tmuxStatusPosition: tmuxStatusPosition,
+		worktreePath:       worktreePath,
 	}
 }
 
@@ -383,7 +385,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
@@ -685,7 +687,7 @@ func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 	}
 
 	// Create shell session in tmux
-	_, err := m.tmuxClient.CreateShellSession(shellSessionName, workingDir)
+	_, err := m.tmuxClient.CreateShellSession(shellSessionName, workingDir, m.tmuxStatusPosition)
 	if err != nil {
 		m.err = fmt.Errorf("failed to create shell session: %w", err)
 		return ""

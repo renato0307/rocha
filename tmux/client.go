@@ -38,7 +38,7 @@ func NewClient() *DefaultClient {
 
 // createBaseSession creates a tmux session without running rocha start-claude
 // This is the common logic shared by Create() and CreateShellSession()
-func (c *DefaultClient) createBaseSession(name string, worktreePath string) error {
+func (c *DefaultClient) createBaseSession(name string, worktreePath string, statusPosition string) error {
 	if c.Exists(name) {
 		return ErrSessionExists
 	}
@@ -66,6 +66,13 @@ func (c *DefaultClient) createBaseSession(name string, worktreePath string) erro
 	// Bind Ctrl+] for swapping between Claude and shell sessions
 	if err := c.bindSwapKey(); err != nil {
 		logging.Logger.Warn("Failed to bind Ctrl+] swap key", "error", err)
+	}
+
+	// Set status bar position
+	if statusPosition != "" {
+		if err := c.SetOption(name, "status-position", statusPosition); err != nil {
+			logging.Logger.Warn("Failed to set status position", "error", err)
+		}
 	}
 
 	// Wait for session to be ready
@@ -115,10 +122,10 @@ fi
 
 // Create creates a new tmux session with the given name
 // If worktreePath is provided (non-empty), the session will start in that directory
-func (c *DefaultClient) Create(name string, worktreePath string) (*Session, error) {
+func (c *DefaultClient) Create(name string, worktreePath string, statusPosition string) (*Session, error) {
 	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath)
 
-	if err := c.createBaseSession(name, worktreePath); err != nil {
+	if err := c.createBaseSession(name, worktreePath, statusPosition); err != nil {
 		return nil, err
 	}
 
@@ -170,10 +177,10 @@ func (c *DefaultClient) Create(name string, worktreePath string) (*Session, erro
 }
 
 // CreateShellSession creates a plain shell session without rocha start-claude
-func (c *DefaultClient) CreateShellSession(name string, worktreePath string) (*Session, error) {
+func (c *DefaultClient) CreateShellSession(name string, worktreePath string, statusPosition string) (*Session, error) {
 	logging.Logger.Info("Creating shell tmux session", "name", name, "worktree_path", worktreePath)
 
-	if err := c.createBaseSession(name, worktreePath); err != nil {
+	if err := c.createBaseSession(name, worktreePath, statusPosition); err != nil {
 		return nil, err
 	}
 
@@ -369,6 +376,15 @@ func (c *DefaultClient) SourceFile(configPath string) error {
 func (c *DefaultClient) BindKey(table, key, command string) error {
 	cmd := exec.Command("tmux", "bind-key", "-T", table, key, command)
 	return cmd.Run()
+}
+
+// SetOption sets a tmux option for a specific session
+func (c *DefaultClient) SetOption(sessionName, option, value string) error {
+	cmd := exec.Command("tmux", "set-option", "-t", sessionName, option, value)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to set tmux option %s=%s for session %s: %w", option, value, sessionName, err)
+	}
+	return nil
 }
 
 // splitLines splits a string into lines

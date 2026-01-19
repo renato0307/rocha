@@ -18,15 +18,25 @@ import (
 
 // AttachCmd attaches to a tmux session, creating it if needed
 type AttachCmd struct {
-	SessionName string `help:"Override session name (default: auto-detect from branch/directory)"`
-	Repo        string `help:"Override repository path (default: auto-detect)"`
-	Branch      string `help:"Override branch name (default: auto-detect from git)"`
-	Worktree    string `help:"Override worktree path (default: current directory)"`
+	Branch             string `help:"Override branch name (default: auto-detect from git)"`
+	Repo               string `help:"Override repository path (default: auto-detect)"`
+	SessionName        string `help:"Override session name (default: auto-detect from branch/directory)"`
+	TmuxStatusPosition string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
+	Worktree           string `help:"Override worktree path (default: current directory)"`
 }
 
 // Run executes the attach command
 func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Info("Attach command started")
+
+	// Apply TmuxStatusPosition setting with proper precedence
+	if a.TmuxStatusPosition == tmux.DefaultStatusPosition {
+		if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
+			if cli.settings != nil && cli.settings.TmuxStatusPosition != "" {
+				a.TmuxStatusPosition = cli.settings.TmuxStatusPosition
+			}
+		}
+	}
 
 	// Open database
 	dbPath := expandPath(cli.DBPath)
@@ -118,7 +128,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	// Step 4: Check if tmux session exists, create if needed
 	if !tmuxClient.Exists(sessionName) {
 		logging.Logger.Info("Session does not exist, creating", "name", sessionName)
-		_, err := tmuxClient.Create(sessionName, worktreePath)
+		_, err := tmuxClient.Create(sessionName, worktreePath, a.TmuxStatusPosition)
 		if err != nil {
 			return fmt.Errorf("failed to create tmux session: %w", err)
 		}
