@@ -374,7 +374,11 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		contentForm := NewHelpScreen(&m.keys)
 		m.helpScreen = NewDialog("Help", contentForm, m.devMode)
 		m.state = stateHelp
-		return m, m.helpScreen.Init()
+		// Send initial WindowSizeMsg so viewport can initialize
+		initCmd := m.helpScreen.Init()
+		updatedDialog, sizeCmd := m.helpScreen.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.helpScreen = updatedDialog.(*Dialog)
+		return m, tea.Batch(initCmd, sizeCmd)
 	}
 
 	if m.sessionList.RequestNewSession {
