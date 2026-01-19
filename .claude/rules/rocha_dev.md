@@ -1,6 +1,14 @@
 # Things to do/know during rocha dev
 
-When you finish:
+## Running with Debug Flags
+
+To run rocha with debug output:
+
+```bash
+rocha --debug --debug-file <file name>
+```
+
+## When you finish:
 
 1. You need to build the binary for testing with build flags that inject meaningful version information:
    - Use `-ldflags` to set version variables based on the branch name
