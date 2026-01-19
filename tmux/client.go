@@ -63,6 +63,11 @@ func (c *DefaultClient) createBaseSession(name string, worktreePath string) erro
 		logging.Logger.Warn("Failed to bind Ctrl+Q key", "error", err)
 	}
 
+	// Bind Ctrl+] for swapping between Claude and shell sessions
+	if err := c.bindSwapKey(); err != nil {
+		logging.Logger.Warn("Failed to bind Ctrl+] swap key", "error", err)
+	}
+
 	// Wait for session to be ready
 	timeout := time.After(2 * time.Second)
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -78,6 +83,34 @@ func (c *DefaultClient) createBaseSession(name string, worktreePath string) erro
 			}
 		}
 	}
+}
+
+// bindSwapKey binds Ctrl+] to swap between Claude and shell sessions
+func (c *DefaultClient) bindSwapKey() error {
+	// Construct the bash script that will swap between sessions
+	// The script:
+	// 1. Gets the current session name
+	// 2. Determines if it's a shell session (ends with -shell) or Claude session
+	// 3. Calculates the target session name (add/remove -shell suffix)
+	// 4. Switches to the target if it exists, otherwise shows an error message
+	script := `current=$(tmux display-message -p "#{session_name}")
+if [[ "$current" == *-shell ]]; then
+    target="${current%-shell}"
+    type="Claude"
+else
+    target="$current-shell"
+    type="shell"
+fi
+if tmux has-session -t "$target" 2>/dev/null; then
+    tmux switch-client -t "$target"
+else
+    tmux display-message "No $type session found for $current"
+fi
+`
+
+	// Bind Ctrl+] to run the swap script
+	command := fmt.Sprintf("run-shell '%s'", script)
+	return c.BindKey("root", "C-]", command)
 }
 
 // Create creates a new tmux session with the given name
