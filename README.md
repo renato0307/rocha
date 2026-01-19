@@ -41,6 +41,8 @@ For all available commands and options, run `rocha --help`.
 - **Session states** - Track which sessions are working, idle, waiting, or exited
 - **Git worktree support** - Each session can have its own isolated branch and workspace
 - **Git stats** - See PR info, ahead/behind commits, and changes at a glance
+- **Per-session Claude config** - Give each session its own Claude configuration directory
+- **Create sessions from any repo** - Clone and start sessions from GitHub/GitLab URLs with specific branches
 
 ## Session States
 
@@ -109,6 +111,89 @@ When running in a git repository, `rocha` offers to create isolated worktrees fo
 - **Auto cleanup** - Worktrees are removed when you kill the session
 
 Worktrees are stored in `~/.rocha/worktrees/` by default.
+
+## Creating Sessions from Any Repository
+
+You can create sessions from any git repository (GitHub, GitLab, etc.) without needing to clone it first:
+
+```bash
+# Create a session from a specific branch
+# In the session form, enter:
+https://github.com/owner/repo#branch-name
+
+# Or use the default branch
+https://github.com/owner/repo
+
+# You can also use SSH URLs
+git@github.com:owner/repo.git#develop
+```
+
+**How it works:**
+1. Rocha clones the repository to `~/.rocha/worktrees/owner/repo/.main/`
+2. Creates a worktree for your session from the specified branch
+3. Multiple sessions from the same repo share the `.main` directory
+4. Each session automatically switches `.main` to the correct branch before creating its worktree
+
+**Benefits:**
+- Start working on any project instantly without manual cloning
+- Work on multiple branches from the same repo simultaneously
+- Each session gets the correct base branch automatically
+- No branch conflicts between sessions
+
+**Example workflow:**
+```bash
+# Session 1: Work on the main branch
+Repository: https://github.com/myorg/myapp#main
+
+# Session 2: Work on a feature branch (same repo)
+Repository: https://github.com/myorg/myapp#feature/new-ui
+
+# Both sessions work independently with correct branches!
+```
+
+## Per-Session Claude Configuration
+
+Each session can have its own Claude configuration directory, allowing you to:
+
+- Use different Claude accounts or API keys per session
+- Isolate conversation history between projects
+- Test different Claude settings without affecting other sessions
+- Share Claude config with team members (stored in project directory)
+
+**Default behavior:**
+- All sessions use `~/.claude` by default
+- Sessions from the same repository automatically share the same Claude directory
+
+**Custom configuration:**
+When creating a session, you can specify a custom Claude directory:
+```bash
+# In the session form, edit the "Claude directory" field:
+/path/to/project/.claude
+
+# Or use a shared team config
+~/team-configs/project-a/.claude
+```
+
+**Environment variable:**
+Rocha sets `CLAUDE_CONFIG_DIR` for each session, which Claude Code reads to determine where to store its configuration, history, and cache.
+
+**Use cases:**
+1. **Per-project isolation** - Keep each project's Claude conversations separate
+2. **Testing** - Use a separate config for experimental sessions
+3. **Team collaboration** - Share Claude config files in your git repository
+4. **Multiple accounts** - Switch between different Claude accounts easily
+
+**Example:**
+```bash
+# Work session using work Claude account
+Claude directory: ~/.claude-work
+
+# Personal project using personal account
+Claude directory: ~/.claude-personal
+
+# Project-specific (committed to git)
+Claude directory: /path/to/project/.claude
+```
 
 ## Status Bar (Optional)
 
