@@ -257,8 +257,8 @@ func (sf *SessionForm) createSession() error {
 				worktreeBase = filepath.Join(home, worktreeBase[2:])
 			}
 
-			// Use tmux name (no spaces) for worktree directory
-			worktreePath = filepath.Join(worktreeBase, tmuxName)
+			// Build worktree path with repository organization
+			worktreePath = git.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)
 			logging.Logger.Info("Creating worktree", "path", worktreePath, "branch", branchName)
 
 			// Create the worktree

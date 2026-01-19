@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"rocha/logging"
 	"strings"
+	"unicode"
+
+	"rocha/logging"
 )
 
 // IsGitRepo checks if the given path is within a git repository
@@ -230,4 +232,64 @@ func GetRepoInfo(repoPath string) string {
 
 	logging.Logger.Debug("Extracted repo info", "owner_repo", ownerRepo)
 	return ownerRepo
+}
+
+// sanitizePathComponent sanitizes a string for safe use as a path component
+// Similar to SanitizeBranchName but for filesystem paths
+func sanitizePathComponent(component string) string {
+	if component == "" {
+		return ""
+	}
+
+	// Remove control characters and problematic filesystem chars
+	var builder strings.Builder
+	for _, r := range component {
+		if !unicode.IsControl(r) && r != '/' && r != '\\' && r != ':' {
+			builder.WriteRune(r)
+		}
+	}
+
+	result := builder.String()
+	result = strings.TrimSpace(result)
+
+	// Replace problematic sequences
+	result = strings.ReplaceAll(result, "..", ".")
+
+	return result
+}
+
+// BuildWorktreePath constructs a worktree path with repository organization
+// If repoInfo is available (format "owner/repo"), creates: base/owner/repo/sessionName
+// If repoInfo is empty or invalid, falls back to: base/sessionName
+func BuildWorktreePath(base, repoInfo, sessionName string) string {
+	logging.Logger.Debug("Building worktree path",
+		"base", base, "repo_info", repoInfo, "session_name", sessionName)
+
+	// Sanitize session name for filesystem
+	sanitizedSession := sanitizePathComponent(sessionName)
+	if sanitizedSession == "" {
+		logging.Logger.Warn("Session name sanitization resulted in empty string, using fallback")
+		sanitizedSession = "session"
+	}
+
+	// Check if we have valid repo info (format: "owner/repo")
+	if repoInfo != "" && strings.Contains(repoInfo, "/") {
+		parts := strings.Split(repoInfo, "/")
+		if len(parts) == 2 {
+			owner := sanitizePathComponent(parts[0])
+			repo := sanitizePathComponent(parts[1])
+
+			if owner != "" && repo != "" {
+				path := filepath.Join(base, owner, repo, sanitizedSession)
+				logging.Logger.Info("Built repository-organized worktree path",
+					"path", path, "owner", owner, "repo", repo)
+				return path
+			}
+		}
+	}
+
+	// Fallback to flat structure if repo info unavailable
+	logging.Logger.Warn("RepoInfo not available or invalid, using flat structure",
+		"repo_info", repoInfo)
+	return filepath.Join(base, sanitizedSession)
 }
