@@ -35,6 +35,7 @@ func NewSendTextForm(tmuxClient tmux.Client, sessionName string) *SendTextForm {
 		tmuxClient:  tmuxClient,
 		result: SendTextFormResult{
 			SessionName: sessionName,
+			Text:        "rebase with origin/main",
 		},
 	}
 
