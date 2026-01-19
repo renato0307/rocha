@@ -604,10 +604,10 @@ func (sl *SessionList) View() string {
 		return h.Key + ": " + h.Desc
 	}
 
-	// Line 1: Movement (↑/k and ↓/j are handled by bubbles list, not our bindings)
+	// Line 1: Movement
 	line1Parts := []string{
-		"↑/k: up",
-		"↓/j: down",
+		formatBinding(sl.keys.Navigation.Up),
+		formatBinding(sl.keys.Navigation.Down),
 		formatBinding(sl.keys.Navigation.MoveUp),
 		formatBinding(sl.keys.Navigation.MoveDown),
 		formatBinding(sl.keys.Navigation.Filter),

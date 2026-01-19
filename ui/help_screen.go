@@ -61,8 +61,8 @@ func (h *HelpScreen) View() string {
 
 	// Navigation
 	content += helpGroupStyle.Render("Navigation") + "\n"
-	content += h.renderShortcut("↑/k", "move up")
-	content += h.renderShortcut("↓/j", "move down")
+	content += h.renderBinding(h.keys.Navigation.Up)
+	content += h.renderBinding(h.keys.Navigation.Down)
 	content += h.renderBinding(h.keys.Navigation.MoveUp)
 	content += h.renderBinding(h.keys.Navigation.MoveDown)
 	content += h.renderBinding(h.keys.Navigation.Filter)
@@ -94,7 +94,8 @@ func (h *HelpScreen) View() string {
 	content += "\n" + helpGroupStyle.Render("Application") + "\n"
 	content += h.renderBinding(h.keys.Application.Timestamps)
 	content += h.renderBinding(h.keys.Application.Help)
-	content += h.renderShortcut("q/ctrl+c", "quit application")
+	content += h.renderBinding(h.keys.Application.Quit)
+	content += h.renderBinding(h.keys.Application.ForceQuit)
 
 	// State Indicators
 	content += "\n" + helpGroupStyle.Render("State Indicators (read-only)") + "\n"
