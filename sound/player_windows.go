@@ -34,7 +34,7 @@ func playForEvent(eventType string) error {
 
 	for _, soundCmd := range soundCommands {
 		cmd := exec.Command("powershell", "-c", soundCmd)
-		if err := cmd.Run(); err == nil {
+		if err := cmd.Start(); err == nil {
 			return nil
 		}
 	}

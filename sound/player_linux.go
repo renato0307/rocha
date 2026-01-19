@@ -53,7 +53,7 @@ func playForEvent(eventType string) error {
 
 	for _, sound := range sounds {
 		cmd := exec.Command(sound.cmd, sound.args...)
-		if err := cmd.Run(); err == nil {
+		if err := cmd.Start(); err == nil {
 			return nil
 		}
 	}
