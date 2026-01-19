@@ -105,13 +105,18 @@ func (c *CLI) AfterApply() error {
 
 // RunCmd starts the TUI application
 type RunCmd struct {
-	Dev             bool   `help:"Enable development mode (shows version info in dialogs)"`
-	Editor          string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
-	ErrorClearDelay int    `help:"Seconds before error messages auto-clear" default:"10"`
-	StatusColors    string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
-	StatusIcons     string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
-	Statuses        string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
-	WorktreePath    string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
+	Dev                     bool   `help:"Enable development mode (shows version info in dialogs)"`
+	Editor                  string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
+	ErrorClearDelay         int    `help:"Seconds before error messages auto-clear" default:"10"`
+	StatusColors            string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
+	StatusIcons             string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
+	Statuses                string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
+	TimestampRecentColor    string `help:"ANSI color code for recent timestamps" default:"241"`
+	TimestampRecentMinutes  int    `help:"Minutes threshold for recent timestamps (gray color)" default:"5"`
+	TimestampStaleColor     string `help:"ANSI color code for stale timestamps" default:"208"`
+	TimestampWarningColor   string `help:"ANSI color code for warning timestamps" default:"136"`
+	TimestampWarningMinutes int    `help:"Minutes threshold for warning timestamps (amber color)" default:"20"`
+	WorktreePath            string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
 }
 
 // Run executes the TUI
@@ -197,11 +202,11 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		}
 		logging.Logger.Info("Syncing with running tmux sessions", "count", len(runningNames))
 
-		// Update execution ID for running sessions directly in database
+		// Update execution ID for running sessions without changing last_updated timestamp
 		for _, sessionName := range runningNames {
-			if sessionInfo, exists := st.Sessions[sessionName]; exists {
-				if err := store.UpdateSession(context.Background(), sessionName, sessionInfo.State, executionID); err != nil {
-					logging.Logger.Error("Failed to update session", "error", err, "session", sessionName)
+			if _, exists := st.Sessions[sessionName]; exists {
+				if err := store.UpdateExecutionID(context.Background(), sessionName, executionID); err != nil {
+					logging.Logger.Error("Failed to update execution ID", "error", err, "session", sessionName)
 				} else {
 					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
 				}
@@ -223,9 +228,17 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
 	statusConfig := ui.NewStatusConfig(r.Statuses, r.StatusIcons, r.StatusColors)
+	timestampConfig := ui.NewTimestampColorConfig(
+		r.TimestampRecentMinutes,
+		r.TimestampWarningMinutes,
+		r.TimestampRecentColor,
+		r.TimestampWarningColor,
+		r.TimestampStaleColor,
+	)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, r.Dev),
-		tea.WithAltScreen(), // Use alternate screen buffer
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev),
+		tea.WithAltScreen(),       // Use alternate screen buffer
+		tea.WithMouseCellMotion(), // Enable mouse support
 	)
 
 	logging.Logger.Info("Starting TUI program")

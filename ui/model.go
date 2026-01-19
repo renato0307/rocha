@@ -80,13 +80,14 @@ type Model struct {
 	state               uiState
 	statusConfig        *StatusConfig  // Status configuration for implementation statuses
 	store               *storage.Store // Storage for persistent state
+	timestampConfig     *TimestampColorConfig // Timestamp color configuration
 	tmuxClient          tmux.Client
 	width               int
 	worktreeRemovalForm *Dialog        // Worktree removal dialog
 	worktreePath        string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, devMode bool) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background())
 	var errMsg error
@@ -97,7 +98,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	}
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, devMode)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode)
 
 	return &Model{
 		devMode:         devMode,
@@ -109,6 +110,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 		state:           stateList,
 		statusConfig:    statusConfig,
 		store:           store,
+		timestampConfig: timestampConfig,
 		tmuxClient:      tmuxClient,
 		worktreePath:    worktreePath,
 	}
