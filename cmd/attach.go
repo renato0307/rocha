@@ -158,7 +158,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 			sessionInfo.RepoInfo = repoInfo
 		}
 	} else {
-		// New session - create with "waiting" state, hooks will set "working" if needed
+		// New session - create with "idle" state (ready for user input)
 		// Generate new execution ID for this session
 		executionID := uuid.New().String()
 		logging.Logger.Info("Creating new session with execution ID", "execution_id", executionID)
@@ -166,7 +166,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		sessionInfo = storage.SessionInfo{
 			Name:         sessionName,
 			DisplayName:  sessionName,
-			State:        state.StateWaitingUser,
+			State:        state.StateIdle,
 			ExecutionID:  executionID,
 			LastUpdated:  time.Now().UTC(),
 			BranchName:   branchName,

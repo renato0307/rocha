@@ -107,9 +107,19 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					},
 				},
 			},
-			// Notification: Catch all notification types (including when Claude needs input)
+			// Notification: Catch idle_prompt and permission_prompt (when Claude truly needs user input)
 			"Notification": []map[string]interface{}{
 				{
+					"matcher": "idle_prompt",
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s notification --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+				{
+					"matcher": "permission_prompt",
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
