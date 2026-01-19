@@ -68,6 +68,7 @@ func (h *HelpScreen) View() string {
 	content += "\n" + helpGroupStyle.Render("Session Management") + "\n"
 	content += h.renderShortcut("n", "Create new session")
 	content += h.renderShortcut("r", "Rename session")
+	content += h.renderShortcut("a", "Archive session (hides from list)")
 	content += h.renderShortcut("x", "Kill session")
 
 	// Session Metadata
@@ -86,6 +87,7 @@ func (h *HelpScreen) View() string {
 
 	// Application
 	content += "\n" + helpGroupStyle.Render("Application") + "\n"
+	content += h.renderShortcut("t", "Toggle timestamps (hidden/relative/absolute)")
 	content += h.renderShortcut("h / ?", "Show this help screen")
 	content += h.renderShortcut("q / ctrl+c", "Quit application")
 

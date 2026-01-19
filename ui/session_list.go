@@ -243,19 +243,20 @@ type SessionList struct {
 	RequestTestError     bool          // User pressed 'alt+e' (test command)
 	SelectedSession      *tmux.Session // Session user wants to attach to
 	SelectedShellSession *tmux.Session // Session user wants shell session for
+	SessionToArchive     *tmux.Session // Session user wants to archive
+	SessionToComment     *tmux.Session // Session user wants to comment
 	SessionToKill        *tmux.Session // Session user wants to kill
 	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
 	SessionToRename      *tmux.Session // Session user wants to rename
 	SessionToSetStatus   *tmux.Session // Session user wants to set status for
-	SessionToComment     *tmux.Session // Session user wants to comment
 	SessionToToggleFlag  *tmux.Session // Session user wants to toggle flag
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
 func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode) *SessionList {
-	// Load session state
-	sessionState, err := store.Load(context.Background())
+	// Load session state (showArchived=false - TUI never shows archived sessions)
+	sessionState, err := store.Load(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load session state", "error", err)
 		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
@@ -340,8 +341,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return sl, pollStateCmd()
 		}
 
-		// Auto-refresh: Check if state has changed
-		newState, err := sl.store.Load(context.Background())
+		// Auto-refresh: Check if state has changed (showArchived=false - TUI never shows archived)
+		newState, err := sl.store.Load(context.Background(), false)
 		if err != nil {
 			// Continue polling even on error
 			return sl, pollStateCmd()
@@ -453,6 +454,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToToggleFlag = item.Session
+				return sl, nil
+			}
+
+		case "a":
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToArchive = item.Session
 				return sl, nil
 			}
 
@@ -592,7 +599,7 @@ func (sl *SessionList) View() string {
 	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • t: timestamps\n"
 
 	// Actions
-	helpText += "n: new • r: rename • c: comment (⌨) • f: flag (⚑) • s: cycle status • shift+s: set status • x: kill\n"
+	helpText += "n: new • r: rename • c: comment (⌨) • f: flag (⚑) • a: archive • s: cycle status • shift+s: set status • x: kill\n"
 
 	// Other
 	helpText += "enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • h/?: help • q: quit"
@@ -604,7 +611,7 @@ func (sl *SessionList) View() string {
 
 // RefreshFromState reloads the session list from state
 func (sl *SessionList) RefreshFromState() {
-	sessionState, err := sl.store.Load(context.Background())
+	sessionState, err := sl.store.Load(context.Background(), false)
 	if err != nil {
 		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		logging.Logger.Error("Failed to refresh session state", "error", err)

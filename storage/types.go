@@ -15,6 +15,7 @@ type SessionInfo struct {
 	DisplayName  string
 	ExecutionID  string
 	GitStats     interface{}
+	IsArchived   bool
 	IsFlagged    bool
 	LastUpdated  time.Time
 	Name         string

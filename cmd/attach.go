@@ -92,7 +92,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		"worktree_path", worktreePath)
 
 	// Step 3.5: Check for duplicate sessions with same branch or worktree
-	st, err := store.Load(context.Background())
+	st, err := store.Load(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state for duplicate check", "error", err)
 	}
@@ -130,7 +130,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 
 	// Step 5: Update database
 	// Reload state in case it changed
-	st, err = store.Load(context.Background())
+	st, err = store.Load(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state", "error", err)
 	}

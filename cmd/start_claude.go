@@ -44,7 +44,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 		}
 	} else {
 		defer store.Close()
-		st, err := store.Load(context.Background())
+		st, err := store.Load(context.Background(), false)
 		if err != nil {
 			logging.Logger.Warn("Failed to load state for execution ID", "error", err)
 			executionID = os.Getenv("ROCHA_EXECUTION_ID")

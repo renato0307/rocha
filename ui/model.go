@@ -57,6 +57,7 @@ type uiState int
 const (
 	stateList uiState = iota
 	stateCreatingSession
+	stateConfirmingArchive
 	stateConfirmingWorktreeRemoval
 	stateHelp
 	stateRenamingSession
@@ -65,34 +66,36 @@ const (
 )
 
 type Model struct {
-	devMode             bool   // Development mode (shows version info in dialogs)
-	editor              string // Editor to open sessions in
-	err                 error
-	errorClearDelay     time.Duration // Duration before errors auto-clear
-	formRemoveWorktree  *bool         // Worktree removal decision (pointer to persist across updates)
-	height              int
-	helpScreen          *Dialog               // Help screen dialog
-	sessionCommentForm  *Dialog               // Session comment dialog
-	sessionForm         *Dialog               // Session creation dialog
-	sessionList         *SessionList          // Session list component
-	sessionRenameForm   *Dialog               // Session rename dialog
-	sessionState        *storage.SessionState // State data for git metadata and status
-	sessionStatusForm   *Dialog               // Session status dialog
-	sessionToKill       *tmux.Session         // Session being killed (for worktree removal)
-	state               uiState
-	statusConfig        *StatusConfig         // Status configuration for implementation statuses
-	store               *storage.Store        // Storage for persistent state
-	timestampConfig     *TimestampColorConfig // Timestamp color configuration
-	timestampMode       TimestampMode
-	tmuxClient          tmux.Client
-	width               int
-	worktreeRemovalForm *Dialog // Worktree removal dialog
-	worktreePath        string
+	devMode                   bool           // Development mode (shows version info in dialogs)
+	editor                    string         // Editor to open sessions in
+	err                       error
+	errorClearDelay           time.Duration  // Duration before errors auto-clear
+	formRemoveWorktree        *bool          // Worktree removal decision (pointer to persist across updates)
+	formRemoveWorktreeArchive *bool          // Worktree removal decision for archive (pointer to persist across updates)
+	height                    int
+	helpScreen                *Dialog               // Help screen dialog
+	sessionCommentForm        *Dialog               // Session comment dialog
+	sessionForm               *Dialog               // Session creation dialog
+	sessionList               *SessionList          // Session list component
+	sessionRenameForm         *Dialog               // Session rename dialog
+	sessionState              *storage.SessionState // State data for git metadata and status
+	sessionStatusForm         *Dialog               // Session status dialog
+	sessionToArchive          *tmux.Session         // Session being archived (for worktree removal)
+	sessionToKill             *tmux.Session         // Session being killed (for worktree removal)
+	state                     uiState
+	statusConfig              *StatusConfig         // Status configuration for implementation statuses
+	store                     *storage.Store        // Storage for persistent state
+	timestampConfig           *TimestampColorConfig // Timestamp color configuration
+	timestampMode             TimestampMode
+	tmuxClient                tmux.Client
+	width                     int
+	worktreeRemovalForm       *Dialog // Worktree removal dialog
+	worktreePath              string
 }
 
 func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool) *Model {
 	// Load session state - this is the source of truth
-	sessionState, stateErr := store.Load(context.Background())
+	sessionState, stateErr := store.Load(context.Background(), false)
 	var errMsg error
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
@@ -139,6 +142,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateList(msg)
 	case stateCreatingSession:
 		return m.updateCreatingSession(msg)
+	case stateConfirmingArchive:
+		return m.updateConfirmingArchive(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
 	case stateHelp:
@@ -321,7 +326,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Reload session state
-		sessionState, err := m.store.Load(context.Background())
+		sessionState, err := m.store.Load(context.Background(), false)
 		if err != nil {
 			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
 			m.sessionList.RefreshFromState()
@@ -332,6 +337,24 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh UI
 		m.sessionList.RefreshFromState()
 		return m, m.sessionList.Init()
+	}
+
+	if m.sessionList.SessionToArchive != nil {
+		session := m.sessionList.SessionToArchive
+		m.sessionList.SessionToArchive = nil
+
+		// Check if session has worktree
+		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
+			m.sessionToArchive = session
+			removeWorktree := false
+			m.formRemoveWorktreeArchive = &removeWorktree
+			form := m.createArchiveWorktreeRemovalForm(sessionInfo.WorktreePath)
+			m.worktreeRemovalForm = NewDialog("Archive Session", form, m.devMode)
+			m.state = stateConfirmingArchive
+			return m, m.worktreeRemovalForm.Init()
+		} else {
+			return m, m.archiveSession(session, false)
+		}
 	}
 
 	if m.sessionList.RequestHelp {
@@ -390,7 +413,7 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if !result.Cancelled {
 				// Reload session state
-				sessionState, err := m.store.Load(context.Background())
+				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
 					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 					log.Printf("Warning: failed to reload session state: %v", err)
@@ -443,7 +466,7 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if !result.Cancelled {
 				// Reload session state
-				sessionState, err := m.store.Load(context.Background())
+				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
 					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 					m.sessionList.RefreshFromState()
@@ -493,7 +516,7 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if !result.Cancelled {
 				// Reload session state
-				sessionState, err := m.store.Load(context.Background())
+				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
 					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 					m.sessionList.RefreshFromState()
@@ -543,7 +566,7 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if !result.Cancelled {
 				// Reload session state
-				sessionState, err := m.store.Load(context.Background())
+				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
 					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
 					m.sessionList.RefreshFromState()
@@ -704,7 +727,7 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	}
 
 	// Remove session from state
-	st, err := m.store.Load(context.Background())
+	st, err := m.store.Load(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load state: %v", err)
 	} else {
@@ -718,6 +741,52 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	// Refresh session list component
 	m.sessionList.RefreshFromState()
 	return m.sessionList.Init() // Continue polling
+}
+
+func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.worktreeRemovalForm = nil
+			m.sessionToArchive = nil
+			m.formRemoveWorktreeArchive = nil
+			return m, nil
+		}
+	}
+
+	// Safety check for nil form
+	if m.worktreeRemovalForm == nil {
+		m.state = stateList
+		m.sessionToArchive = nil
+		return m, nil
+	}
+
+	// Forward message to Dialog
+	updated, cmd := m.worktreeRemovalForm.Update(msg)
+	m.worktreeRemovalForm = updated.(*Dialog)
+
+	// Access wrapped huh.Form to check completion
+	if form, ok := m.worktreeRemovalForm.Content().(*huh.Form); ok {
+		// Check if form completed
+		if form.State == huh.StateCompleted {
+			removeWorktree := *m.formRemoveWorktreeArchive // Dereference pointer
+			session := m.sessionToArchive
+
+			logging.Logger.Info("Archive worktree removal decision", "remove", removeWorktree, "session", session.Name)
+
+			// Reset state
+			m.state = stateList
+			m.worktreeRemovalForm = nil
+			m.sessionToArchive = nil
+			m.formRemoveWorktreeArchive = nil
+
+			// Archive with worktree removal decision
+			return m, m.archiveSession(session, removeWorktree)
+		}
+	}
+
+	return m, cmd
 }
 
 func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -792,6 +861,20 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 	return m, cmd
 }
 
+// createArchiveWorktreeRemovalForm creates a confirmation form for removing a worktree when archiving
+func (m *Model) createArchiveWorktreeRemovalForm(worktreePath string) *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(fmt.Sprintf("Remove worktree at %s?", worktreePath)).
+				Description("Archive will hide the session. Remove the worktree too?").
+				Value(m.formRemoveWorktreeArchive).
+				Affirmative("Remove").
+				Negative("Keep"),
+		),
+	)
+}
+
 // createWorktreeRemovalForm creates a confirmation form for removing a worktree
 func (m *Model) createWorktreeRemovalDialog(worktreePath string) *Dialog {
 	form := huh.NewForm(
@@ -829,6 +912,10 @@ func (m *Model) View() string {
 		if m.sessionForm != nil {
 			return m.sessionForm.View()
 		}
+	case stateConfirmingArchive:
+		if m.worktreeRemovalForm != nil {
+			return m.worktreeRemovalForm.View()
+		}
 	case stateConfirmingWorktreeRemoval:
 		if m.worktreeRemovalForm != nil {
 			return m.worktreeRemovalForm.View()
@@ -862,4 +949,42 @@ func (m *Model) setError(err error) {
 // clearError clears model error.
 func (m *Model) clearError() {
 	m.err = nil
+}
+
+// archiveSession archives a session and optionally removes its worktree
+func (m *Model) archiveSession(session *tmux.Session, removeWorktree bool) tea.Cmd {
+	logging.Logger.Info("Archiving session", "name", session.Name, "removeWorktree", removeWorktree)
+
+	// Get session info
+	sessionInfo, hasInfo := m.sessionState.Sessions[session.Name]
+
+	// Remove worktree if requested
+	if removeWorktree && hasInfo && sessionInfo.WorktreePath != "" {
+		logging.Logger.Info("Removing worktree", "path", sessionInfo.WorktreePath, "repo", sessionInfo.RepoPath)
+		if err := git.RemoveWorktree(sessionInfo.RepoPath, sessionInfo.WorktreePath); err != nil {
+			m.setError(fmt.Errorf("failed to remove worktree, continuing with archive: %w", err))
+			logging.Logger.Error("Failed to remove worktree", "error", err, "path", sessionInfo.WorktreePath)
+		} else {
+			logging.Logger.Info("Worktree removed successfully", "path", sessionInfo.WorktreePath)
+		}
+	}
+
+	// Toggle archive state
+	if err := m.store.ToggleArchive(context.Background(), session.Name); err != nil {
+		m.setError(fmt.Errorf("failed to archive session: %w", err))
+		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+	}
+
+	// Reload session state (showArchived=false, so archived session will disappear)
+	sessionState, err := m.store.Load(context.Background(), false)
+	if err != nil {
+		m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+		m.sessionList.RefreshFromState()
+		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+	}
+	m.sessionState = sessionState
+
+	// Refresh UI
+	m.sessionList.RefreshFromState()
+	return m.sessionList.Init()
 }
