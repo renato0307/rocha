@@ -250,6 +250,7 @@ type SessionList struct {
 	SessionToKill        *tmux.Session // Session user wants to kill
 	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
 	SessionToRename      *tmux.Session // Session user wants to rename
+	SessionToSendText    *tmux.Session // Session user wants to send text to
 	SessionToSetStatus   *tmux.Session // Session user wants to set status for
 	SessionToToggleFlag  *tmux.Session // Session user wants to toggle flag
 	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
@@ -448,6 +449,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
+		case key.Matches(msg, sl.keys.SessionMetadata.SendText):
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.SessionToSendText = item.Session
+				return sl, nil
+			}
+
 		case key.Matches(msg, sl.keys.SessionActions.OpenEditor):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToOpenEditor = item.Session
@@ -620,6 +627,7 @@ func (sl *SessionList) View() string {
 		formatBinding(sl.keys.SessionManagement.New),
 		formatBinding(sl.keys.SessionManagement.Rename),
 		formatBinding(sl.keys.SessionMetadata.Comment),
+		formatBinding(sl.keys.SessionMetadata.SendText),
 		formatBinding(sl.keys.SessionMetadata.Flag),
 		formatBinding(sl.keys.SessionManagement.Archive),
 		formatBinding(sl.keys.SessionMetadata.StatusCycle),

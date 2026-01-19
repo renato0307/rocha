@@ -66,6 +66,10 @@ func buildHelpContent(keys *KeyMap) string {
 	content += renderBinding(keys.SessionMetadata.StatusCycle)
 	content += renderBinding(keys.SessionMetadata.StatusSetForm)
 
+	// Experimental Features
+	content += "\n" + helpGroupStyle.Render("Experimental Features") + "\n"
+	content += renderShortcut(keys.SessionMetadata.SendText.Help().Key, keys.SessionMetadata.SendText.Help().Desc + " (experimental)")
+
 	// Session Actions
 	content += "\n" + helpGroupStyle.Render("Session Actions") + "\n"
 	content += renderBinding(keys.SessionActions.Open)
