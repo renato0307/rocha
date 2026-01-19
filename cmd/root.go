@@ -53,12 +53,15 @@ func (c *CLI) AfterApply() error {
 	// Only apply if flag is at default value and env var is not set
 
 	if c.settings != nil {
-		// Apply DBPath setting
+		// Apply DBPath setting if no CLI flag or env var was used
+		// Kong already handled ROCHA_DB_PATH env var via env tag
+		// If c.DBPath still equals hardcoded default, neither CLI nor env var was set
 		if c.DBPath == "~/.rocha/state.db" {
-			if _, hasEnv := os.LookupEnv("ROCHA_DB_PATH"); !hasEnv {
-				if c.settings.DBPath != "" {
-					c.DBPath = c.settings.DBPath
-				}
+			if c.settings.DBPath != "" {
+				c.DBPath = c.settings.DBPath
+			} else {
+				// Apply ROCHA_HOME-based default
+				c.DBPath = filepath.Join(getRochaHome(), "state.db")
 			}
 		}
 
@@ -79,6 +82,9 @@ func (c *CLI) AfterApply() error {
 				}
 			}
 		}
+	} else if c.DBPath == "~/.rocha/state.db" {
+		// No settings file, but still need to apply ROCHA_HOME-based default
+		c.DBPath = filepath.Join(getRochaHome(), "state.db")
 	}
 
 	// Initialize logging first and get the log file path
@@ -160,9 +166,13 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		}
 
 		// Apply WorktreePath setting
+		// No env var for this flag, just check if still at hardcoded default
 		if r.WorktreePath == "~/.rocha/worktrees" {
 			if cli.settings.WorktreePath != "" {
 				r.WorktreePath = cli.settings.WorktreePath
+			} else {
+				// Apply ROCHA_HOME-based default
+				r.WorktreePath = filepath.Join(getRochaHome(), "worktrees")
 			}
 		}
 
@@ -282,6 +292,20 @@ func isClaudeRunningInSession(sessionName string) bool {
 	cmd := exec.Command("pgrep", "-f", fmt.Sprintf("claude.*notify %s", sessionName))
 	err := cmd.Run()
 	return err == nil // Exit code 0 means process found
+}
+
+// getRochaHome returns the rocha home directory
+// Checks ROCHA_HOME env var, falls back to ~/.rocha
+func getRochaHome() string {
+	rochaHome := os.Getenv("ROCHA_HOME")
+	if rochaHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return ".rocha" // Fallback to relative path
+		}
+		return filepath.Join(homeDir, ".rocha")
+	}
+	return expandPath(rochaHome)
 }
 
 // expandPath expands ~ to home directory

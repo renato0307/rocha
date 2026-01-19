@@ -59,15 +59,21 @@ func parseCommaSeparated(s string) []string {
 	return result
 }
 
-// LoadSettings loads settings from ~/.rocha/settings.json
+// LoadSettings loads settings from $ROCHA_HOME/settings.json (or ~/.rocha/settings.json if not set)
 // Returns empty Settings if file doesn't exist (not an error)
 func LoadSettings() (*Settings, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	rochaHome := os.Getenv("ROCHA_HOME")
+	if rochaHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		rochaHome = filepath.Join(homeDir, ".rocha")
+	} else {
+		rochaHome = expandPath(rochaHome)
 	}
 
-	path := filepath.Join(homeDir, ".rocha", "settings.json")
+	path := filepath.Join(rochaHome, "settings.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
