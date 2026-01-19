@@ -58,33 +58,35 @@ const (
 	stateList uiState = iota
 	stateCreatingSession
 	stateConfirmingWorktreeRemoval
+	stateHelp
 	stateRenamingSession
 	stateSettingStatus
 	stateCommentingSession
 )
 
 type Model struct {
-	devMode             bool           // Development mode (shows version info in dialogs)
-	editor              string         // Editor to open sessions in
+	devMode             bool   // Development mode (shows version info in dialogs)
+	editor              string // Editor to open sessions in
 	err                 error
-	errorClearDelay     time.Duration  // Duration before errors auto-clear
-	formRemoveWorktree  *bool          // Worktree removal decision (pointer to persist across updates)
+	errorClearDelay     time.Duration // Duration before errors auto-clear
+	formRemoveWorktree  *bool         // Worktree removal decision (pointer to persist across updates)
 	height              int
-	sessionCommentForm  *Dialog        // Session comment dialog
-	sessionForm         *Dialog        // Session creation dialog
-	sessionList         *SessionList   // Session list component
-	sessionRenameForm   *Dialog        // Session rename dialog
+	helpScreen          *Dialog               // Help screen dialog
+	sessionCommentForm  *Dialog               // Session comment dialog
+	sessionForm         *Dialog               // Session creation dialog
+	sessionList         *SessionList          // Session list component
+	sessionRenameForm   *Dialog               // Session rename dialog
 	sessionState        *storage.SessionState // State data for git metadata and status
-	sessionStatusForm   *Dialog        // Session status dialog
-	sessionToKill       *tmux.Session  // Session being killed (for worktree removal)
+	sessionStatusForm   *Dialog               // Session status dialog
+	sessionToKill       *tmux.Session         // Session being killed (for worktree removal)
 	state               uiState
-	timestampMode       TimestampMode
-	statusConfig        *StatusConfig  // Status configuration for implementation statuses
-	store               *storage.Store // Storage for persistent state
+	statusConfig        *StatusConfig         // Status configuration for implementation statuses
+	store               *storage.Store        // Storage for persistent state
 	timestampConfig     *TimestampColorConfig // Timestamp color configuration
+	timestampMode       TimestampMode
 	tmuxClient          tmux.Client
 	width               int
-	worktreeRemovalForm *Dialog        // Worktree removal dialog
+	worktreeRemovalForm *Dialog // Worktree removal dialog
 	worktreePath        string
 }
 
@@ -139,6 +141,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCreatingSession(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
+	case stateHelp:
+		return m.updateHelp(msg)
 	case stateRenamingSession:
 		return m.updateRenamingSession(msg)
 	case stateSettingStatus:
@@ -328,6 +332,14 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh UI
 		m.sessionList.RefreshFromState()
 		return m, m.sessionList.Init()
+	}
+
+	if m.sessionList.RequestHelp {
+		m.sessionList.RequestHelp = false
+		contentForm := NewHelpScreen()
+		m.helpScreen = NewDialog("Help", contentForm, m.devMode)
+		m.state = stateHelp
+		return m, m.helpScreen.Init()
 	}
 
 	if m.sessionList.RequestNewSession {
@@ -550,6 +562,33 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.helpScreen = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	// Forward message to Dialog
+	updated, cmd := m.helpScreen.Update(msg)
+	m.helpScreen = updated.(*Dialog)
+
+	// Access wrapped content to check completion
+	if content, ok := m.helpScreen.Content().(*HelpScreen); ok {
+		if content.Completed {
+			// Return to list state
+			m.state = stateList
+			m.helpScreen = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	return m, cmd
+}
+
 type detachedMsg struct{}
 
 type clearErrorMsg struct{}
@@ -713,25 +752,25 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 
 			logging.Logger.Info("Worktree removal decision", "remove", removeWorktree, "session", session.Name)
 
-		// Get worktree path and repo path from session info
-		sessionInfo := m.sessionState.Sessions[session.Name]
-		worktreePath := sessionInfo.WorktreePath
-		repoPath := sessionInfo.RepoPath
+			// Get worktree path and repo path from session info
+			sessionInfo := m.sessionState.Sessions[session.Name]
+			worktreePath := sessionInfo.WorktreePath
+			repoPath := sessionInfo.RepoPath
 
-		// Remove worktree if requested
-		var worktreeErr bool
-		if removeWorktree {
-			logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
-			if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
-				m.setError(fmt.Errorf("failed to remove worktree: %w", err))
-				logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
-				worktreeErr = true
+			// Remove worktree if requested
+			var worktreeErr bool
+			if removeWorktree {
+				logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
+				if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
+					m.setError(fmt.Errorf("failed to remove worktree: %w", err))
+					logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
+					worktreeErr = true
+				} else {
+					logging.Logger.Info("Worktree removed successfully", "path", worktreePath)
+				}
 			} else {
-				logging.Logger.Info("Worktree removed successfully", "path", worktreePath)
+				logging.Logger.Info("Keeping worktree", "path", worktreePath)
 			}
-		} else {
-			logging.Logger.Info("Keeping worktree", "path", worktreePath)
-		}
 
 			// Kill the session
 			killCmd := m.killSession(session)
@@ -793,6 +832,10 @@ func (m *Model) View() string {
 	case stateConfirmingWorktreeRemoval:
 		if m.worktreeRemovalForm != nil {
 			return m.worktreeRemovalForm.View()
+		}
+	case stateHelp:
+		if m.helpScreen != nil {
+			return m.helpScreen.View()
 		}
 	case stateRenamingSession:
 		if m.sessionRenameForm != nil {
