@@ -207,8 +207,9 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			// Load top-level sessions only (parent_name IS NULL), ordered by position
+			// Use secondary sort by name for consistent ordering when positions are equal
 			var sessions []Session
-			if err := tx.Where("parent_name IS NULL").Order("position").Find(&sessions).Error; err != nil {
+			if err := tx.Where("parent_name IS NULL").Order("position ASC, name ASC").Find(&sessions).Error; err != nil {
 				return fmt.Errorf("failed to load sessions: %w", err)
 			}
 
@@ -262,6 +263,36 @@ func (s *Store) Load(ctx context.Context) (*SessionState, error) {
 			state.Sessions = make(map[string]SessionInfo)
 			state.OrderedSessionNames = make([]string, len(sessions))
 
+			// Check if we need to normalize positions (detect duplicates or non-sequential)
+			needsNormalization := false
+			positionSet := make(map[int]bool)
+			for i, sess := range sessions {
+				if positionSet[sess.Position] {
+					needsNormalization = true // duplicate position found
+					break
+				}
+				positionSet[sess.Position] = true
+				if sess.Position != i {
+					needsNormalization = true // non-sequential position
+					break
+				}
+			}
+
+			// Normalize positions if needed
+			if needsNormalization {
+				logging.Logger.Debug("Normalizing session positions", "count", len(sessions))
+				for i, sess := range sessions {
+					if sess.Position != i {
+						if err := tx.Model(&Session{}).Where("name = ?", sess.Name).Update("position", i).Error; err != nil {
+							logging.Logger.Warn("Failed to normalize position", "session", sess.Name, "error", err)
+						} else {
+							logging.Logger.Debug("Normalized position", "session", sess.Name, "old_pos", sess.Position, "new_pos", i)
+							sessions[i].Position = i // Update in-memory too
+						}
+					}
+				}
+			}
+
 			for i, sess := range sessions {
 				// Get flag state, status, and comment for top-level session
 				isFlagged := flagMap[sess.Name]
@@ -304,22 +335,34 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 			}
 
 			existingNames := make(map[string]bool)
+			existingPositions := make(map[string]int)
 			for _, sess := range existingSessions {
 				existingNames[sess.Name] = true
+				existingPositions[sess.Name] = sess.Position
+			}
+
+			// Build position map from OrderedSessionNames
+			// This ensures positions match the intended order
+			positionMap := make(map[string]int)
+			for i, name := range state.OrderedSessionNames {
+				positionMap[name] = i
 			}
 
 			// Save sessions
 			for _, sessInfo := range state.Sessions {
 				session := convertFromSessionInfo(sessInfo)
 
-				// Preserve position field from existing session
-				var existing Session
-				err := tx.Where("name = ?", session.Name).First(&existing).Error
-				if err == nil {
-					// Session exists, preserve position
-					session.Position = existing.Position
+				// Assign position based on OrderedSessionNames
+				if pos, exists := positionMap[session.Name]; exists {
+					// Use position from OrderedSessionNames
+					session.Position = pos
+				} else if existingPos, exists := existingPositions[session.Name]; exists {
+					// Fallback: preserve existing position if not in OrderedSessionNames
+					session.Position = existingPos
+				} else {
+					// New session not in OrderedSessionNames: add at end
+					session.Position = len(state.OrderedSessionNames)
 				}
-				// If session doesn't exist (err != nil), position will be 0 which is fine for new sessions
 
 				if err := tx.Save(&session).Error; err != nil {
 					return fmt.Errorf("failed to save session %s: %w", sessInfo.Name, err)
@@ -455,8 +498,18 @@ func (s *Store) SwapPositions(ctx context.Context, name1, name2 string) error {
 				return fmt.Errorf("failed to find session %s: %w", name2, err)
 			}
 
+			// Debug: Log before swap
+			logging.Logger.Debug("SwapPositions - before swap",
+				"session1", name1, "pos1_before", session1.Position,
+				"session2", name2, "pos2_before", session2.Position)
+
 			// Swap positions
 			session1.Position, session2.Position = session2.Position, session1.Position
+
+			// Debug: Log after swap (in memory)
+			logging.Logger.Debug("SwapPositions - after swap (in memory)",
+				"session1", name1, "pos1_after", session1.Position,
+				"session2", name2, "pos2_after", session2.Position)
 
 			// Update both sessions
 			if err := tx.Model(&Session{}).Where("name = ?", name1).Update("position", session1.Position).Error; err != nil {
@@ -465,6 +518,22 @@ func (s *Store) SwapPositions(ctx context.Context, name1, name2 string) error {
 			if err := tx.Model(&Session{}).Where("name = ?", name2).Update("position", session2.Position).Error; err != nil {
 				return fmt.Errorf("failed to update position for %s: %w", name2, err)
 			}
+
+			// Debug: Verify the update in the database
+			var check1, check2 Session
+			if err := tx.Where("name = ?", name1).First(&check1).Error; err != nil {
+				logging.Logger.Warn("Failed to verify update", "session", name1, "error", err)
+			} else {
+				logging.Logger.Debug("SwapPositions - verified in DB",
+					"session1", name1, "pos1_in_db", check1.Position)
+			}
+			if err := tx.Where("name = ?", name2).First(&check2).Error; err != nil {
+				logging.Logger.Warn("Failed to verify update", "session", name2, "error", err)
+			} else {
+				logging.Logger.Debug("SwapPositions - verified in DB",
+					"session2", name2, "pos2_in_db", check2.Position)
+			}
+
 			return nil
 		})
 	}, 3)
