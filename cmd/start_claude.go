@@ -107,17 +107,8 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					},
 				},
 			},
-			// Notification: Catch idle_prompt and permission_prompt (when Claude truly needs user input)
+			// Notification: Catch permission_prompt (when Claude needs user permission)
 			"Notification": []map[string]interface{}{
-				{
-					"matcher": "idle_prompt",
-					"hooks": []map[string]interface{}{
-						{
-							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s notification --execution-id=%s", rochaBin, sessionName, executionID),
-						},
-					},
-				},
 				{
 					"matcher": "permission_prompt",
 					"hooks": []map[string]interface{}{
@@ -135,6 +126,18 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 						{
 							"type":    "command",
 							"command": fmt.Sprintf("%s notify %s end --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// PreToolUse: When Claude is about to ask user a question
+			"PreToolUse": []map[string]interface{}{
+				{
+					"matcher": "AskUserQuestion",
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s notification --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},

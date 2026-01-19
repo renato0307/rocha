@@ -42,6 +42,38 @@ For all available commands and options, run `rocha --help`.
 - **Git worktree support** - Each session can have its own isolated branch and workspace
 - **Git stats** - See PR info, ahead/behind commits, and changes at a glance
 
+## Session States
+
+Rocha automatically tracks the state of each Claude session using hooks:
+
+### State Symbols
+
+- **● (green)** - **Working**: Claude is actively processing a task
+- **○ (yellow)** - **Idle**: Claude finished its turn, ready for your next prompt
+- **◐ (red)** - **Waiting**: Claude is blocked on a UI interaction (form, permission dialog)
+- **■ (gray)** - **Exited**: Claude has exited the session
+
+### State Transitions
+
+```
+User submits prompt → working (●)
+Claude finishes task → idle (○)
+Claude shows AskUserQuestion form → waiting (◐)
+User answers form → working (●)
+Claude needs permission → waiting (◐)
+Claude exits → exited (■)
+```
+
+### Key Differences
+
+**idle (○) vs waiting (◐)**:
+- **idle**: Claude finished, you type your next message in chat
+- **waiting**: Claude is blocked on a UI element (form with buttons, permission dialog)
+
+For example:
+- Claude asks "What color?" in text → **idle (○)** (normal chat)
+- Claude shows `[○ Red] [○ Blue]` form → **waiting (◐)** (blocking UI)
+
 ## Key Bindings
 
 **In the list:**
