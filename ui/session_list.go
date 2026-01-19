@@ -238,6 +238,7 @@ type SessionList struct {
 	timestampConfig *TimestampColorConfig
 
 	// Result fields - set by component, read by Model
+	RequestHelp          bool          // User pressed 'h' or '?'
 	RequestNewSession    bool          // User pressed 'n'
 	RequestTestError     bool          // User pressed 'alt+e' (test command)
 	SelectedSession      *tmux.Session // Session user wants to attach to
@@ -404,6 +405,10 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			sl.ShouldQuit = true
+			return sl, nil
+
+		case "h", "?":
+			sl.RequestHelp = true
 			return sl, nil
 
 		case "n":
@@ -590,7 +595,7 @@ func (sl *SessionList) View() string {
 	helpText += "n: new • r: rename • c: comment (⌨) • f: flag (⚑) • s: cycle status • shift+s: set status • x: kill\n"
 
 	// Other
-	helpText += "enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • q: quit"
+	helpText += "enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • h/?: help • q: quit"
 
 	s += helpStyle.Render(helpText)
 
