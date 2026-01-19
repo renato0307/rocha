@@ -476,9 +476,9 @@ func (s *SessionState) RemoveSession(name string) error {
 }
 
 // GetCounts returns the number of waiting, idle, and working sessions for the given execution ID
-func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, working int) {
+func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, working int, exited int) {
 	if s.Sessions == nil {
-		return 0, 0, 0
+		return 0, 0, 0, 0
 	}
 
 	for _, session := range s.Sessions {
@@ -493,10 +493,12 @@ func (s *SessionState) GetCounts(executionID string) (waiting int, idle int, wor
 			idle++
 		case StateWorking:
 			working++
+		case StateExited:
+			exited++
 		}
 	}
 
-	return waiting, idle, working
+	return waiting, idle, working, exited
 }
 
 // GetAllCounts returns the number of waiting, idle, and working sessions across all execution IDs
