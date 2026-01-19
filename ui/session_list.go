@@ -513,6 +513,17 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return sl, nil
 		}
 
+	case tea.MouseMsg:
+		// Handle mouse wheel scrolling
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			sl.list.CursorUp()
+			return sl, nil
+		case tea.MouseWheelDown:
+			sl.list.CursorDown()
+			return sl, nil
+		}
+
 	case tea.WindowSizeMsg:
 		// Store dimensions
 		sl.width = msg.Width
