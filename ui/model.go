@@ -68,6 +68,7 @@ const (
 	stateConfirmingWorktreeRemoval
 	stateHelp
 	stateRenamingSession
+	stateSendingText
 	stateSettingStatus
 	stateCommentingSession
 )
@@ -82,6 +83,7 @@ type Model struct {
 	height                    int
 	helpScreen                *Dialog               // Help screen dialog
 	keys                      KeyMap                // Keyboard shortcuts
+	sendTextForm              *Dialog               // Send text to tmux dialog
 	sessionCommentForm        *Dialog               // Session comment dialog
 	sessionForm               *Dialog               // Session creation dialog
 	sessionList               *SessionList          // Session list component
@@ -164,6 +166,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateHelp(msg)
 	case stateRenamingSession:
 		return m.updateRenamingSession(msg)
+	case stateSendingText:
+		return m.updateSendingText(msg)
 	case stateSettingStatus:
 		return m.updateSettingStatus(msg)
 	case stateCommentingSession:
@@ -310,6 +314,16 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionCommentForm = NewDialog("Edit Session Comment", contentForm, m.devMode)
 		m.state = stateCommentingSession
 		return m, m.sessionCommentForm.Init()
+	}
+
+	if m.sessionList.SessionToSendText != nil {
+		session := m.sessionList.SessionToSendText
+		m.sessionList.SessionToSendText = nil // Clear
+
+		contentForm := NewSendTextForm(m.tmuxClient, session.Name)
+		m.sendTextForm = NewDialog("Send Text to Claude", contentForm, m.devMode)
+		m.state = stateSendingText
+		return m, m.sendTextForm.Init()
 	}
 
 	if m.sessionList.SessionToOpenEditor != nil {
@@ -594,6 +608,42 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				// Refresh session list component
 				m.sessionList.RefreshFromState()
+			}
+
+			return m, m.sessionList.Init()
+		}
+	}
+
+	return m, cmd
+}
+
+func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.sendTextForm = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	// Forward message to Dialog
+	updated, cmd := m.sendTextForm.Update(msg)
+	m.sendTextForm = updated.(*Dialog)
+
+	// Access wrapped content to check completion
+	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok {
+		if content.Completed {
+			result := content.Result()
+
+			// Return to list state
+			m.state = stateList
+			m.sendTextForm = nil
+
+			// Check if send text failed
+			if result.Error != nil {
+				m.setError(fmt.Errorf("failed to send text: %w", result.Error))
+				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 			}
 
 			return m, m.sessionList.Init()
@@ -953,6 +1003,10 @@ func (m *Model) View() string {
 	case stateCommentingSession:
 		if m.sessionCommentForm != nil {
 			return m.sessionCommentForm.View()
+		}
+	case stateSendingText:
+		if m.sendTextForm != nil {
+			return m.sendTextForm.View()
 		}
 	}
 	return ""

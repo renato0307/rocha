@@ -12,10 +12,11 @@ type SessionManagementKeys struct {
 
 // SessionMetadataKeys defines key bindings for session metadata (comment, flag, status)
 type SessionMetadataKeys struct {
-	Comment         key.Binding
-	Flag            key.Binding
-	StatusCycle     key.Binding
-	StatusSetForm   key.Binding
+	Comment       key.Binding
+	Flag          key.Binding
+	SendText      key.Binding
+	StatusCycle   key.Binding
+	StatusSetForm key.Binding
 }
 
 // SessionActionsKeys defines key bindings for session actions (open, shell, editor, quick open)
@@ -32,19 +33,19 @@ func newSessionManagementKeys() SessionManagementKeys {
 	return SessionManagementKeys{
 		Archive: key.NewBinding(
 			key.WithKeys("a"),
-			key.WithHelp("a", "archive session"),
+			key.WithHelp("a", "archive"),
 		),
 		Kill: key.NewBinding(
 			key.WithKeys("x"),
-			key.WithHelp("x", "kill session"),
+			key.WithHelp("x", "kill"),
 		),
 		New: key.NewBinding(
 			key.WithKeys("n"),
-			key.WithHelp("n", "new session"),
+			key.WithHelp("n", "new"),
 		),
 		Rename: key.NewBinding(
 			key.WithKeys("r"),
-			key.WithHelp("r", "rename session"),
+			key.WithHelp("r", "rename"),
 		),
 	}
 }
@@ -59,6 +60,10 @@ func newSessionMetadataKeys() SessionMetadataKeys {
 		Flag: key.NewBinding(
 			key.WithKeys("f"),
 			key.WithHelp("f", "flag (⚑)"),
+		),
+		SendText: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "send text (prompt)"),
 		),
 		StatusCycle: key.NewBinding(
 			key.WithKeys("s"),
