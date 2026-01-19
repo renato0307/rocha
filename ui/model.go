@@ -81,6 +81,7 @@ type Model struct {
 	formRemoveWorktreeArchive *bool          // Worktree removal decision for archive (pointer to persist across updates)
 	height                    int
 	helpScreen                *Dialog               // Help screen dialog
+	keys                      KeyMap                // Keyboard shortcuts
 	sessionCommentForm        *Dialog               // Session comment dialog
 	sessionForm               *Dialog               // Session creation dialog
 	sessionList               *SessionList          // Session list component
@@ -118,14 +119,18 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 		initialMode = TimestampHidden
 	}
 
+	// Create shared key map
+	keys := NewKeyMap()
+
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys)
 
 	return &Model{
 		devMode:         devMode,
 		editor:          editor,
 		err:             errMsg,
 		errorClearDelay: errorClearDelay,
+		keys:            keys,
 		sessionList:     sessionList,
 		sessionState:    sessionState,
 		state:           stateList,
@@ -366,7 +371,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestHelp {
 		m.sessionList.RequestHelp = false
-		contentForm := NewHelpScreen()
+		contentForm := NewHelpScreen(&m.keys)
 		m.helpScreen = NewDialog("Help", contentForm, m.devMode)
 		m.state = stateHelp
 		return m, m.helpScreen.Init()

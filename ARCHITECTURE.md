@@ -322,6 +322,7 @@ Bubble Tea TUI with component architecture.
 - **SessionForm** - Session creation forms
 - **SessionStatusForm** - Status selection form with `<clear>` option
 - **StatusConfig** - Configuration for status names, colors, and cycling logic
+- **KeyMap** - Centralized keyboard shortcuts using bubbles/key bindings
 - **Model** - Orchestrates states (list, creating, confirming, settingStatus)
 
 #### tmux/
