@@ -596,13 +596,13 @@ func (sl *SessionList) View() string {
 	helpText := sl.renderStatusLegend() + "\n\n"
 
 	// Movement
-	helpText += "↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • t: timestamps\n"
+	helpText += formatHelpLine("↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • t: timestamps") + "\n"
 
 	// Actions
-	helpText += "n: new • r: rename • c: comment (⌨) • f: flag (⚑) • a: archive • s: cycle status • shift+s: set status • x: kill\n"
+	helpText += formatHelpLine("n: new • r: rename • c: comment (⌨) • f: flag (⚑) • a: archive • s: cycle status • shift+s: set status • x: kill") + "\n"
 
 	// Other
-	helpText += "enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • h/?: help • q: quit"
+	helpText += formatHelpLine("enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • h/?: help • q: quit")
 
 	s += helpStyle.Render(helpText)
 
@@ -769,6 +769,35 @@ func (sl *SessionList) countSessionsByState() (working, idle, waiting, exited in
 		}
 	}
 	return
+}
+
+// formatHelpLine formats a help line with styled shortcuts and labels
+func formatHelpLine(line string) string {
+	// Split by bullet separator
+	parts := strings.Split(line, " • ")
+	var formatted []string
+
+	for _, part := range parts {
+		// Split by colon to separate shortcut from label
+		colonIdx := strings.Index(part, ": ")
+		if colonIdx == -1 {
+			// No colon found, just render as-is
+			formatted = append(formatted, part)
+			continue
+		}
+
+		shortcut := part[:colonIdx]
+		label := part[colonIdx+2:] // +2 to skip ": "
+
+		// Style shortcut and label separately
+		styledShortcut := helpShortcutStyle.Render(shortcut)
+		styledLabel := helpLabelStyle.Render(": " + label)
+
+		formatted = append(formatted, styledShortcut+styledLabel)
+	}
+
+	// Join back with bullet separator
+	return strings.Join(formatted, " • ")
 }
 
 // ensureSessionExists checks if a session exists and recreates it if needed
