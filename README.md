@@ -45,26 +45,27 @@ For all available commands and options, run `rocha --help`.
 ## Key Bindings
 
 **In the list:**
-- `n` - New session
-- `Enter` - Attach to session
-- `alt+1` to `alt+7` - Quick attach to sessions by number
-- `alt+enter` - Open shell session (⌨) for the selected session
-- `r` - Rename session
-- `c` - Add/edit comment on session
-- `f` - Toggle flag (mark session as important)
-- `s` - Cycle through statuses quickly (working → idle → waiting → exited)
-- `shift+s` - Set status (interactive form to choose status)
-- `o` - Open session in your editor
-- `x` - Kill session
-- `↑/↓` or `j/k` - Navigate
-- `shift+↑/↓` or `shift+j/k` - Move session up/down in list
-- `/` - Filter/search sessions
-- `esc` (twice) - Clear filter
-- `q` - Quit
+- `n` - new session
+- `enter` - attach to session
+- `alt+1` to `alt+7` - quick attach to sessions by number
+- `alt+enter` - open shell session (⌨) for the selected session
+- `r` - rename session
+- `c` - add/edit comment on session
+- `f` - toggle flag (mark session as important)
+- `s` - cycle through statuses quickly (working → idle → waiting → exited)
+- `shift+s` - set status (interactive form to choose status)
+- `o` - open session in your editor
+- `x` - kill session
+- `↑/↓` or `j/k` - navigate
+- `shift+↑/↓` or `shift+j/k` - move session up/down in list
+- `/` - filter/search sessions
+- `esc` (twice) - clear filter
+- `q` - quit
 
 **Inside a session:**
-- `Ctrl+Q` - Quick return to list
-- `Ctrl+B then D` - Standard tmux detach (also works)
+- `ctrl+q` - quick return to list
+- `ctrl+]` - swap between claude and shell sessions
+- `ctrl+b then d` - standard tmux detach (also works)
 
 ## Git Worktree Support
 

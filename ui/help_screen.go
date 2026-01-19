@@ -74,6 +74,12 @@ func buildHelpContent(keys *KeyMap) string {
 	content += renderBinding(keys.SessionActions.OpenShell)
 	content += renderBinding(keys.SessionActions.OpenEditor)
 
+	// Inside Session Shortcuts (tmux-level)
+	content += "\n" + helpGroupStyle.Render("Inside Session Shortcuts") + "\n"
+	content += renderShortcut("ctrl+q", "quick return to list")
+	content += renderShortcut("ctrl+]", "swap between claude and shell sessions")
+	content += renderShortcut("ctrl+b then d", "standard tmux detach (also works)")
+
 	// Application
 	content += "\n" + helpGroupStyle.Render("Application") + "\n"
 	content += renderBinding(keys.Application.Timestamps)
@@ -83,14 +89,14 @@ func buildHelpContent(keys *KeyMap) string {
 
 	// State Indicators
 	content += "\n" + helpGroupStyle.Render("State Indicators (read-only)") + "\n"
-	content += renderShortcut("●", "Session is working")
-	content += renderShortcut("○", "Session is idle")
-	content += renderShortcut("◐", "Session is waiting")
-	content += renderShortcut("■", "Session has exited")
-	content += renderShortcut("⚑", "Session has flag set")
-	content += renderShortcut("⌨", "Session has comment")
-	content += renderShortcut(">_", "Shell session active")
-	content += renderShortcut("[spec], [plan], etc.", "Implementation status")
+	content += renderShortcut("●", "session is working")
+	content += renderShortcut("○", "session is idle")
+	content += renderShortcut("◐", "session is waiting")
+	content += renderShortcut("■", "session has exited")
+	content += renderShortcut("⚑", "session has flag set")
+	content += renderShortcut("⌨", "session has comment")
+	content += renderShortcut(">_", "shell session active")
+	content += renderShortcut("[spec], [plan], etc.", "implementation status")
 
 	return content
 }
