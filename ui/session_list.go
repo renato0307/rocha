@@ -33,6 +33,7 @@ type SessionItem struct {
 	GitRef          string
 	HasShellSession bool // Track if shell session exists
 	IsFlagged       bool
+	LastUpdated     time.Time
 	Session         *tmux.Session
 	State           string
 	Status          *string // Implementation status
@@ -55,14 +56,16 @@ func (i SessionItem) Description() string {
 
 // SessionDelegate is a custom delegate for rendering session items
 type SessionDelegate struct {
-	sessionState *storage.SessionState
-	statusConfig *StatusConfig
+	sessionState    *storage.SessionState
+	statusConfig    *StatusConfig
+	timestampConfig *TimestampColorConfig
 }
 
-func newSessionDelegate(sessionState *storage.SessionState, statusConfig *StatusConfig) SessionDelegate {
+func newSessionDelegate(sessionState *storage.SessionState, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig) SessionDelegate {
 	return SessionDelegate{
-		sessionState: sessionState,
-		statusConfig: statusConfig,
+		sessionState:    sessionState,
+		statusConfig:    statusConfig,
+		timestampConfig: timestampConfig,
 	}
 }
 
@@ -138,6 +141,16 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 			Render("[" + *item.Status + "]")
 	}
 
+	// Add timestamp at the end with color based on age
+	if !item.LastUpdated.IsZero() {
+		relativeTime := formatRelativeTime(item.LastUpdated)
+		if relativeTime != "" {
+			color := getTimestampColor(item.LastUpdated, d.timestampConfig)
+			timestampStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+			line1 += " " + timestampStyle.Render("("+relativeTime+")")
+		}
+	}
+
 	// Build second line: git ref (indented to align with session name)
 	var line2 string
 	if item.GitRef != "" {
@@ -209,6 +222,9 @@ type SessionList struct {
 	height int
 	width  int
 
+	// Timestamp configuration
+	timestampConfig *TimestampColorConfig
+
 	// Result fields - set by component, read by Model
 	RequestNewSession    bool          // User pressed 'n'
 	RequestTestError     bool          // User pressed 'alt+e' (test command)
@@ -224,7 +240,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, devMode bool) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool) *SessionList {
 	// Load session state
 	sessionState, err := store.Load(context.Background())
 	if err != nil {
@@ -236,7 +252,7 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 	items := buildListItems(sessionState, tmuxClient, statusConfig)
 
 	// Create delegate
-	delegate := newSessionDelegate(sessionState, statusConfig)
+	delegate := newSessionDelegate(sessionState, statusConfig, timestampConfig)
 
 	// Create list with reasonable default size (will be resized on WindowSizeMsg)
 	// Initial height: assume 40 line terminal - 12 lines for header/help = 28
@@ -247,14 +263,15 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 	l.SetShowHelp(false) // We'll render our own help
 
 	return &SessionList{
-		devMode:      devMode,
-		editor:       editor,
-		err:          err,
-		list:         l,
-		sessionState: sessionState,
-		statusConfig: statusConfig,
-		store:        store,
-		tmuxClient:   tmuxClient,
+		devMode:         devMode,
+		editor:          editor,
+		err:             err,
+		list:            l,
+		sessionState:    sessionState,
+		statusConfig:    statusConfig,
+		store:           store,
+		timestampConfig: timestampConfig,
+		tmuxClient:      tmuxClient,
 	}
 }
 
@@ -283,7 +300,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Rebuild items with updated stats
-		delegate := newSessionDelegate(sl.sessionState, sl.statusConfig)
+		delegate := newSessionDelegate(sl.sessionState, sl.statusConfig, sl.timestampConfig)
 		sl.list.SetDelegate(delegate)
 		items := buildListItems(sl.sessionState, sl.tmuxClient, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
@@ -326,7 +343,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sl.sessionState = newState
 
 		// Update delegate with new state
-		delegate := newSessionDelegate(newState, sl.statusConfig)
+		delegate := newSessionDelegate(newState, sl.statusConfig, sl.timestampConfig)
 		sl.list.SetDelegate(delegate)
 
 		// Rebuild items
@@ -568,7 +585,7 @@ func (sl *SessionList) RefreshFromState() {
 	sl.sessionState = sessionState
 
 	// Update delegate
-	delegate := newSessionDelegate(sessionState, sl.statusConfig)
+	delegate := newSessionDelegate(sessionState, sl.statusConfig, sl.timestampConfig)
 	sl.list.SetDelegate(delegate)
 
 	// Rebuild items
@@ -671,6 +688,7 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client, 
 			GitRef:          gitRef,
 			HasShellSession: hasShell,
 			IsFlagged:       info.IsFlagged,
+			LastUpdated:     info.LastUpdated,
 			Session:         session,
 			State:           info.State,
 			Status:          info.Status,
