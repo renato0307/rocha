@@ -76,7 +76,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 	cwd, _ := os.Getwd()
 	isGit, repo := git.IsGitRepo(cwd)
 
-	// Pre-fill ClaudeDir with resolved default
+	// Determine default ClaudeDir for display purposes
 	var defaultClaudeDir string
 	if isGit {
 		repoInfo := git.GetRepoInfo(repo)
@@ -84,8 +84,8 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 	} else {
 		defaultClaudeDir = config.DefaultClaudeDir()
 	}
-	sf.result.ClaudeDir = defaultClaudeDir
-	logging.Logger.Debug("Pre-filled ClaudeDir with default", "claude_dir", defaultClaudeDir)
+	// Leave sf.result.ClaudeDir empty - empty means "use default"
+	logging.Logger.Debug("Default ClaudeDir for display", "claude_dir", defaultClaudeDir)
 
 	logging.Logger.Debug("Creating session form", "is_git_repo", isGit, "cwd", cwd)
 
@@ -204,13 +204,13 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 	// Add CLAUDE_CONFIG_DIR field
 	fields = append(fields,
 		huh.NewInput().
-			Title("Claude directory").
-			Description("Pre-filled with default. Edit to customize or clear to use default.").
+			Title("Claude directory (optional)").
+			Description(fmt.Sprintf("Leave empty to use default: %s", defaultClaudeDir)).
 			Placeholder(defaultClaudeDir).
 			Value(&sf.result.ClaudeDir).
 			Validate(func(s string) error {
 				if s == "" {
-					return fmt.Errorf("claude directory cannot be empty")
+					return nil // Empty is OK - means use default
 				}
 				// Basic path validation - just check format
 				if !filepath.IsAbs(s) && !strings.HasPrefix(s, "~") {
@@ -370,6 +370,14 @@ func (sf *SessionForm) createSession() error {
 	// 2. Resolve ClaudeDir
 	claudeDir = config.ResolveClaudeDir(sf.store, repoInfo, sf.result.ClaudeDir)
 	logging.Logger.Info("Resolved ClaudeDir", "path", claudeDir)
+
+	// If the resolved ClaudeDir is the same as the default, treat it as "no customization"
+	// This ensures we don't set CLAUDE_CONFIG_DIR env var unnecessarily
+	defaultDir := config.DefaultClaudeDir()
+	if claudeDir == defaultDir {
+		logging.Logger.Info("ClaudeDir is default, not setting custom override", "default", defaultDir)
+		claudeDir = "" // Empty means: use Claude's default, don't set env var
+	}
 
 	// 3. Create worktree if requested
 	if createWorktree && repoPath != "" {
