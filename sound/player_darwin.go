@@ -35,7 +35,7 @@ func playForEvent(eventType string) error {
 	// Try each sound file
 	for _, soundFile := range soundFiles {
 		cmd := exec.Command("afplay", soundFile)
-		if err := cmd.Run(); err == nil {
+		if err := cmd.Start(); err == nil {
 			return nil
 		}
 	}
