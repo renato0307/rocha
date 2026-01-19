@@ -15,6 +15,7 @@ import (
 	"rocha/storage"
 	"rocha/tmux"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -219,6 +220,7 @@ type SessionList struct {
 	editor           string // Editor to open sessions in
 	err              error
 	fetchingGitStats bool // Prevent concurrent fetches
+	keys             KeyMap
 	list             list.Model
 	sessionState     *storage.SessionState
 	statusConfig     *StatusConfig
@@ -254,7 +256,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := store.Load(context.Background(), false)
 	if err != nil {
@@ -280,6 +282,7 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 		devMode:         devMode,
 		editor:          editor,
 		err:             err,
+		keys:            keys,
 		list:            l,
 		sessionState:    sessionState,
 		statusConfig:    statusConfig,
@@ -403,20 +406,20 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Normal shortcut processing when NOT filtering
-		switch msg.String() {
-		case "ctrl+c", "q":
+		switch {
+		case key.Matches(msg, sl.keys.Application.Quit, sl.keys.Application.ForceQuit):
 			sl.ShouldQuit = true
 			return sl, nil
 
-		case "h", "?":
+		case key.Matches(msg, sl.keys.Application.Help):
 			sl.RequestHelp = true
 			return sl, nil
 
-		case "n":
+		case key.Matches(msg, sl.keys.SessionManagement.New):
 			sl.RequestNewSession = true
 			return sl, nil
 
-		case "enter":
+		case key.Matches(msg, sl.keys.SessionActions.Open):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				// Ensure session exists
 				if !sl.ensureSessionExists(item.Session) {
@@ -427,62 +430,62 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
-		case "x":
+		case key.Matches(msg, sl.keys.SessionManagement.Kill):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToKill = item.Session
 				return sl, nil
 			}
 
-		case "r":
+		case key.Matches(msg, sl.keys.SessionManagement.Rename):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToRename = item.Session
 				return sl, nil
 			}
 
-		case "c":
+		case key.Matches(msg, sl.keys.SessionMetadata.Comment):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToComment = item.Session
 				return sl, nil
 			}
 
-		case "o":
+		case key.Matches(msg, sl.keys.SessionActions.OpenEditor):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToOpenEditor = item.Session
 				return sl, nil
 			}
 
-		case "f":
+		case key.Matches(msg, sl.keys.SessionMetadata.Flag):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToToggleFlag = item.Session
 				return sl, nil
 			}
 
-		case "a":
+		case key.Matches(msg, sl.keys.SessionManagement.Archive):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToArchive = item.Session
 				return sl, nil
 			}
 
-		case "s":
+		case key.Matches(msg, sl.keys.SessionMetadata.StatusCycle):
 			// s: Cycle through statuses (default/quick action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				return sl, sl.cycleSessionStatus(item.Session.Name)
 			}
 
-		case "S":
+		case key.Matches(msg, sl.keys.SessionMetadata.StatusSetForm):
 			// Shift+S: Open status form (edit action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToSetStatus = item.Session
 				return sl, nil
 			}
 
-		case "K": // Shift+K (uppercase K)
+		case key.Matches(msg, sl.keys.Navigation.MoveUp):
 			return sl, sl.moveSelectedUp()
 
-		case "J": // Shift+J (uppercase J)
+		case key.Matches(msg, sl.keys.Navigation.MoveDown):
 			return sl, sl.moveSelectedDown()
 
-		case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7":
+		case key.Matches(msg, sl.keys.SessionActions.QuickOpen):
 			// Quick attach to session by number
 			numStr := msg.String()[4:] // Skip "alt+"
 			num := int(numStr[0] - '0')
@@ -503,7 +506,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case "alt+enter":
+		case key.Matches(msg, sl.keys.SessionActions.OpenShell):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				// Ensure session exists
 				if !sl.ensureSessionExists(item.Session) {
@@ -514,12 +517,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
-		case "alt+e":
+		case msg.String() == "alt+e":
 			// Hidden test command: Request Model to generate test error
 			sl.RequestTestError = true
 			return sl, nil
 
-		case "esc":
+		case key.Matches(msg, sl.keys.Navigation.ClearFilter):
 			// Handle double-ESC for filter clearing (only when filtering)
 			if sl.list.FilterState() != list.Unfiltered {
 				now := time.Now()
@@ -595,14 +598,45 @@ func (sl *SessionList) View() string {
 	s += "\n\n"
 	helpText := sl.renderStatusLegend() + "\n\n"
 
-	// Movement
-	helpText += formatHelpLine("↑/k: up • ↓/j: down • shift+↑/k: move up • shift+↓/j: move down • /: filter • t: timestamps") + "\n"
+	// Helper to format a key binding
+	formatBinding := func(b key.Binding) string {
+		h := b.Help()
+		return h.Key + ": " + h.Desc
+	}
 
-	// Actions
-	helpText += formatHelpLine("n: new • r: rename • c: comment (⌨) • f: flag (⚑) • a: archive • s: cycle status • shift+s: set status • x: kill") + "\n"
+	// Line 1: Movement (↑/k and ↓/j are handled by bubbles list, not our bindings)
+	line1Parts := []string{
+		"↑/k: up",
+		"↓/j: down",
+		formatBinding(sl.keys.Navigation.MoveUp),
+		formatBinding(sl.keys.Navigation.MoveDown),
+		formatBinding(sl.keys.Navigation.Filter),
+		formatBinding(sl.keys.Application.Timestamps),
+	}
+	helpText += formatHelpLine(strings.Join(line1Parts, " • ")) + "\n"
 
-	// Other
-	helpText += formatHelpLine("enter/alt+1-7: open • alt+enter: shell (>_) • o: editor • ctrl+q: to list • h/?: help • q: quit")
+	// Line 2: Actions
+	line2Parts := []string{
+		formatBinding(sl.keys.SessionManagement.New),
+		formatBinding(sl.keys.SessionManagement.Rename),
+		formatBinding(sl.keys.SessionMetadata.Comment),
+		formatBinding(sl.keys.SessionMetadata.Flag),
+		formatBinding(sl.keys.SessionManagement.Archive),
+		formatBinding(sl.keys.SessionMetadata.StatusCycle),
+		formatBinding(sl.keys.SessionMetadata.StatusSetForm),
+		formatBinding(sl.keys.SessionManagement.Kill),
+	}
+	helpText += formatHelpLine(strings.Join(line2Parts, " • ")) + "\n"
+
+	// Line 3: Other (Note: ctrl+q is intentionally excluded - Issue #55 - only works when attached)
+	line3Parts := []string{
+		formatBinding(sl.keys.SessionActions.Open) + "/alt+1-7", // Combine enter with alt+1-7
+		formatBinding(sl.keys.SessionActions.OpenShell),
+		formatBinding(sl.keys.SessionActions.OpenEditor),
+		formatBinding(sl.keys.Application.Help),
+		formatBinding(sl.keys.Application.Quit),
+	}
+	helpText += formatHelpLine(strings.Join(line3Parts, " • "))
 
 	s += helpStyle.Render(helpText)
 

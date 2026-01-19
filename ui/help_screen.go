@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -24,12 +25,14 @@ var (
 // HelpScreen displays keyboard shortcuts organized by category
 type HelpScreen struct {
 	Completed bool
+	keys      *KeyMap
 }
 
 // NewHelpScreen creates a new help screen component
-func NewHelpScreen() *HelpScreen {
+func NewHelpScreen(keys *KeyMap) *HelpScreen {
 	return &HelpScreen{
 		Completed: false,
+		keys:      keys,
 	}
 }
 
@@ -58,39 +61,40 @@ func (h *HelpScreen) View() string {
 
 	// Navigation
 	content += helpGroupStyle.Render("Navigation") + "\n"
-	content += h.renderShortcut("↑ / k", "Move up")
-	content += h.renderShortcut("↓ / j", "Move down")
-	content += h.renderShortcut("shift+K", "Move session up in list")
-	content += h.renderShortcut("shift+J", "Move session down in list")
-	content += h.renderShortcut("/", "Enter filter mode")
-	content += h.renderShortcut("esc", "Clear filter (press twice within 500ms)")
+	content += h.renderShortcut("↑/k", "move up")
+	content += h.renderShortcut("↓/j", "move down")
+	content += h.renderBinding(h.keys.Navigation.MoveUp)
+	content += h.renderBinding(h.keys.Navigation.MoveDown)
+	content += h.renderBinding(h.keys.Navigation.Filter)
+	content += h.renderBinding(h.keys.Navigation.ClearFilter)
 
 	// Session Management
 	content += "\n" + helpGroupStyle.Render("Session Management") + "\n"
-	content += h.renderShortcut("n", "Create new session")
-	content += h.renderShortcut("r", "Rename session")
-	content += h.renderShortcut("a", "Archive session (hides from list)")
-	content += h.renderShortcut("x", "Kill session")
+	content += h.renderBinding(h.keys.SessionManagement.New)
+	content += h.renderBinding(h.keys.SessionManagement.Rename)
+	content += h.renderBinding(h.keys.SessionManagement.Archive)
+	content += h.renderBinding(h.keys.SessionManagement.Kill)
 
 	// Session Metadata
 	content += "\n" + helpGroupStyle.Render("Session Metadata") + "\n"
-	content += h.renderShortcut("c", "Add/edit comment (shows ⌨ indicator)")
-	content += h.renderShortcut("f", "Toggle flag (shows ⚑ indicator)")
-	content += h.renderShortcut("s", "Quick cycle through statuses")
-	content += h.renderShortcut("S (shift+S)", "Open status selection form")
+	content += h.renderBinding(h.keys.SessionMetadata.Comment)
+	content += h.renderBinding(h.keys.SessionMetadata.Flag)
+	content += h.renderBinding(h.keys.SessionMetadata.StatusCycle)
+	content += h.renderBinding(h.keys.SessionMetadata.StatusSetForm)
 
 	// Session Actions
 	content += "\n" + helpGroupStyle.Render("Session Actions") + "\n"
-	content += h.renderShortcut("enter", "Open/attach to session")
-	content += h.renderShortcut("alt+1 through alt+7", "Quick open session by position")
-	content += h.renderShortcut("alt+enter", "Open shell session (shows >_ indicator)")
-	content += h.renderShortcut("o", "Open session in editor (requires worktree)")
+	content += h.renderBinding(h.keys.SessionActions.Open)
+	content += h.renderBinding(h.keys.SessionActions.Detach)
+	content += h.renderBinding(h.keys.SessionActions.QuickOpen)
+	content += h.renderBinding(h.keys.SessionActions.OpenShell)
+	content += h.renderBinding(h.keys.SessionActions.OpenEditor)
 
 	// Application
 	content += "\n" + helpGroupStyle.Render("Application") + "\n"
-	content += h.renderShortcut("t", "Toggle timestamps (hidden/relative/absolute)")
-	content += h.renderShortcut("h / ?", "Show this help screen")
-	content += h.renderShortcut("q / ctrl+c", "Quit application")
+	content += h.renderBinding(h.keys.Application.Timestamps)
+	content += h.renderBinding(h.keys.Application.Help)
+	content += h.renderShortcut("q/ctrl+c", "quit application")
 
 	// State Indicators
 	content += "\n" + helpGroupStyle.Render("State Indicators (read-only)") + "\n"
@@ -107,6 +111,12 @@ func (h *HelpScreen) View() string {
 	content += "\n\n" + helpStyle.Render("Press esc, q, h, or ? to close")
 
 	return content
+}
+
+// renderBinding renders a single shortcut line from a key binding
+func (h *HelpScreen) renderBinding(binding key.Binding) string {
+	help := binding.Help()
+	return h.renderShortcut(help.Key, help.Desc)
 }
 
 // renderShortcut renders a single shortcut line with key and description
