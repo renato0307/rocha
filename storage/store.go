@@ -1075,6 +1075,7 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 	return SessionInfo{
 		AllowDangerouslySkipPermissions: allowSkipPerms,
 		BranchName:                      s.BranchName,
+		ClaudeDir:                       s.ClaudeDir,
 		Comment:                         comment,
 		DisplayName:                     s.DisplayName,
 		ExecutionID:                     s.ExecutionID,
@@ -1085,6 +1086,7 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 		Name:                            s.Name,
 		RepoInfo:                        s.RepoInfo,
 		RepoPath:                        s.RepoPath,
+		RepoSource:                      s.RepoSource,
 		ShellSession:                    nil,
 		State:                           s.State,
 		Status:                          status,
@@ -1094,14 +1096,16 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 
 func convertFromSessionInfo(info SessionInfo) Session {
 	return Session{
-		Name:         info.Name,
+		BranchName:   info.BranchName,
+		ClaudeDir:    info.ClaudeDir,
 		DisplayName:  info.DisplayName,
-		State:        info.State,
 		ExecutionID:  info.ExecutionID,
 		LastUpdated:  info.LastUpdated,
-		RepoPath:     info.RepoPath,
+		Name:         info.Name,
 		RepoInfo:     info.RepoInfo,
-		BranchName:   info.BranchName,
+		RepoPath:     info.RepoPath,
+		RepoSource:   info.RepoSource,
+		State:        info.State,
 		WorktreePath: info.WorktreePath,
 	}
 }

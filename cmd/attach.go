@@ -129,7 +129,8 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	// Step 4: Check if tmux session exists, create if needed
 	if !tmuxClient.Exists(sessionName) {
 		logging.Logger.Info("Session does not exist, creating", "name", sessionName)
-		_, err := tmuxClient.Create(sessionName, worktreePath, a.TmuxStatusPosition)
+		// Note: attach command doesn't support claudeDir parameter, use empty string
+		_, err := tmuxClient.Create(sessionName, worktreePath, "", a.TmuxStatusPosition)
 		if err != nil {
 			return fmt.Errorf("failed to create tmux session: %w", err)
 		}

@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
+
+	"rocha/config"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
-	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,8 +31,10 @@ type SessionFormResult struct {
 	AllowDangerouslySkipPermissions bool
 	BranchName                      string
 	Cancelled                       bool
+	ClaudeDir                       string // User-provided CLAUDE_CONFIG_DIR override
 	CreateWorktree                  bool
-	Error                           error // Error that occurred during session creation
+	Error                           error  // Error that occurred during session creation
+	RepoSource                      string // User-provided repo path or URL
 	SessionName                     string
 }
 
@@ -70,7 +74,18 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 
 	// Check if we're in a git repository
 	cwd, _ := os.Getwd()
-	isGit, _ := git.IsGitRepo(cwd)
+	isGit, repo := git.IsGitRepo(cwd)
+
+	// Pre-fill ClaudeDir with resolved default
+	var defaultClaudeDir string
+	if isGit {
+		repoInfo := git.GetRepoInfo(repo)
+		defaultClaudeDir = config.ResolveClaudeDir(store, repoInfo, "")
+	} else {
+		defaultClaudeDir = config.DefaultClaudeDir()
+	}
+	sf.result.ClaudeDir = defaultClaudeDir
+	logging.Logger.Debug("Pre-filled ClaudeDir with default", "claude_dir", defaultClaudeDir)
 
 	logging.Logger.Debug("Creating session form", "is_git_repo", isGit, "cwd", cwd)
 
@@ -108,10 +123,55 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 			})
 	}
 
-	fields := []huh.Field{sessionNameField}
+	fields := []huh.Field{
+		sessionNameField,
+		// Repository source field
+		huh.NewInput().
+			Title("Repository (optional)").
+			DescriptionFunc(func() string {
+				if sf.result.RepoSource == "" {
+					return "Git URL or local path. Leave empty for current directory."
+				}
+				// Try to parse and show detected branch
+				if repoSource, err := git.ParseRepoSource(sf.result.RepoSource); err == nil && repoSource.Branch != "" {
+					return fmt.Sprintf("Detected branch: %s", repoSource.Branch)
+				}
+				return "Tip: Add #branch-name to specify a branch (e.g., https://github.com/owner/repo#main)"
+			}, &sf.result.RepoSource).
+			Placeholder("https://github.com/owner/repo#branch-name").
+			Value(&sf.result.RepoSource).
+			Validate(func(s string) error {
+				if s == "" {
+					return nil // Empty is OK, will use current directory
+				}
+				// Check if it's a URL or local path (strip branch fragment first)
+				checkPath := s
+				if idx := strings.Index(s, "#"); idx >= 0 {
+					checkPath = s[:idx]
+				}
+				if git.IsGitURL(checkPath) {
+					return nil // Valid URL format
+				}
+				// Check if it's an existing directory
+				if strings.HasPrefix(checkPath, "~") {
+					homeDir, err := os.UserHomeDir()
+					if err != nil {
+						return fmt.Errorf("failed to expand home directory")
+					}
+					checkPath = filepath.Join(homeDir, checkPath[1:])
+				}
+				if _, err := os.Stat(checkPath); err != nil {
+					if os.IsNotExist(err) {
+						return fmt.Errorf("local path does not exist")
+					}
+					return fmt.Errorf("invalid path: %v", err)
+				}
+				return nil
+			}),
+	}
 
-	// Only add worktree options if in a git repo
-	if isGit {
+	// Only add worktree options if in a git repo OR if repo source is provided
+	if isGit || sf.result.RepoSource != "" {
 		fields = append(fields,
 			huh.NewConfirm().
 				Title("Create worktree?").
@@ -140,6 +200,25 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 				}),
 		)
 	}
+
+	// Add CLAUDE_CONFIG_DIR field
+	fields = append(fields,
+		huh.NewInput().
+			Title("Claude directory").
+			Description("Pre-filled with default. Edit to customize or clear to use default.").
+			Placeholder(defaultClaudeDir).
+			Value(&sf.result.ClaudeDir).
+			Validate(func(s string) error {
+				if s == "" {
+					return fmt.Errorf("claude directory cannot be empty")
+				}
+				// Basic path validation - just check format
+				if !filepath.IsAbs(s) && !strings.HasPrefix(s, "~") {
+					return fmt.Errorf("path must be absolute or start with ~")
+				}
+				return nil
+			}),
+	)
 
 	// Add skip permissions field for all repos
 	fields = append(fields,
@@ -232,75 +311,122 @@ func (sf *SessionForm) createSession() error {
 	sessionName := sf.result.SessionName
 	branchName := sf.result.BranchName
 	createWorktree := sf.result.CreateWorktree
+	repoSource := sf.result.RepoSource
 
-	logging.Logger.Info("Creating session", "name", sessionName, "create_worktree", createWorktree, "branch", branchName)
+	logging.Logger.Info("Creating session",
+		"name", sessionName,
+		"create_worktree", createWorktree,
+		"branch", branchName,
+		"repo_source", repoSource)
 
 	// Generate tmux-compatible name (remove colons, replace spaces/special chars with underscores)
 	tmuxName := sanitizeTmuxName(sessionName)
 
-	var worktreePath string
-	var repoPath string
+	var claudeDir string
 	var repoInfo string
+	var repoPath string
+	var worktreePath string
 
-	// Handle worktree creation if requested AND we're in a git repo
-	if createWorktree {
+	// 1. Determine repository source
+	var sourceBranch string // Branch from URL (if specified)
+	if repoSource != "" {
+		// User provided repo (URL or path)
+		logging.Logger.Info("Using user-provided repository source", "source", repoSource)
+
+		// Expand worktree base path
+		worktreeBase := sf.worktreePath
+		if strings.HasPrefix(worktreeBase, "~/") {
+			home, _ := os.UserHomeDir()
+			worktreeBase = filepath.Join(home, worktreeBase[2:])
+		}
+
+		// Get or clone repository
+		localPath, src, err := git.GetOrCloneRepository(repoSource, worktreeBase)
+		if err != nil {
+			return fmt.Errorf("failed to get repository: %w", err)
+		}
+		repoPath = localPath
+		if src.Owner != "" && src.Repo != "" {
+			repoInfo = fmt.Sprintf("%s/%s", src.Owner, src.Repo)
+		}
+		// Remember branch from URL if specified
+		sourceBranch = src.Branch
+		if sourceBranch != "" {
+			logging.Logger.Info("Branch specified in URL", "branch", sourceBranch)
+		}
+		logging.Logger.Info("Repository ready", "path", repoPath, "repo_info", repoInfo)
+	} else {
+		// Use current directory (existing behavior)
+		logging.Logger.Info("Using current directory as repository source")
 		cwd, _ := os.Getwd()
 		isGit, repo := git.IsGitRepo(cwd)
-
-		if !isGit {
-			logging.Logger.Warn("Not in git repo, cannot create worktree")
-		} else {
+		if isGit {
 			repoPath = repo
 			repoInfo = git.GetRepoInfo(repo)
-			logging.Logger.Info("Extracted repo info", "repo_info", repoInfo)
-
-			// Auto-generate branch name if not provided (user left field empty)
-			if branchName == "" {
-				var err error
-				branchName, err = git.SanitizeBranchName(sessionName)
-				if err != nil {
-					return fmt.Errorf("failed to generate branch name from session name: %w", err)
-				}
-				logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
-			}
-
-			// Expand worktree base path
-			worktreeBase := sf.worktreePath
-			if strings.HasPrefix(worktreeBase, "~/") {
-				home, _ := os.UserHomeDir()
-				worktreeBase = filepath.Join(home, worktreeBase[2:])
-			}
-
-			// Build worktree path with repository organization
-			worktreePath = git.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)
-			logging.Logger.Info("Creating worktree", "path", worktreePath, "branch", branchName)
-
-			// Create the worktree
-			if err := git.CreateWorktree(repoPath, worktreePath, branchName); err != nil {
-				return fmt.Errorf("failed to create worktree: %w", err)
-			}
+			logging.Logger.Info("Extracted repo info from current directory", "repo_info", repoInfo)
 		}
 	}
 
-	// Create tmux session
-	session, err := sf.sessionManager.Create(tmuxName, worktreePath, sf.tmuxStatusPosition)
+	// 2. Resolve ClaudeDir
+	claudeDir = config.ResolveClaudeDir(sf.store, repoInfo, sf.result.ClaudeDir)
+	logging.Logger.Info("Resolved ClaudeDir", "path", claudeDir)
+
+	// 3. Create worktree if requested
+	if createWorktree && repoPath != "" {
+		// Auto-generate branch name if not provided (user left field empty)
+		if branchName == "" {
+			var err error
+			branchName, err = git.SanitizeBranchName(sessionName)
+			if err != nil {
+				return fmt.Errorf("failed to generate branch name from session name: %w", err)
+			}
+			logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
+		}
+
+		// Expand worktree base path
+		worktreeBase := sf.worktreePath
+		if strings.HasPrefix(worktreeBase, "~/") {
+			home, _ := os.UserHomeDir()
+			worktreeBase = filepath.Join(home, worktreeBase[2:])
+		}
+
+		// Build worktree path with repository organization
+		worktreePath = git.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)
+		logging.Logger.Info("Creating worktree", "path", worktreePath, "branch", branchName)
+
+		// Create the worktree
+		if err := git.CreateWorktree(repoPath, worktreePath, branchName); err != nil {
+			return fmt.Errorf("failed to create worktree: %w", err)
+		}
+	} else if createWorktree && repoPath == "" {
+		logging.Logger.Warn("Cannot create worktree: not in a git repository")
+	} else if !createWorktree && sourceBranch != "" {
+		// Not creating worktree, but branch was specified in URL
+		// Store the branch from URL for reference
+		branchName = sourceBranch
+		logging.Logger.Info("Using branch from URL (no worktree)", "branch", branchName)
+	}
+
+	// 4. Create tmux session with ClaudeDir and status position
+	session, err := sf.sessionManager.Create(tmuxName, worktreePath, claudeDir, sf.tmuxStatusPosition)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// Save session state with git metadata
+	// 5. Save session state with git metadata and new fields
 	executionID := os.Getenv("ROCHA_EXECUTION_ID")
 
-	// Create session info
 	sessionInfo := storage.SessionInfo{
 		AllowDangerouslySkipPermissions: sf.result.AllowDangerouslySkipPermissions,
 		BranchName:                      branchName,
+		ClaudeDir:                       claudeDir,
 		DisplayName:                     sessionName,
 		ExecutionID:                     executionID,
 		LastUpdated:                     time.Now().UTC(),
 		Name:                            tmuxName,
 		RepoInfo:                        repoInfo,
 		RepoPath:                        repoPath,
+		RepoSource:                      repoSource,
 		State:                           state.StateWaitingUser,
 		WorktreePath:                    worktreePath,
 	}
@@ -313,6 +439,9 @@ func (sf *SessionForm) createSession() error {
 		return err
 	}
 
-	logging.Logger.Info("Session created successfully", "name", session.Name)
+	logging.Logger.Info("Session created successfully",
+		"name", session.Name,
+		"claude_dir", claudeDir,
+		"repo_source", repoSource)
 	return nil
 }

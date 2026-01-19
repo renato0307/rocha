@@ -854,17 +854,19 @@ func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
 
 	logging.Logger.Info("Session no longer exists, recreating", "name", session.Name)
 
-	// Try to get stored metadata to recreate with same worktree
+	// Try to get stored metadata to recreate with same worktree and ClaudeDir
+	var claudeDir string
 	var worktreePath string
 	if sessionInfo, ok := sl.sessionState.Sessions[session.Name]; ok {
+		claudeDir = sessionInfo.ClaudeDir
 		worktreePath = sessionInfo.WorktreePath
-		logging.Logger.Info("Recreating session with stored worktree", "name", session.Name, "worktree", worktreePath)
+		logging.Logger.Info("Recreating session with stored worktree", "name", session.Name, "worktree", worktreePath, "claude_dir", claudeDir)
 	} else {
 		logging.Logger.Warn("No stored metadata for session, creating without worktree", "name", session.Name)
 	}
 
 	// Recreate the session
-	if _, err := sl.tmuxClient.Create(session.Name, worktreePath, sl.tmuxStatusPosition); err != nil {
+	if _, err := sl.tmuxClient.Create(session.Name, worktreePath, claudeDir, sl.tmuxStatusPosition); err != nil {
 		sl.err = fmt.Errorf("failed to recreate session: %w", err)
 		return false
 	}
