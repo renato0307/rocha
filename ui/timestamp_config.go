@@ -11,37 +11,12 @@ type TimestampColorConfig struct {
 }
 
 // NewTimestampColorConfig creates a new TimestampColorConfig with the provided values.
-// If values are zero/empty, defaults are applied:
-//   - RecentMinutes: 5
-//   - WarningMinutes: 20
-//   - RecentColor: "241" (gray)
-//   - WarningColor: "136" (amber/yellow)
-//   - StaleColor: "208" (orange)
 func NewTimestampColorConfig(recentMin, warningMin int, recentColor, warningColor, staleColor string) *TimestampColorConfig {
-	config := &TimestampColorConfig{
+	return &TimestampColorConfig{
 		RecentMinutes:  recentMin,
 		WarningMinutes: warningMin,
 		RecentColor:    recentColor,
 		WarningColor:   warningColor,
 		StaleColor:     staleColor,
 	}
-
-	// Apply defaults if not set
-	if config.RecentMinutes == 0 {
-		config.RecentMinutes = 5
-	}
-	if config.WarningMinutes == 0 {
-		config.WarningMinutes = 20
-	}
-	if config.RecentColor == "" {
-		config.RecentColor = "241"
-	}
-	if config.WarningColor == "" {
-		config.WarningColor = "136"
-	}
-	if config.StaleColor == "" {
-		config.StaleColor = "208"
-	}
-
-	return config
 }

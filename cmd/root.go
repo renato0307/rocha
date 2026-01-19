@@ -108,14 +108,15 @@ type RunCmd struct {
 	Dev                     bool   `help:"Enable development mode (shows version info in dialogs)"`
 	Editor                  string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 	ErrorClearDelay         int    `help:"Seconds before error messages auto-clear" default:"10"`
+	ShowTimestamps          bool   `help:"Show relative timestamps for last state changes" default:"false"`
 	StatusColors            string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
 	StatusIcons             string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
 	Statuses                string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
 	TimestampRecentColor    string `help:"ANSI color code for recent timestamps" default:"241"`
 	TimestampRecentMinutes  int    `help:"Minutes threshold for recent timestamps (gray color)" default:"5"`
-	TimestampStaleColor     string `help:"ANSI color code for stale timestamps" default:"208"`
-	TimestampWarningColor   string `help:"ANSI color code for warning timestamps" default:"136"`
-	TimestampWarningMinutes int    `help:"Minutes threshold for warning timestamps (amber color)" default:"20"`
+	TimestampStaleColor     string `help:"ANSI color code for stale timestamps (matches waiting state ◐)" default:"1"`
+	TimestampWarningColor   string `help:"ANSI color code for warning timestamps (matches idle state ○)" default:"3"`
+	TimestampWarningMinutes int    `help:"Minutes threshold for warning timestamps (yellow color)" default:"20"`
 	WorktreePath            string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
 }
 
@@ -161,6 +162,15 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		if r.WorktreePath == "~/.rocha/worktrees" {
 			if cli.settings.WorktreePath != "" {
 				r.WorktreePath = cli.settings.WorktreePath
+			}
+		}
+
+		// Apply ShowTimestamps setting
+		if !r.ShowTimestamps {
+			if _, hasEnv := os.LookupEnv("ROCHA_SHOW_TIMESTAMPS"); !hasEnv {
+				if cli.settings.ShowTimestamps != nil && *cli.settings.ShowTimestamps {
+					r.ShowTimestamps = true
+				}
 			}
 		}
 	}
@@ -236,7 +246,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		r.TimestampStaleColor,
 	)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev),
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)

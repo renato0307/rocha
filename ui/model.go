@@ -78,6 +78,7 @@ type Model struct {
 	sessionStatusForm   *Dialog        // Session status dialog
 	sessionToKill       *tmux.Session  // Session being killed (for worktree removal)
 	state               uiState
+	timestampMode       TimestampMode
 	statusConfig        *StatusConfig  // Status configuration for implementation statuses
 	store               *storage.Store // Storage for persistent state
 	timestampConfig     *TimestampColorConfig // Timestamp color configuration
@@ -87,7 +88,7 @@ type Model struct {
 	worktreePath        string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background())
 	var errMsg error
@@ -97,8 +98,16 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 
+	// Convert showTimestamps flag to TimestampMode
+	var initialMode TimestampMode
+	if showTimestamps {
+		initialMode = TimestampRelative
+	} else {
+		initialMode = TimestampHidden
+	}
+
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode)
 
 	return &Model{
 		devMode:         devMode,
@@ -111,6 +120,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 		statusConfig:    statusConfig,
 		store:           store,
 		timestampConfig: timestampConfig,
+		timestampMode:   initialMode,
 		tmuxClient:      tmuxClient,
 		worktreePath:    worktreePath,
 	}
@@ -164,6 +174,22 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "alt+E" {
 		m.setError(fmt.Errorf("this is a persistent Model-level test error that demonstrates the error display functionality with automatic height adjustment and will clear after five seconds to verify that the list height properly expands back to normal and ensures all session items remain visible throughout the entire error lifecycle"))
 		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+	}
+
+	// Toggle timestamps display mode with 't' key
+	// Cycle: Relative -> Absolute -> Hidden -> Relative -> ...
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "t" {
+		switch m.timestampMode {
+		case TimestampRelative:
+			m.timestampMode = TimestampAbsolute
+		case TimestampAbsolute:
+			m.timestampMode = TimestampHidden
+		case TimestampHidden:
+			m.timestampMode = TimestampRelative
+		}
+		m.sessionList.timestampMode = m.timestampMode
+		m.sessionList.RefreshFromState()
+		return m, m.sessionList.Init()
 	}
 
 	// Delegate to SessionList component
