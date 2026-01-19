@@ -84,7 +84,7 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 	case "stop":
 		sessionState = state.StateIdle // Claude finished working
 	case "notification":
-		sessionState = state.StateWaitingUser // Claude needs user input
+		sessionState = state.StateWaitingUser // Claude is idle and waiting for user input (idle_prompt)
 	case "start":
 		sessionState = state.StateIdle // Session started and ready for input
 	case "prompt":
