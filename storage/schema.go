@@ -14,9 +14,10 @@ type Session struct {
 	LastUpdated  time.Time `gorm:"not null;index:idx_last_updated"`
 	RepoPath     string    `gorm:"default:''"`
 	RepoInfo     string    `gorm:"default:''"`
-	BranchName   string    `gorm:"default:''"`
-	WorktreePath string    `gorm:"default:''"`
-	Position     int       `gorm:"not null;default:0;index:idx_position"` // Only used for top-level sessions
+	BranchName    string    `gorm:"default:''"`
+	InitialPrompt string    `gorm:"default:''"`
+	WorktreePath  string    `gorm:"default:''"`
+	Position      int       `gorm:"not null;default:0;index:idx_position"` // Only used for top-level sessions
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 

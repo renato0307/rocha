@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"rocha/logging"
 	"rocha/sound"
 	"rocha/state"
 	"rocha/storage"
+	"rocha/tmux"
 )
 
 // NotifyCmd handles notification events from Claude hooks
@@ -86,7 +88,27 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 	case "notification":
 		sessionState = state.StateWaitingUser // Claude needs user input
 	case "start":
-		sessionState = state.StateIdle // Session started and ready for input
+		sessionState = state.StateIdle // Session started and ready
+
+		// Check for initial prompt and send it
+		tmpStore, err := storage.NewStore(dbPath)
+		if err == nil {
+			defer tmpStore.Close()
+			session, err := tmpStore.GetSession(context.Background(), n.SessionName)
+			if err == nil && session.InitialPrompt != "" {
+				logging.Logger.Info("Sending initial prompt", "session", n.SessionName)
+
+				client := tmux.NewClient()
+				escapedPrompt := shellEscape(session.InitialPrompt)
+
+				if err := client.SendKeys(n.SessionName, fmt.Sprintf("claude %s", escapedPrompt), "Enter"); err != nil {
+					logging.Logger.Error("Failed to send initial prompt", "error", err)
+				} else {
+					logging.Logger.Info("Initial prompt sent successfully")
+					sessionState = state.StateWorking // Update state since prompt was submitted
+				}
+			}
+		}
 	case "prompt":
 		sessionState = state.StateWorking // User submitted prompt
 	case "working":
@@ -130,4 +152,12 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 	// - Windows: Windows Toast notifications
 
 	return nil
+}
+
+// shellEscape escapes a string for safe use in shell commands
+// Uses single-quote escaping which is POSIX-compliant and handles all special chars
+func shellEscape(s string) string {
+	// Replace ' with '\'' (end quote, escaped quote, start quote)
+	escaped := strings.ReplaceAll(s, "'", "'\\''")
+	return fmt.Sprintf("'%s'", escaped)
 }

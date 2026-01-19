@@ -26,11 +26,12 @@ type sessionCreatedMsg struct {
 
 // SessionFormResult contains the result of the session creation form
 type SessionFormResult struct {
-	SessionName    string
 	BranchName     string
-	CreateWorktree bool
 	Cancelled      bool
+	CreateWorktree bool
 	Error          error // Error that occurred during session creation
+	InitialPrompt  string
+	SessionName    string
 }
 
 // SessionForm is a Bubble Tea component for creating sessions
@@ -136,6 +137,17 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 				}),
 		)
 	}
+
+	// Add initial prompt field (shown for all repos, git or not)
+	fields = append(fields,
+		huh.NewText().
+			Title("Initial prompt (optional)").
+			Description("This prompt will be sent to Claude when the session starts").
+			Placeholder("e.g., Tell me about this codebase...").
+			Value(&sf.result.InitialPrompt).
+			Lines(5).
+			CharLimit(2000),
+	)
 
 	sf.form = huh.NewForm(huh.NewGroup(fields...))
 
@@ -279,15 +291,16 @@ func (sf *SessionForm) createSession() error {
 
 	// Create session info
 	sessionInfo := storage.SessionInfo{
-		Name:         tmuxName,
-		DisplayName:  sessionName,
-		State:        state.StateWaitingUser,
-		ExecutionID:  executionID,
-		LastUpdated:  time.Now().UTC(),
-		RepoPath:     repoPath,
-		RepoInfo:     repoInfo,
-		BranchName:   branchName,
-		WorktreePath: worktreePath,
+		BranchName:    branchName,
+		DisplayName:   sessionName,
+		ExecutionID:   executionID,
+		InitialPrompt: sf.result.InitialPrompt,
+		LastUpdated:   time.Now().UTC(),
+		Name:          tmuxName,
+		RepoInfo:      repoInfo,
+		RepoPath:      repoPath,
+		State:         state.StateWaitingUser,
+		WorktreePath:  worktreePath,
 	}
 
 	sf.sessionState.Sessions[tmuxName] = sessionInfo
