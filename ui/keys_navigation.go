@@ -28,11 +28,11 @@ func newNavigationKeys() NavigationKeys {
 			key.WithHelp("/", "filter"),
 		),
 		MoveDown: key.NewBinding(
-			key.WithKeys("J"),
+			key.WithKeys("J", "shift+down"),
 			key.WithHelp("shift+↓/j", "move session down"),
 		),
 		MoveUp: key.NewBinding(
-			key.WithKeys("K"),
+			key.WithKeys("K", "shift+up"),
 			key.WithHelp("shift+↑/k", "move session up"),
 		),
 		Up: key.NewBinding(
