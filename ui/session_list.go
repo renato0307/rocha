@@ -785,8 +785,19 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 		return nil
 	}
 
+	// Store the name of the item we're moving (to find it after refresh)
+	movedItemName := item.Session.Name
+
+	// Debug: Log state before swap
+	logging.Logger.Debug("Move up - before swap",
+		"current_item", movedItemName,
+		"current_index", currentIndex,
+		"prev_item", prevItem.Session.Name,
+		"prev_index", currentIndex-1,
+		"total_items", len(items))
+
 	// Swap positions in database
-	if err := sl.store.SwapPositions(context.Background(), item.Session.Name, prevItem.Session.Name); err != nil {
+	if err := sl.store.SwapPositions(context.Background(), movedItemName, prevItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
 		return nil
 	}
@@ -794,8 +805,34 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 	// Reload state and rebuild list
 	sl.RefreshFromState()
 
-	// Adjust cursor to follow moved item
-	sl.list.Select(currentIndex - 1)
+	// Find the new index of the moved item by name
+	newItems := sl.list.Items()
+	newIndex := -1
+	for i, it := range newItems {
+		if sessionItem, ok := it.(SessionItem); ok {
+			logging.Logger.Debug("Move up - item order", "index", i, "name", sessionItem.Session.Name)
+			if sessionItem.Session.Name == movedItemName {
+				newIndex = i
+			}
+		}
+	}
+
+	// Debug: Log state after refresh
+	logging.Logger.Debug("Move up - after refresh",
+		"new_total_items", len(newItems),
+		"moved_item", movedItemName,
+		"new_index", newIndex,
+		"expected_index", currentIndex-1)
+
+	// Select the item at its new position
+	if newIndex >= 0 {
+		sl.list.Select(newIndex)
+	}
+
+	// Debug: Verify cursor position
+	logging.Logger.Debug("Move up - after select",
+		"selected_index", sl.list.Index(),
+		"expected_name", movedItemName)
 
 	// Don't schedule new poll - one is already running
 	return nil
@@ -820,8 +857,19 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 		return nil
 	}
 
+	// Store the name of the item we're moving (to find it after refresh)
+	movedItemName := item.Session.Name
+
+	// Debug: Log state before swap
+	logging.Logger.Debug("Move down - before swap",
+		"current_item", movedItemName,
+		"current_index", currentIndex,
+		"next_item", nextItem.Session.Name,
+		"next_index", currentIndex+1,
+		"total_items", len(items))
+
 	// Swap positions in database
-	if err := sl.store.SwapPositions(context.Background(), item.Session.Name, nextItem.Session.Name); err != nil {
+	if err := sl.store.SwapPositions(context.Background(), movedItemName, nextItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
 		return nil
 	}
@@ -829,8 +877,34 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 	// Reload state and rebuild list
 	sl.RefreshFromState()
 
-	// Adjust cursor to follow moved item
-	sl.list.Select(currentIndex + 1)
+	// Find the new index of the moved item by name
+	newItems := sl.list.Items()
+	newIndex := -1
+	for i, it := range newItems {
+		if sessionItem, ok := it.(SessionItem); ok {
+			logging.Logger.Debug("Move down - item order", "index", i, "name", sessionItem.Session.Name)
+			if sessionItem.Session.Name == movedItemName {
+				newIndex = i
+			}
+		}
+	}
+
+	// Debug: Log state after refresh
+	logging.Logger.Debug("Move down - after refresh",
+		"new_total_items", len(newItems),
+		"moved_item", movedItemName,
+		"new_index", newIndex,
+		"expected_index", currentIndex+1)
+
+	// Select the item at its new position
+	if newIndex >= 0 {
+		sl.list.Select(newIndex)
+	}
+
+	// Debug: Verify cursor position
+	logging.Logger.Debug("Move down - after select",
+		"selected_index", sl.list.Index(),
+		"expected_name", movedItemName)
 
 	// Don't schedule new poll - one is already running
 	return nil
