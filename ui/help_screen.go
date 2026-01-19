@@ -13,11 +13,12 @@ var (
 			MarginTop(1)
 
 	helpKeyStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
+			Foreground(lipgloss.Color("255")).
+			Bold(true).
 			Width(25)
 
 	helpDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("250"))
+			Foreground(lipgloss.Color("245"))
 )
 
 // HelpScreen displays keyboard shortcuts organized by category

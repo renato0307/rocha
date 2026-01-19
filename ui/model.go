@@ -30,6 +30,13 @@ var (
 			Foreground(lipgloss.Color("241")).
 			Padding(1, 0)
 
+	helpShortcutStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("255")).
+				Bold(true)
+
+	helpLabelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
+
 	branchStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")) // Dimmed/gray
 
