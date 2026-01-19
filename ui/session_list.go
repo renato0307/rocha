@@ -288,24 +288,25 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		items := buildListItems(sl.sessionState, sl.tmuxClient, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
 
-		return sl, tea.Batch(cmd, pollStateCmd())
+		// Don't schedule new poll - one is already running
+		return sl, cmd
 
 	case git.GitStatsErrorMsg:
 		// Git stats fetch failed - log and continue
 		logging.Logger.Debug("Git stats fetch failed", "session", msg.SessionName, "error", msg.Err)
 		sl.fetchingGitStats = false
 
-		// Don't schedule new poll when filtering to prevent poll accumulation
-		if sl.list.FilterState() == list.Filtering {
-			return sl, nil
-		}
-		return sl, pollStateCmd()
+		// Don't schedule new poll - one is already running
+		return sl, nil
 
 	case checkStateMsg:
+		// This message is sent by the poll timer every 2 seconds
+		// We schedule exactly ONE new poll at the end to maintain the loop
+
 		// Skip refresh when user is actively filtering to prevent flickering
-		// Don't schedule new poll - let existing poll timer continue
 		if sl.list.FilterState() == list.Filtering {
-			return sl, nil
+			// Still schedule next poll to maintain the loop
+			return sl, pollStateCmd()
 		}
 
 		// Auto-refresh: Check if state has changed
@@ -335,16 +336,14 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Request git stats for visible sessions
 		gitStatsCmd := sl.requestGitStatsForVisible()
+
+		// Schedule next poll to maintain the 2-second loop (exactly one poll)
 		return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
 
 	case error:
 		sl.err = msg
-
-		// Don't schedule new poll when filtering to prevent poll accumulation
-		if sl.list.FilterState() == list.Filtering {
-			return sl, nil
-		}
-		return sl, pollStateCmd()
+		// Don't schedule new poll - one is already running
+		return sl, nil
 
 	case tea.KeyMsg:
 		// Guard clause: When actively filtering, bypass shortcuts to allow typing
@@ -356,7 +355,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Second ESC - clear filter
 					sl.list.ResetFilter()
 					sl.escPressCount = 0
-					return sl, pollStateCmd()
+					// Don't schedule new poll - one is already running
+					return sl, nil
 				}
 				// First ESC - start counting
 				sl.escPressCount = 1
@@ -364,7 +364,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// For all other keys during filtering, delegate to list immediately
-			// Don't schedule new polls to prevent exponential poll accumulation
+			// Don't schedule new polls - one is already running
 			var cmd tea.Cmd
 			sl.list, cmd = sl.list.Update(msg)
 			return sl, cmd
@@ -384,7 +384,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				// Ensure session exists
 				if !sl.ensureSessionExists(item.Session) {
-					return sl, pollStateCmd()
+					// Don't schedule new poll - one is already running
+					return sl, nil
 				}
 				sl.SelectedSession = item.Session
 				return sl, nil
@@ -452,7 +453,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					sl.list.Select(index)
 
 					if !sl.ensureSessionExists(item.Session) {
-						return sl, pollStateCmd()
+						// Don't schedule new poll - one is already running
+						return sl, nil
 					}
 					sl.SelectedSession = item.Session
 					return sl, nil
@@ -463,7 +465,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				// Ensure session exists
 				if !sl.ensureSessionExists(item.Session) {
-					return sl, pollStateCmd()
+					// Don't schedule new poll - one is already running
+					return sl, nil
 				}
 				sl.SelectedShellSession = item.Session
 				return sl, nil
@@ -482,7 +485,8 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Second ESC - clear filter
 					sl.list.ResetFilter()
 					sl.escPressCount = 0
-					return sl, pollStateCmd()
+					// Don't schedule new poll - one is already running
+					return sl, nil
 				}
 				// First ESC
 				sl.escPressCount = 1
@@ -511,12 +515,10 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	sl.list, cmd = sl.list.Update(msg)
 
-	// Skip polling when user is actively typing in filter to prevent flickering
-	if sl.list.FilterState() == list.Filtering {
-		return sl, cmd
-	}
-
-	return sl, tea.Batch(cmd, pollStateCmd())
+	// IMPORTANT: Don't schedule new polls here!
+	// The poll loop is maintained by checkStateMsg scheduling exactly one new poll.
+	// Scheduling polls here would cause exponential accumulation.
+	return sl, cmd
 }
 
 // View renders the session list component
@@ -766,7 +768,8 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 	// Adjust cursor to follow moved item
 	sl.list.Select(currentIndex - 1)
 
-	return pollStateCmd()
+	// Don't schedule new poll - one is already running
+	return nil
 }
 
 // moveSelectedDown moves the currently selected session down one position in the order
@@ -800,7 +803,8 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 	// Adjust cursor to follow moved item
 	sl.list.Select(currentIndex + 1)
 
-	return pollStateCmd()
+	// Don't schedule new poll - one is already running
+	return nil
 }
 
 // requestGitStatsForVisible fetches git stats for visible sessions
