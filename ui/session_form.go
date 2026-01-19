@@ -35,20 +35,21 @@ type SessionFormResult struct {
 
 // SessionForm is a Bubble Tea component for creating sessions
 type SessionForm struct {
-	Completed      bool // Exported so Model can check completion
-	cancelled      bool
-	creating       bool // True when session creation is in progress
-	form           *huh.Form
-	result         SessionFormResult
-	sessionManager tmux.SessionManager
-	sessionState   *storage.SessionState
-	spinner        spinner.Model
-	store          *storage.Store
-	worktreePath   string
+	Completed          bool // Exported so Model can check completion
+	cancelled          bool
+	creating           bool // True when session creation is in progress
+	form               *huh.Form
+	result             SessionFormResult
+	sessionManager     tmux.SessionManager
+	sessionState       *storage.SessionState
+	spinner            spinner.Model
+	store              *storage.Store
+	tmuxStatusPosition string
+	worktreePath       string
 }
 
 // NewSessionForm creates a new session creation form
-func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState) *SessionForm {
+func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, tmuxStatusPosition string) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -57,11 +58,12 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 		result: SessionFormResult{
 			CreateWorktree: true, // Default to true
 		},
-		sessionManager: sessionManager,
-		sessionState:   sessionState,
-		spinner:        s,
-		store:          store,
-		worktreePath:   worktreePath,
+		sessionManager:     sessionManager,
+		sessionState:       sessionState,
+		spinner:            s,
+		store:              store,
+		tmuxStatusPosition: tmuxStatusPosition,
+		worktreePath:       worktreePath,
 	}
 
 	// Check if we're in a git repository
@@ -269,7 +271,7 @@ func (sf *SessionForm) createSession() error {
 	}
 
 	// Create tmux session
-	session, err := sf.sessionManager.Create(tmuxName, worktreePath)
+	session, err := sf.sessionManager.Create(tmuxName, worktreePath, sf.tmuxStatusPosition)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}

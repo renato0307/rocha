@@ -15,10 +15,11 @@ type Settings struct {
 	Editor          string      `json:"editor,omitempty"`
 	ErrorClearDelay *int        `json:"error_clear_delay,omitempty"`
 	MaxLogFiles     *int        `json:"max_log_files,omitempty"`
-	ShowTimestamps  *bool       `json:"show_timestamps,omitempty"`
-	StatusColors    StringArray `json:"status_colors,omitempty"`
-	Statuses        StringArray `json:"statuses,omitempty"`
-	WorktreePath    string      `json:"worktree_path,omitempty"`
+	ShowTimestamps     *bool       `json:"show_timestamps,omitempty"`
+	StatusColors       StringArray `json:"status_colors,omitempty"`
+	Statuses           StringArray `json:"statuses,omitempty"`
+	TmuxStatusPosition string      `json:"tmux_status_position,omitempty"`
+	WorktreePath       string      `json:"worktree_path,omitempty"`
 }
 
 // StringArray supports both JSON arrays and comma-separated strings

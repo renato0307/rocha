@@ -117,6 +117,7 @@ type RunCmd struct {
 	TimestampStaleColor     string `help:"ANSI color code for stale timestamps (matches waiting state ◐)" default:"1"`
 	TimestampWarningColor   string `help:"ANSI color code for warning timestamps (matches idle state ○)" default:"3"`
 	TimestampWarningMinutes int    `help:"Minutes threshold for warning timestamps (yellow color)" default:"20"`
+	TmuxStatusPosition      string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
 	WorktreePath            string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
 }
 
@@ -170,6 +171,15 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 			if _, hasEnv := os.LookupEnv("ROCHA_SHOW_TIMESTAMPS"); !hasEnv {
 				if cli.settings.ShowTimestamps != nil && *cli.settings.ShowTimestamps {
 					r.ShowTimestamps = true
+				}
+			}
+		}
+
+		// Apply TmuxStatusPosition setting
+		if r.TmuxStatusPosition == tmux.DefaultStatusPosition {
+			if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
+				if cli.settings.TmuxStatusPosition != "" {
+					r.TmuxStatusPosition = cli.settings.TmuxStatusPosition
 				}
 			}
 		}
@@ -246,7 +256,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		r.TimestampStaleColor,
 	)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps),
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
