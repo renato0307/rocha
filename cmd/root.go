@@ -158,7 +158,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		}
 
 		// Apply TmuxStatusPosition setting
-		if r.TmuxStatusPosition == "bottom" {
+		if r.TmuxStatusPosition == tmux.DefaultStatusPosition {
 			if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
 				if cli.settings.TmuxStatusPosition != "" {
 					r.TmuxStatusPosition = cli.settings.TmuxStatusPosition

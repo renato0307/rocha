@@ -32,7 +32,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Info("Attach command started")
 
 	// Apply TmuxStatusPosition setting with proper precedence
-	if a.TmuxStatusPosition == "bottom" {
+	if a.TmuxStatusPosition == tmux.DefaultStatusPosition {
 		if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
 			if cli.settings != nil && cli.settings.TmuxStatusPosition != "" {
 				a.TmuxStatusPosition = cli.settings.TmuxStatusPosition
