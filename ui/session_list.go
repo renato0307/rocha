@@ -636,15 +636,12 @@ func (sl *SessionList) View() string {
 	}
 	helpText += formatHelpLine(strings.Join(line1Parts, " • ")) + "\n"
 
-	// Line 2: Actions
+	// Line 2: Actions (NewFromRepo, Archive, SendText only in full help screen)
 	line2Parts := []string{
 		formatBinding(sl.keys.SessionManagement.New),
-		formatBinding(sl.keys.SessionManagement.NewFromRepo),
 		formatBinding(sl.keys.SessionManagement.Rename),
 		formatBinding(sl.keys.SessionMetadata.Comment),
-		formatBinding(sl.keys.SessionMetadata.SendText),
 		formatBinding(sl.keys.SessionMetadata.Flag),
-		formatBinding(sl.keys.SessionManagement.Archive),
 		formatBinding(sl.keys.SessionMetadata.StatusCycle),
 		formatBinding(sl.keys.SessionMetadata.StatusSetForm),
 		formatBinding(sl.keys.SessionManagement.Kill),
