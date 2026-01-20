@@ -45,23 +45,6 @@ This directory contains:
 - `worktrees/` - Git worktrees for sessions
 - `settings.json` - Configuration settings
 
-**Breaking Changes:**
-
-This version removes the `--db-path`, `--worktree-path` flags and `db_path`, `worktree_path` settings from `settings.json`. All rocha data is now organized under `$ROCHA_HOME`. Users who customized these paths must manually migrate their data to the new structure:
-
-```bash
-# Old structure (no longer supported)
---db-path /custom/path/rocha.db
---worktree-path /custom/path/worktrees
-
-# New structure (single environment variable)
-export ROCHA_HOME=/custom/path
-# Creates:
-#   /custom/path/state.db
-#   /custom/path/worktrees/
-#   /custom/path/settings.json
-```
-
 ## What You Can Do
 - **Switch between Claude sessions** - Keep multiple conversations organized
 - **Shell sessions** - Open a separate shell (⌨) for each Claude session
