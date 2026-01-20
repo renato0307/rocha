@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"rocha/git"
+	"rocha/paths"
 	"rocha/storage"
 	"text/tabwriter"
 	"time"
@@ -32,7 +33,7 @@ type SessionsArchiveCmd struct {
 
 // Run executes the archive command
 func (s *SessionsArchiveCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(expandPath(cli.DBPath))
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -104,7 +105,7 @@ type SessionsListCmd struct {
 
 // Run executes the list command
 func (s *SessionsListCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(expandPath(cli.DBPath))
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -155,7 +156,7 @@ type SessionsViewCmd struct {
 
 // Run executes the view command
 func (s *SessionsViewCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(expandPath(cli.DBPath))
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -213,7 +214,7 @@ type SessionsAddCmd struct {
 
 // Run executes the add command
 func (s *SessionsAddCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(expandPath(cli.DBPath))
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -253,7 +254,7 @@ type SessionsDelCmd struct {
 
 // Run executes the del command
 func (s *SessionsDelCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(expandPath(cli.DBPath))
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

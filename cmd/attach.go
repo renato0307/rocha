@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"rocha/git"
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
@@ -31,7 +32,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Info("Attach command started")
 
 	// Apply TmuxStatusPosition setting with proper precedence
-	if a.TmuxStatusPosition == tmux.DefaultStatusPosition {
+	if a.TmuxStatusPosition == "bottom" {
 		if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
 			if cli.settings != nil && cli.settings.TmuxStatusPosition != "" {
 				a.TmuxStatusPosition = cli.settings.TmuxStatusPosition
@@ -40,8 +41,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	}
 
 	// Open database
-	dbPath := expandPath(cli.DBPath)
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"rocha/paths"
 )
 
 // Settings represents the structure of ~/.rocha/settings.json
 type Settings struct {
 	AllowDangerouslySkipPermissions *bool       `json:"allow_dangerously_skip_permissions,omitempty"`
-	DBPath                          string      `json:"db_path,omitempty"`
 	Debug                           *bool       `json:"debug,omitempty"`
 	Editor                          string      `json:"editor,omitempty"`
 	ErrorClearDelay                 *int        `json:"error_clear_delay,omitempty"`
@@ -20,7 +20,6 @@ type Settings struct {
 	StatusColors                    StringArray `json:"status_colors,omitempty"`
 	Statuses                        StringArray `json:"statuses,omitempty"`
 	TmuxStatusPosition              string      `json:"tmux_status_position,omitempty"`
-	WorktreePath                    string      `json:"worktree_path,omitempty"`
 }
 
 // StringArray supports both JSON arrays and comma-separated strings
@@ -62,18 +61,7 @@ func parseCommaSeparated(s string) []string {
 // LoadSettings loads settings from $ROCHA_HOME/settings.json (or ~/.rocha/settings.json if not set)
 // Returns empty Settings if file doesn't exist (not an error)
 func LoadSettings() (*Settings, error) {
-	rochaHome := os.Getenv("ROCHA_HOME")
-	if rochaHome == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
-		}
-		rochaHome = filepath.Join(homeDir, ".rocha")
-	} else {
-		rochaHome = expandPath(rochaHome)
-	}
-
-	path := filepath.Join(rochaHome, "settings.json")
+	path := paths.GetSettingsPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -87,28 +75,10 @@ func LoadSettings() (*Settings, error) {
 		return nil, fmt.Errorf("invalid settings.json: %w", err)
 	}
 
-	// Expand paths that start with ~
-	if settings.DBPath != "" {
-		settings.DBPath = expandPath(settings.DBPath)
-	}
-	if settings.WorktreePath != "" {
-		settings.WorktreePath = expandPath(settings.WorktreePath)
+	// Expand Editor path if it starts with ~
+	if settings.Editor != "" {
+		settings.Editor = paths.ExpandPath(settings.Editor)
 	}
 
 	return &settings, nil
-}
-
-// expandPath expands ~ to home directory in paths
-func expandPath(path string) string {
-	if len(path) > 0 && path[0] == '~' {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return path // Return as-is if we can't get home dir
-		}
-		if len(path) == 1 {
-			return homeDir
-		}
-		return filepath.Join(homeDir, path[1:])
-	}
-	return path
 }

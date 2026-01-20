@@ -24,6 +24,7 @@ graph TB
     subgraph "Cross-Cutting Concerns"
         LOG[Logging<br/>logging/]
         VER[Version<br/>version/]
+        PATHS[Paths<br/>paths/]
     end
 
     subgraph "External"
@@ -47,9 +48,12 @@ graph TB
 
     %% Cross-cutting concerns (dotted lines)
     CLI -.-> LOG
+    CLI -.-> PATHS
     TUI -.-> LOG
     TUI -.-> VER
+    TUI -.-> PATHS
     TMUX -.-> LOG
+    STORAGE -.-> PATHS
     LOG --> LOGFS
 ```
 
@@ -66,10 +70,16 @@ Components shown with dotted lines (-.->) are **cross-cutting concerns** - they'
   - Read-only data used for display
   - No behavioral dependencies
 
+- **paths/**: Centralized path computation for rocha directories
+  - Single source of truth for all rocha paths (database, worktrees, settings)
+  - Uses `ROCHA_HOME` environment variable (default: `~/.rocha`)
+  - No behavioral logic, only path string computation
+  - Used by: cmd (for database/config), ui (for worktrees), storage (for settings)
+
 These packages are designed to be:
 - **Non-invasive**: Removing them doesn't break business logic
 - **Uni-directional**: They don't call back into application code
-- **Replaceable**: Can swap implementations (e.g., different log backends)
+- **Replaceable**: Can swap implementations (e.g., different log backends, path strategies)
 
 ## Component Architecture
 

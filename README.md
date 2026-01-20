@@ -28,6 +28,40 @@ Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to
 
 For all available commands and options, run `rocha --help`.
 
+## Configuration
+
+### ROCHA_HOME
+
+Set `ROCHA_HOME` to customize where rocha stores data:
+
+```bash
+export ROCHA_HOME=~/my-custom-rocha
+```
+
+**Default:** `~/.rocha`
+
+This directory contains:
+- `state.db` - Session database
+- `worktrees/` - Git worktrees for sessions
+- `settings.json` - Configuration settings
+
+**Breaking Changes:**
+
+This version removes the `--db-path`, `--worktree-path` flags and `db_path`, `worktree_path` settings from `settings.json`. All rocha data is now organized under `$ROCHA_HOME`. Users who customized these paths must manually migrate their data to the new structure:
+
+```bash
+# Old structure (no longer supported)
+--db-path /custom/path/rocha.db
+--worktree-path /custom/path/worktrees
+
+# New structure (single environment variable)
+export ROCHA_HOME=/custom/path
+# Creates:
+#   /custom/path/state.db
+#   /custom/path/worktrees/
+#   /custom/path/settings.json
+```
+
 ## What You Can Do
 - **Switch between Claude sessions** - Keep multiple conversations organized
 - **Shell sessions** - Open a separate shell (⌨) for each Claude session
@@ -110,7 +144,7 @@ When running in a git repository, `rocha` offers to create isolated worktrees fo
 - **No conflicts** - Work on multiple branches simultaneously without switching
 - **Auto cleanup** - Worktrees are removed when you kill the session
 
-Worktrees are stored in `~/.rocha/worktrees/` by default.
+Worktrees are stored in `$ROCHA_HOME/worktrees/` (default: `~/.rocha/worktrees/`).
 
 ## Creating Sessions from Any Repository
 
@@ -129,7 +163,7 @@ git@github.com:owner/repo.git#develop
 ```
 
 **How it works:**
-1. Rocha clones the repository to `~/.rocha/worktrees/owner/repo/.main/`
+1. Rocha clones the repository to `$ROCHA_HOME/worktrees/owner/repo/.main/` (default: `~/.rocha/worktrees/owner/repo/.main/`)
 2. Creates a worktree for your session from the specified branch
 3. Multiple sessions from the same repo share the `.main` directory
 4. Each session automatically switches `.main` to the correct branch before creating its worktree

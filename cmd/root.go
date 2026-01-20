@@ -6,12 +6,12 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"rocha/config"
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
@@ -23,11 +23,10 @@ import (
 
 // CLI represents the command-line interface structure
 type CLI struct {
-	Version      kong.VersionFlag `help:"Show version information"`
-	Debug        bool             `help:"Enable debug logging to file" short:"d"`
-	DebugFile    string           `help:"Custom path for debug log file (disables automatic cleanup)"`
-	MaxLogFiles  int              `help:"Maximum number of log files to keep (0 = unlimited)" default:"1000"`
-	DBPath       string           `help:"Path to SQLite database" type:"path" default:"~/.rocha/state.db" env:"ROCHA_DB_PATH"`
+	Version     kong.VersionFlag `help:"Show version information"`
+	Debug       bool             `help:"Enable debug logging to file" short:"d"`
+	DebugFile   string           `help:"Custom path for debug log file (disables automatic cleanup)"`
+	MaxLogFiles int              `help:"Maximum number of log files to keep (0 = unlimited)" default:"1000"`
 
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
@@ -53,18 +52,6 @@ func (c *CLI) AfterApply() error {
 	// Only apply if flag is at default value and env var is not set
 
 	if c.settings != nil {
-		// Apply DBPath setting if no CLI flag or env var was used
-		// Kong already handled ROCHA_DB_PATH env var via env tag
-		// If c.DBPath still equals hardcoded default, neither CLI nor env var was set
-		if c.DBPath == "~/.rocha/state.db" {
-			if c.settings.DBPath != "" {
-				c.DBPath = c.settings.DBPath
-			} else {
-				// Apply ROCHA_HOME-based default
-				c.DBPath = filepath.Join(getRochaHome(), "state.db")
-			}
-		}
-
 		// Apply MaxLogFiles setting
 		if c.MaxLogFiles == 1000 {
 			if _, hasEnv := os.LookupEnv("ROCHA_MAX_LOG_FILES"); !hasEnv {
@@ -82,9 +69,6 @@ func (c *CLI) AfterApply() error {
 				}
 			}
 		}
-	} else if c.DBPath == "~/.rocha/state.db" {
-		// No settings file, but still need to apply ROCHA_HOME-based default
-		c.DBPath = filepath.Join(getRochaHome(), "state.db")
 	}
 
 	// Initialize logging first and get the log file path
@@ -124,7 +108,6 @@ type RunCmd struct {
 	TimestampWarningColor   string `help:"ANSI color code for warning timestamps (matches idle state ○)" default:"3"`
 	TimestampWarningMinutes int    `help:"Minutes threshold for warning timestamps (yellow color)" default:"20"`
 	TmuxStatusPosition      string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
-	WorktreePath            string `help:"Base directory for git worktrees" type:"path" default:"~/.rocha/worktrees"`
 }
 
 // Run executes the TUI
@@ -165,17 +148,6 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 			}
 		}
 
-		// Apply WorktreePath setting
-		// No env var for this flag, just check if still at hardcoded default
-		if r.WorktreePath == "~/.rocha/worktrees" {
-			if cli.settings.WorktreePath != "" {
-				r.WorktreePath = cli.settings.WorktreePath
-			} else {
-				// Apply ROCHA_HOME-based default
-				r.WorktreePath = filepath.Join(getRochaHome(), "worktrees")
-			}
-		}
-
 		// Apply ShowTimestamps setting
 		if !r.ShowTimestamps {
 			if _, hasEnv := os.LookupEnv("ROCHA_SHOW_TIMESTAMPS"); !hasEnv {
@@ -186,7 +158,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		}
 
 		// Apply TmuxStatusPosition setting
-		if r.TmuxStatusPosition == tmux.DefaultStatusPosition {
+		if r.TmuxStatusPosition == "bottom" {
 			if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
 				if cli.settings.TmuxStatusPosition != "" {
 					r.TmuxStatusPosition = cli.settings.TmuxStatusPosition
@@ -205,8 +177,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Info("Generated new execution ID", "execution_id", executionID)
 
 	// Open database
-	dbPath := expandPath(cli.DBPath)
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -272,7 +243,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		r.TimestampStaleColor,
 	)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition, allowDangerouslySkipPermissionsDefault),
+		ui.NewModel(tmuxClient, store, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition, allowDangerouslySkipPermissionsDefault),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
@@ -292,29 +263,4 @@ func isClaudeRunningInSession(sessionName string) bool {
 	cmd := exec.Command("pgrep", "-f", fmt.Sprintf("claude.*notify %s", sessionName))
 	err := cmd.Run()
 	return err == nil // Exit code 0 means process found
-}
-
-// getRochaHome returns the rocha home directory
-// Checks ROCHA_HOME env var, falls back to ~/.rocha
-func getRochaHome() string {
-	rochaHome := os.Getenv("ROCHA_HOME")
-	if rochaHome == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return ".rocha" // Fallback to relative path
-		}
-		return filepath.Join(homeDir, ".rocha")
-	}
-	return expandPath(rochaHome)
-}
-
-// expandPath expands ~ to home directory
-func expandPath(path string) string {
-	if len(path) > 0 && path[0] == '~' {
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(homeDir, path[1:])
-		}
-	}
-	return path
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/sound"
 	"rocha/state"
 	"rocha/storage"
@@ -30,16 +31,13 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		logging.Logger.Info("Hook logger initialized", "log_file", hookLogFile)
 	}
 
-	// Get database path
-	dbPath := expandPath(cli.DBPath)
-
 	// Determine execution ID: flag > env var > database > "unknown"
 	executionID := n.ExecutionID
 	if executionID == "" {
 		executionID = os.Getenv("ROCHA_EXECUTION_ID")
 		if executionID == "" {
 			// Load from database to find execution ID for this session
-			store, err := storage.NewStore(dbPath)
+			store, err := storage.NewStore(paths.GetDBPath())
 			if err == nil {
 				defer store.Close()
 				session, err := store.GetSession(context.Background(), n.SessionName)
@@ -104,7 +102,7 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		"state", sessionState)
 
 	// Update session state directly in SQLite (NO MORE EVENT QUEUE!)
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		log.Printf("Warning: failed to open database: %v", err)
 		logging.Logger.Error("Failed to open database", "error", err)

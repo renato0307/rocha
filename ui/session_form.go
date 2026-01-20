@@ -11,6 +11,7 @@ import (
 	"rocha/config"
 	"rocha/git"
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
@@ -50,12 +51,11 @@ type SessionForm struct {
 	spinner            spinner.Model
 	store              *storage.Store
 	tmuxStatusPosition string
-	worktreePath       string
 }
 
 // NewSessionForm creates a new session creation form
 // If defaultRepoSource is provided, it will be pre-filled in the repository field
-func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, defaultRepoSource string) *SessionForm {
+func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, defaultRepoSource string) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -71,7 +71,6 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 		spinner:            s,
 		store:              store,
 		tmuxStatusPosition: tmuxStatusPosition,
-		worktreePath:       worktreePath,
 	}
 
 	// Check if we're in a git repository
@@ -335,12 +334,8 @@ func (sf *SessionForm) createSession() error {
 		// User provided repo (URL or path)
 		logging.Logger.Info("Using user-provided repository source", "source", repoSource)
 
-		// Expand worktree base path
-		worktreeBase := sf.worktreePath
-		if strings.HasPrefix(worktreeBase, "~/") {
-			home, _ := os.UserHomeDir()
-			worktreeBase = filepath.Join(home, worktreeBase[2:])
-		}
+		// Get worktree base path
+		worktreeBase := paths.GetWorktreePath()
 
 		// Get or clone repository
 		localPath, src, err := git.GetOrCloneRepository(repoSource, worktreeBase)
@@ -399,12 +394,8 @@ func (sf *SessionForm) createSession() error {
 			logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
 		}
 
-		// Expand worktree base path
-		worktreeBase := sf.worktreePath
-		if strings.HasPrefix(worktreeBase, "~/") {
-			home, _ := os.UserHomeDir()
-			worktreeBase = filepath.Join(home, worktreeBase[2:])
-		}
+		// Get worktree base path
+		worktreeBase := paths.GetWorktreePath()
 
 		// Build worktree path with repository organization
 		worktreePath = git.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)

@@ -228,7 +228,6 @@ type SessionList struct {
 	timestampMode      TimestampMode
 	tmuxClient         tmux.Client
 	tmuxStatusPosition string
-	worktreePath       string
 
 	// Escape handling for filter clearing
 	escPressCount int
@@ -261,7 +260,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, worktreePath string, tmuxStatusPosition string) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := store.Load(context.Background(), false)
 	if err != nil {
@@ -296,7 +295,6 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 		timestampMode:      timestampMode,
 		tmuxClient:         tmuxClient,
 		tmuxStatusPosition: tmuxStatusPosition,
-		worktreePath:       worktreePath,
 	}
 }
 
