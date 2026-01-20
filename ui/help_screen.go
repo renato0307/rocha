@@ -55,6 +55,7 @@ func buildHelpContent(keys *KeyMap) string {
 	// Session Management
 	content += "\n" + helpGroupStyle.Render("Session Management") + "\n"
 	content += renderBinding(keys.SessionManagement.New)
+	content += renderBinding(keys.SessionManagement.NewFromRepo)
 	content += renderBinding(keys.SessionManagement.Rename)
 	content += renderBinding(keys.SessionManagement.Archive)
 	content += renderBinding(keys.SessionManagement.Kill)

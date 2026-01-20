@@ -12,6 +12,7 @@ type SessionState struct {
 type SessionInfo struct {
 	AllowDangerouslySkipPermissions bool
 	BranchName                      string
+	ClaudeDir                       string
 	Comment                         string
 	DisplayName                     string
 	ExecutionID                     string
@@ -22,6 +23,7 @@ type SessionInfo struct {
 	Name                            string
 	RepoInfo                        string
 	RepoPath                        string
+	RepoSource                      string
 	ShellSession                    *SessionInfo
 	State                           string
 	Status                          *string // Implementation status (nil = no status set)

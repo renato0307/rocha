@@ -31,7 +31,8 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 		sessionName = "unknown"
 	}
 
-	// Load current state to get ExecutionID and agent CLI flags for this session
+	// Load current state to get ExecutionID, ClaudeDir, and agent CLI flags for this session
+	var claudeDir string
 	var executionID string
 	var allowDangerouslySkipPermissions bool
 	dbPath := expandPath(cli.DBPath)
@@ -53,14 +54,18 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 				executionID = "unknown"
 			}
 		} else {
-			// Get ExecutionID and agent CLI flags from session info
+			// Get ExecutionID, ClaudeDir, and agent CLI flags from session info
 			if session, exists := st.Sessions[sessionName]; exists {
+				claudeDir = session.ClaudeDir
 				executionID = session.ExecutionID
 				allowDangerouslySkipPermissions = session.AllowDangerouslySkipPermissions
 				logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
 				if allowDangerouslySkipPermissions {
 					logging.Logger.Warn("DANGEROUS MODE ENABLED: Claude will skip permission prompts",
 						"session", sessionName)
+				}
+				if claudeDir != "" {
+					logging.Logger.Info("Using ClaudeDir from session", "claude_dir", claudeDir)
 				}
 			} else {
 				// Session not found, fallback to env or unknown
@@ -196,6 +201,13 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 	// Execute claude using syscall.Exec to replace the current process
 	// This ensures claude receives all signals properly and behaves as if run directly
 	env := os.Environ()
+
+	// Set CLAUDE_CONFIG_DIR if configured for this session
+	if claudeDir != "" {
+		env = append(env, fmt.Sprintf("CLAUDE_CONFIG_DIR=%s", claudeDir))
+		logging.Logger.Info("Setting CLAUDE_CONFIG_DIR environment variable", "path", claudeDir)
+	}
+
 	if err := syscall.Exec(claudePath, append([]string{"claude"}, args...), env); err != nil {
 		return fmt.Errorf("failed to execute claude: %w", err)
 	}

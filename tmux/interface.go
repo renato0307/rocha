@@ -15,7 +15,7 @@ var (
 
 // SessionManager handles session lifecycle operations
 type SessionManager interface {
-	Create(name string, worktreePath string, statusPosition string) (*Session, error)
+	Create(name string, worktreePath string, claudeDir string, statusPosition string) (*Session, error)
 	CreateShellSession(name string, worktreePath string, statusPosition string) (*Session, error)
 	Exists(name string) bool
 	List() ([]*Session, error)

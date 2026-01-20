@@ -122,8 +122,9 @@ fi
 
 // Create creates a new tmux session with the given name
 // If worktreePath is provided (non-empty), the session will start in that directory
-func (c *DefaultClient) Create(name string, worktreePath string, statusPosition string) (*Session, error) {
-	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath)
+// If claudeDir is provided (non-empty), CLAUDE_CONFIG_DIR environment variable will be set
+func (c *DefaultClient) Create(name string, worktreePath string, claudeDir string, statusPosition string) (*Session, error) {
+	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath, "claude_dir", claudeDir, "status_position", statusPosition)
 
 	if err := c.createBaseSession(name, worktreePath, statusPosition); err != nil {
 		return nil, err
@@ -139,6 +140,12 @@ func (c *DefaultClient) Create(name string, worktreePath string, statusPosition 
 
 	// Set session name in environment and start claude with hooks
 	envVars := fmt.Sprintf("ROCHA_SESSION_NAME=%s", name)
+
+	// Add CLAUDE_CONFIG_DIR if specified
+	if claudeDir != "" {
+		envVars += fmt.Sprintf(" CLAUDE_CONFIG_DIR=%q", claudeDir)
+		logging.Logger.Info("Setting CLAUDE_CONFIG_DIR for session", "claude_dir", claudeDir)
+	}
 
 	// Add debug environment variables if set
 	if debugEnabled := os.Getenv("ROCHA_DEBUG"); debugEnabled == "1" {

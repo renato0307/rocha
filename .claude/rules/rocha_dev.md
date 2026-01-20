@@ -8,6 +8,16 @@ To run rocha with debug output:
 rocha --debug --debug-file <file name>
 ```
 
+To use the `--dev` flag, you must use the `run` command:
+
+```bash
+rocha run --dev
+```
+
+## Dev guidelines
+
+- When you add a shortcut, always add to the help screen too.
+
 ## When you finish:
 
 1. You need to build the binary for testing with build flags that inject meaningful version information:
