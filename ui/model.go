@@ -102,10 +102,9 @@ type Model struct {
 	tmuxStatusPosition                     string
 	width                                  int
 	worktreeRemovalForm                    *Dialog // Worktree removal dialog
-	worktreePath                           string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
 	var errMsg error
@@ -127,7 +126,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	keys := NewKeyMap()
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, worktreePath, tmuxStatusPosition)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition)
 
 	return &Model{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
@@ -145,7 +144,6 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 		timestampMode:                          initialMode,
 		tmuxClient:                             tmuxClient,
 		tmuxStatusPosition:                     tmuxStatusPosition,
-		worktreePath:                           worktreePath,
 	}
 }
 
@@ -407,7 +405,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, "")
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, "")
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
@@ -442,7 +440,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				logging.Logger.Info("Creating new session from template", "template_session", m.sessionList.SessionForTemplate.Name, "repo_source", repoSource)
 			}
 		}
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, repoSource)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, repoSource)
 		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
 		m.state = stateCreatingSession
 		m.sessionList.SessionForTemplate = nil // Clear template reference

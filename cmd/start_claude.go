@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/storage"
 )
 
@@ -35,8 +36,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 	var claudeDir string
 	var executionID string
 	var allowDangerouslySkipPermissions bool
-	dbPath := expandPath(cli.DBPath)
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		logging.Logger.Warn("Failed to open database for execution ID", "error", err)
 		// Fall back to environment variable

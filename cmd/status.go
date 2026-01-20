@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"rocha/paths"
 	"rocha/state"
 	"rocha/storage"
 )
@@ -13,8 +14,7 @@ type StatusCmd struct{}
 // Run executes the status command
 func (s *StatusCmd) Run(cli *CLI) error {
 	// Open database
-	dbPath := expandPath(cli.DBPath)
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		// Database doesn't exist or can't be opened
 		fmt.Printf("%s:? %s:? %s:?", state.SymbolWaitingUser, state.SymbolIdle, state.SymbolWorking)

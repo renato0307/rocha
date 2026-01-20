@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/storage"
 )
 
@@ -64,7 +65,7 @@ func ResolveClaudeDir(store *storage.Store, repoInfo, userOverride string) strin
 
 	// 1. User override takes precedence
 	if userOverride != "" {
-		path := expandPath(userOverride)
+		path := paths.ExpandPath(userOverride)
 		logging.Logger.Info("Using user-provided ClaudeDir", "path", path)
 		return path
 	}
@@ -73,7 +74,7 @@ func ResolveClaudeDir(store *storage.Store, repoInfo, userOverride string) strin
 	if store != nil && repoInfo != "" {
 		detected, err := DetectClaudeDirForRepo(store, repoInfo)
 		if err == nil && detected != "" {
-			path := expandPath(detected)
+			path := paths.ExpandPath(detected)
 			logging.Logger.Info("Using detected ClaudeDir from existing sessions", "path", path)
 			return path
 		}

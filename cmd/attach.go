@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"rocha/git"
 	"rocha/logging"
+	"rocha/paths"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
@@ -40,8 +41,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	}
 
 	// Open database
-	dbPath := expandPath(cli.DBPath)
-	store, err := storage.NewStore(dbPath)
+	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
