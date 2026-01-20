@@ -54,7 +54,8 @@ type SessionForm struct {
 }
 
 // NewSessionForm creates a new session creation form
-func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *SessionForm {
+// If defaultRepoSource is provided, it will be pre-filled in the repository field
+func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, defaultRepoSource string) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -63,6 +64,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 		result: SessionFormResult{
 			AllowDangerouslySkipPermissions: allowDangerouslySkipPermissionsDefault,
 			CreateWorktree:                  true, // Default to true
+			RepoSource:                      defaultRepoSource,
 		},
 		sessionManager:     sessionManager,
 		sessionState:       sessionState,
@@ -136,7 +138,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 				if repoSource, err := git.ParseRepoSource(sf.result.RepoSource); err == nil && repoSource.Branch != "" {
 					return fmt.Sprintf("Detected branch: %s", repoSource.Branch)
 				}
-				return "Tip: Add #branch-name to specify a branch (e.g., https://github.com/owner/repo#main)"
+				return "Tip: Add #branch-name to specify a remote branch (e.g., https://github.com/owner/repo#main)"
 			}, &sf.result.RepoSource).
 			Placeholder("https://github.com/owner/repo#branch-name").
 			Value(&sf.result.RepoSource).
@@ -364,6 +366,12 @@ func (sf *SessionForm) createSession() error {
 			repoPath = repo
 			repoInfo = git.GetRepoInfo(repo)
 			logging.Logger.Info("Extracted repo info from current directory", "repo_info", repoInfo)
+
+			// Get the remote URL from the git repo and store it in repoSource
+			if remoteURL := git.GetRemoteURL(repo); remoteURL != "" {
+				repoSource = remoteURL
+				logging.Logger.Info("Fetched remote URL from git repo", "remote_url", remoteURL)
+			}
 		}
 	}
 

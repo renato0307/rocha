@@ -407,9 +407,45 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, "")
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = stateCreatingSession
+		return m, m.sessionForm.Init()
+	}
+
+	if m.sessionList.RequestNewSessionFrom {
+		m.sessionList.RequestNewSessionFrom = false
+		// Get the repo source from the selected session
+		var repoSource string
+		if m.sessionList.SessionForTemplate != nil {
+			if sessionInfo, exists := m.sessionState.Sessions[m.sessionList.SessionForTemplate.Name]; exists {
+				repoSource = sessionInfo.RepoSource
+
+				// If RepoSource is empty but RepoPath exists, fetch remote URL and update DB
+				if repoSource == "" && sessionInfo.RepoPath != "" {
+					logging.Logger.Info("RepoSource empty, fetching remote URL from RepoPath", "repo_path", sessionInfo.RepoPath)
+					if remoteURL := git.GetRemoteURL(sessionInfo.RepoPath); remoteURL != "" {
+						repoSource = remoteURL
+						logging.Logger.Info("Fetched remote URL, updating database", "remote_url", remoteURL)
+
+						// Update the session in the database with the fetched RepoSource
+						if err := m.store.UpdateSessionRepoSource(context.Background(), m.sessionList.SessionForTemplate.Name, remoteURL); err != nil {
+							logging.Logger.Error("Failed to update RepoSource in database", "error", err)
+						} else {
+							// Also update in-memory state
+							sessionInfo.RepoSource = remoteURL
+							m.sessionState.Sessions[m.sessionList.SessionForTemplate.Name] = sessionInfo
+						}
+					}
+				}
+
+				logging.Logger.Info("Creating new session from template", "template_session", m.sessionList.SessionForTemplate.Name, "repo_source", repoSource)
+			}
+		}
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, repoSource)
+		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
+		m.state = stateCreatingSession
+		m.sessionList.SessionForTemplate = nil // Clear template reference
 		return m, m.sessionForm.Init()
 	}
 

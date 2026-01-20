@@ -179,7 +179,7 @@ func CloneRepository(url, targetPath, branch string) error {
 }
 
 // CheckoutBranch ensures the specified branch is checked out in the repo
-// If branch doesn't exist locally, fetches it from remote
+// If branch doesn't exist locally, fetches from remote and creates it
 func CheckoutBranch(repoPath, branch string) error {
 	if branch == "" {
 		return nil // No branch specified, use current branch
@@ -187,23 +187,23 @@ func CheckoutBranch(repoPath, branch string) error {
 
 	logging.Logger.Info("Checking out branch", "repo", repoPath, "branch", branch)
 
-	// Try to checkout branch
+	// First, try a simple checkout (works if branch exists locally)
 	cmd := exec.Command("git", "checkout", branch)
 	cmd.Dir = repoPath
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		// Branch might not exist locally, try fetching from remote
+		// Branch doesn't exist locally, fetch all refs from remote
 		logging.Logger.Debug("Branch not found locally, fetching from remote", "branch", branch)
 
-		// Fetch the branch from origin
-		fetchCmd := exec.Command("git", "fetch", "origin", branch)
+		// Fetch all refs from origin to get the latest remote branches
+		fetchCmd := exec.Command("git", "fetch", "origin")
 		fetchCmd.Dir = repoPath
 		if fetchOutput, fetchErr := fetchCmd.CombinedOutput(); fetchErr != nil {
-			return fmt.Errorf("failed to fetch branch %s: %w\nOutput: %s", branch, fetchErr, string(fetchOutput))
+			return fmt.Errorf("failed to fetch from origin: %w\nOutput: %s", fetchErr, string(fetchOutput))
 		}
 
-		// Try checkout again after fetch
+		// Now try checkout again - git will auto-create local branch from remote
 		cmd = exec.Command("git", "checkout", branch)
 		cmd.Dir = repoPath
 		if output, err = cmd.CombinedOutput(); err != nil {
@@ -339,8 +339,8 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 	return targetPath, repoSource, nil
 }
 
-// getRemoteURL gets the remote URL for origin
-func getRemoteURL(repoPath string) string {
+// GetRemoteURL gets the remote URL for origin
+func GetRemoteURL(repoPath string) string {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	cmd.Dir = repoPath
 
@@ -350,6 +350,11 @@ func getRemoteURL(repoPath string) string {
 	}
 
 	return strings.TrimSpace(string(output))
+}
+
+// getRemoteURL is kept for backward compatibility (internal use)
+func getRemoteURL(repoPath string) string {
+	return GetRemoteURL(repoPath)
 }
 
 // isSameRepo checks if two URLs point to the same repository

@@ -216,12 +216,12 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 // SessionList is a Bubble Tea component for displaying and managing sessions
 type SessionList struct {
-	devMode          bool
-	editor           string // Editor to open sessions in
-	err              error
-	fetchingGitStats bool // Prevent concurrent fetches
-	keys             KeyMap
-	list             list.Model
+	devMode            bool
+	editor             string // Editor to open sessions in
+	err                error
+	fetchingGitStats   bool // Prevent concurrent fetches
+	keys               KeyMap
+	list               list.Model
 	sessionState       *storage.SessionState
 	statusConfig       *StatusConfig
 	store              *storage.Store // Storage for persistent state
@@ -242,20 +242,22 @@ type SessionList struct {
 	timestampConfig *TimestampColorConfig
 
 	// Result fields - set by component, read by Model
-	RequestHelp          bool          // User pressed 'h' or '?'
-	RequestNewSession    bool          // User pressed 'n'
-	RequestTestError     bool          // User pressed 'alt+e' (test command)
-	SelectedSession      *tmux.Session // Session user wants to attach to
-	SelectedShellSession *tmux.Session // Session user wants shell session for
-	SessionToArchive     *tmux.Session // Session user wants to archive
-	SessionToComment     *tmux.Session // Session user wants to comment
-	SessionToKill        *tmux.Session // Session user wants to kill
-	SessionToOpenEditor  *tmux.Session // Session user wants to open in editor
-	SessionToRename      *tmux.Session // Session user wants to rename
-	SessionToSendText    *tmux.Session // Session user wants to send text to
-	SessionToSetStatus   *tmux.Session // Session user wants to set status for
-	SessionToToggleFlag  *tmux.Session // Session user wants to toggle flag
-	ShouldQuit           bool          // User pressed 'q' or Ctrl+C
+	RequestHelp           bool          // User pressed 'h' or '?'
+	RequestNewSession     bool          // User pressed 'n'
+	RequestNewSessionFrom bool          // User pressed 'shift+n' (new from same repo)
+	RequestTestError      bool          // User pressed 'alt+e' (test command)
+	SelectedSession       *tmux.Session // Session user wants to attach to
+	SessionForTemplate    *tmux.Session // Session to use as template for new session
+	SelectedShellSession  *tmux.Session // Session user wants shell session for
+	SessionToArchive      *tmux.Session // Session user wants to archive
+	SessionToComment      *tmux.Session // Session user wants to comment
+	SessionToKill         *tmux.Session // Session user wants to kill
+	SessionToOpenEditor   *tmux.Session // Session user wants to open in editor
+	SessionToRename       *tmux.Session // Session user wants to rename
+	SessionToSendText     *tmux.Session // Session user wants to send text to
+	SessionToSetStatus    *tmux.Session // Session user wants to set status for
+	SessionToToggleFlag   *tmux.Session // Session user wants to toggle flag
+	ShouldQuit            bool          // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
@@ -385,6 +387,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Don't schedule new poll - one is already running
 		return sl, nil
 
+	// Each time you add something here, don't forget to add it to the help screen
 	case tea.KeyMsg:
 		// Guard clause: When actively filtering, bypass shortcuts to allow typing
 		if sl.list.FilterState() == list.Filtering {
@@ -423,6 +426,13 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, sl.keys.SessionManagement.New):
 			sl.RequestNewSession = true
 			return sl, nil
+
+		case key.Matches(msg, sl.keys.SessionManagement.NewFromRepo):
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.RequestNewSessionFrom = true
+				sl.SessionForTemplate = item.Session
+				return sl, nil
+			}
 
 		case key.Matches(msg, sl.keys.SessionActions.Open):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
@@ -629,6 +639,7 @@ func (sl *SessionList) View() string {
 	// Line 2: Actions
 	line2Parts := []string{
 		formatBinding(sl.keys.SessionManagement.New),
+		formatBinding(sl.keys.SessionManagement.NewFromRepo),
 		formatBinding(sl.keys.SessionManagement.Rename),
 		formatBinding(sl.keys.SessionMetadata.Comment),
 		formatBinding(sl.keys.SessionMetadata.SendText),

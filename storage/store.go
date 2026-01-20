@@ -517,6 +517,26 @@ func (s *Store) UpdateSession(ctx context.Context, name, state, executionID stri
 	}, 3)
 }
 
+// UpdateSessionRepoSource updates the repo_source field for a session
+func (s *Store) UpdateSessionRepoSource(ctx context.Context, name, repoSource string) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			updates := map[string]interface{}{
+				"repo_source":  repoSource,
+				"last_updated": time.Now().UTC(),
+			}
+			result := tx.Model(&Session{}).Where("name = ?", name).Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", name)
+			}
+			return nil
+		})
+	}, 3)
+}
+
 // UpdateExecutionID updates only the execution ID without changing last_updated timestamp
 func (s *Store) UpdateExecutionID(ctx context.Context, name, executionID string) error {
 	return withRetry(func() error {

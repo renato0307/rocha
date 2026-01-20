@@ -4,10 +4,11 @@ import "github.com/charmbracelet/bubbles/key"
 
 // SessionManagementKeys defines key bindings for managing sessions (create, rename, archive, kill)
 type SessionManagementKeys struct {
-	Archive key.Binding
-	Kill    key.Binding
-	New     key.Binding
-	Rename  key.Binding
+	Archive     key.Binding
+	Kill        key.Binding
+	New         key.Binding
+	NewFromRepo key.Binding
+	Rename      key.Binding
 }
 
 // SessionMetadataKeys defines key bindings for session metadata (comment, flag, status)
@@ -42,6 +43,10 @@ func newSessionManagementKeys() SessionManagementKeys {
 		New: key.NewBinding(
 			key.WithKeys("n"),
 			key.WithHelp("n", "new"),
+		),
+		NewFromRepo: key.NewBinding(
+			key.WithKeys("N"),
+			key.WithHelp("shift+n", "new from same repo"),
 		),
 		Rename: key.NewBinding(
 			key.WithKeys("r"),
