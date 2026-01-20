@@ -57,3 +57,11 @@ type SessionArchive struct {
 	SessionName string `gorm:"primaryKey"`
 	UpdatedAt   time.Time
 }
+
+// SessionAgentCLIFlags represents CLI flags for the agent (Claude) for a session (extension table)
+type SessionAgentCLIFlags struct {
+	AllowDangerouslySkipPermissions bool   `gorm:"not null;default:false"`
+	CreatedAt                       time.Time
+	SessionName                     string `gorm:"primaryKey"`
+	UpdatedAt                       time.Time
+}

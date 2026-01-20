@@ -26,11 +26,12 @@ type sessionCreatedMsg struct {
 
 // SessionFormResult contains the result of the session creation form
 type SessionFormResult struct {
-	SessionName    string
-	BranchName     string
-	CreateWorktree bool
-	Cancelled      bool
-	Error          error // Error that occurred during session creation
+	AllowDangerouslySkipPermissions bool
+	BranchName                      string
+	Cancelled                       bool
+	CreateWorktree                  bool
+	Error                           error // Error that occurred during session creation
+	SessionName                     string
 }
 
 // SessionForm is a Bubble Tea component for creating sessions
@@ -49,14 +50,15 @@ type SessionForm struct {
 }
 
 // NewSessionForm creates a new session creation form
-func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, tmuxStatusPosition string) *SessionForm {
+func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, worktreePath string, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	sf := &SessionForm{
 		result: SessionFormResult{
-			CreateWorktree: true, // Default to true
+			AllowDangerouslySkipPermissions: allowDangerouslySkipPermissionsDefault,
+			CreateWorktree:                  true, // Default to true
 		},
 		sessionManager:     sessionManager,
 		sessionState:       sessionState,
@@ -138,6 +140,16 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, wo
 				}),
 		)
 	}
+
+	// Add skip permissions field for all repos
+	fields = append(fields,
+		huh.NewConfirm().
+			Title("Skip permission prompts? (DANGEROUS)").
+			Description("Allows Claude to execute commands without asking. Use with caution!").
+			Value(&sf.result.AllowDangerouslySkipPermissions).
+			Affirmative("Yes").
+			Negative("No"),
+	)
 
 	sf.form = huh.NewForm(huh.NewGroup(fields...))
 
@@ -281,15 +293,16 @@ func (sf *SessionForm) createSession() error {
 
 	// Create session info
 	sessionInfo := storage.SessionInfo{
-		Name:         tmuxName,
-		DisplayName:  sessionName,
-		State:        state.StateWaitingUser,
-		ExecutionID:  executionID,
-		LastUpdated:  time.Now().UTC(),
-		RepoPath:     repoPath,
-		RepoInfo:     repoInfo,
-		BranchName:   branchName,
-		WorktreePath: worktreePath,
+		AllowDangerouslySkipPermissions: sf.result.AllowDangerouslySkipPermissions,
+		BranchName:                      branchName,
+		DisplayName:                     sessionName,
+		ExecutionID:                     executionID,
+		LastUpdated:                     time.Now().UTC(),
+		Name:                            tmuxName,
+		RepoInfo:                        repoInfo,
+		RepoPath:                        repoPath,
+		State:                           state.StateWaitingUser,
+		WorktreePath:                    worktreePath,
 	}
 
 	sf.sessionState.Sessions[tmuxName] = sessionInfo

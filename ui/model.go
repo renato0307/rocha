@@ -74,37 +74,38 @@ const (
 )
 
 type Model struct {
-	devMode                   bool           // Development mode (shows version info in dialogs)
-	editor                    string         // Editor to open sessions in
-	err                       error
-	errorClearDelay           time.Duration  // Duration before errors auto-clear
-	formRemoveWorktree        *bool          // Worktree removal decision (pointer to persist across updates)
-	formRemoveWorktreeArchive *bool          // Worktree removal decision for archive (pointer to persist across updates)
-	height                    int
-	helpScreen                *Dialog               // Help screen dialog
-	keys                      KeyMap                // Keyboard shortcuts
-	sendTextForm              *Dialog               // Send text to tmux dialog
-	sessionCommentForm        *Dialog               // Session comment dialog
-	sessionForm               *Dialog               // Session creation dialog
-	sessionList               *SessionList          // Session list component
-	sessionRenameForm         *Dialog               // Session rename dialog
-	sessionState              *storage.SessionState // State data for git metadata and status
-	sessionStatusForm         *Dialog               // Session status dialog
-	sessionToArchive          *tmux.Session         // Session being archived (for worktree removal)
-	sessionToKill             *tmux.Session         // Session being killed (for worktree removal)
-	state                     uiState
-	statusConfig              *StatusConfig         // Status configuration for implementation statuses
-	store                     *storage.Store        // Storage for persistent state
-	timestampConfig           *TimestampColorConfig // Timestamp color configuration
-	timestampMode             TimestampMode
-	tmuxClient                tmux.Client
-	tmuxStatusPosition        string
-	width                     int
-	worktreeRemovalForm       *Dialog // Worktree removal dialog
-	worktreePath              string
+	allowDangerouslySkipPermissionsDefault bool                  // Default value from settings for new sessions
+	devMode                                bool                  // Development mode (shows version info in dialogs)
+	editor                                 string                // Editor to open sessions in
+	err                                    error
+	errorClearDelay                        time.Duration         // Duration before errors auto-clear
+	formRemoveWorktree                     *bool                 // Worktree removal decision (pointer to persist across updates)
+	formRemoveWorktreeArchive              *bool                 // Worktree removal decision for archive (pointer to persist across updates)
+	height                                 int
+	helpScreen                             *Dialog               // Help screen dialog
+	keys                                   KeyMap                // Keyboard shortcuts
+	sendTextForm                           *Dialog               // Send text to tmux dialog
+	sessionCommentForm                     *Dialog               // Session comment dialog
+	sessionForm                            *Dialog               // Session creation dialog
+	sessionList                            *SessionList          // Session list component
+	sessionRenameForm                      *Dialog               // Session rename dialog
+	sessionState                           *storage.SessionState // State data for git metadata and status
+	sessionStatusForm                      *Dialog               // Session status dialog
+	sessionToArchive                       *tmux.Session         // Session being archived (for worktree removal)
+	sessionToKill                          *tmux.Session         // Session being killed (for worktree removal)
+	state                                  uiState
+	statusConfig                           *StatusConfig         // Status configuration for implementation statuses
+	store                                  *storage.Store        // Storage for persistent state
+	timestampConfig                        *TimestampColorConfig // Timestamp color configuration
+	timestampMode                          TimestampMode
+	tmuxClient                             tmux.Client
+	tmuxStatusPosition                     string
+	width                                  int
+	worktreeRemovalForm                    *Dialog // Worktree removal dialog
+	worktreePath                           string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
 	var errMsg error
@@ -129,21 +130,22 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, worktreePath, tmuxStatusPosition)
 
 	return &Model{
-		devMode:            devMode,
-		editor:             editor,
-		err:                errMsg,
-		errorClearDelay:    errorClearDelay,
-		keys:               keys,
-		sessionList:        sessionList,
-		sessionState:       sessionState,
-		state:              stateList,
-		statusConfig:       statusConfig,
-		store:              store,
-		timestampConfig:    timestampConfig,
-		timestampMode:      initialMode,
-		tmuxClient:         tmuxClient,
-		tmuxStatusPosition: tmuxStatusPosition,
-		worktreePath:       worktreePath,
+		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
+		devMode:                                devMode,
+		editor:                                 editor,
+		err:                                    errMsg,
+		errorClearDelay:                        errorClearDelay,
+		keys:                                   keys,
+		sessionList:                            sessionList,
+		sessionState:                           sessionState,
+		state:                                  stateList,
+		statusConfig:                           statusConfig,
+		store:                                  store,
+		timestampConfig:                        timestampConfig,
+		timestampMode:                          initialMode,
+		tmuxClient:                             tmuxClient,
+		tmuxStatusPosition:                     tmuxStatusPosition,
+		worktreePath:                           worktreePath,
 	}
 }
 
@@ -195,6 +197,12 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateList
 		m.sessionList.RefreshFromState()
 		return m, m.sessionList.Init()
+	}
+
+	// Handle errors from attach failures (e.g., tmux nested session errors)
+	if err, ok := msg.(error); ok {
+		m.setError(fmt.Errorf("failed to attach to session: %w", err))
+		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
 	}
 
 	// Hidden test command: alt+shift+e generates Model-level error (persists 5 seconds)
@@ -399,7 +407,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.worktreePath, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()
@@ -698,6 +706,12 @@ func (m *Model) attachToSession(sessionName string) tea.Cmd {
 
 	// Get the attach command from the abstraction layer
 	cmd := m.tmuxClient.GetAttachCommand(sessionName)
+
+	// Log the exact command being executed
+	logging.Logger.Debug("Executing tmux attach command",
+		"command", cmd.Path,
+		"args", cmd.Args,
+		"session_name", sessionName)
 
 	// Use tea.ExecProcess to suspend Bubble Tea and run the command
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {

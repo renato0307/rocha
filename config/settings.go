@@ -10,16 +10,17 @@ import (
 
 // Settings represents the structure of ~/.rocha/settings.json
 type Settings struct {
-	DBPath          string      `json:"db_path,omitempty"`
-	Debug           *bool       `json:"debug,omitempty"`
-	Editor          string      `json:"editor,omitempty"`
-	ErrorClearDelay *int        `json:"error_clear_delay,omitempty"`
-	MaxLogFiles     *int        `json:"max_log_files,omitempty"`
-	ShowTimestamps     *bool       `json:"show_timestamps,omitempty"`
-	StatusColors       StringArray `json:"status_colors,omitempty"`
-	Statuses           StringArray `json:"statuses,omitempty"`
-	TmuxStatusPosition string      `json:"tmux_status_position,omitempty"`
-	WorktreePath       string      `json:"worktree_path,omitempty"`
+	AllowDangerouslySkipPermissions *bool       `json:"allow_dangerously_skip_permissions,omitempty"`
+	DBPath                          string      `json:"db_path,omitempty"`
+	Debug                           *bool       `json:"debug,omitempty"`
+	Editor                          string      `json:"editor,omitempty"`
+	ErrorClearDelay                 *int        `json:"error_clear_delay,omitempty"`
+	MaxLogFiles                     *int        `json:"max_log_files,omitempty"`
+	ShowTimestamps                  *bool       `json:"show_timestamps,omitempty"`
+	StatusColors                    StringArray `json:"status_colors,omitempty"`
+	Statuses                        StringArray `json:"statuses,omitempty"`
+	TmuxStatusPosition              string      `json:"tmux_status_position,omitempty"`
+	WorktreePath                    string      `json:"worktree_path,omitempty"`
 }
 
 // StringArray supports both JSON arrays and comma-separated strings

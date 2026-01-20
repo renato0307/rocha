@@ -244,6 +244,12 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		}
 	}
 
+	// Extract allow dangerously skip permissions default from settings
+	allowDangerouslySkipPermissionsDefault := false
+	if cli.settings != nil && cli.settings.AllowDangerouslySkipPermissions != nil {
+		allowDangerouslySkipPermissionsDefault = *cli.settings.AllowDangerouslySkipPermissions
+	}
+
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
@@ -256,7 +262,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		r.TimestampStaleColor,
 	)
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition),
+		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition, allowDangerouslySkipPermissionsDefault),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)

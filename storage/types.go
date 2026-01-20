@@ -10,19 +10,20 @@ type SessionState struct {
 
 // SessionInfo represents a session (compatible with old state package)
 type SessionInfo struct {
-	BranchName   string
-	Comment      string
-	DisplayName  string
-	ExecutionID  string
-	GitStats     interface{}
-	IsArchived   bool
-	IsFlagged    bool
-	LastUpdated  time.Time
-	Name         string
-	RepoInfo     string
-	RepoPath     string
-	ShellSession *SessionInfo
-	State        string
-	Status       *string // Implementation status (nil = no status set)
-	WorktreePath string
+	AllowDangerouslySkipPermissions bool
+	BranchName                      string
+	Comment                         string
+	DisplayName                     string
+	ExecutionID                     string
+	GitStats                        interface{}
+	IsArchived                      bool
+	IsFlagged                       bool
+	LastUpdated                     time.Time
+	Name                            string
+	RepoInfo                        string
+	RepoPath                        string
+	ShellSession                    *SessionInfo
+	State                           string
+	Status                          *string // Implementation status (nil = no status set)
+	WorktreePath                    string
 }
