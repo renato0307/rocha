@@ -18,11 +18,12 @@ import (
 
 // AttachCmd attaches to a tmux session, creating it if needed
 type AttachCmd struct {
-	Branch             string `help:"Override branch name (default: auto-detect from git)"`
-	Repo               string `help:"Override repository path (default: auto-detect)"`
-	SessionName        string `help:"Override session name (default: auto-detect from branch/directory)"`
-	TmuxStatusPosition string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
-	Worktree           string `help:"Override worktree path (default: current directory)"`
+	AllowDangerouslySkipPermissions bool   `help:"Skip permission prompts in Claude (DANGEROUS - use with caution)"`
+	Branch                          string `help:"Override branch name (default: auto-detect from git)"`
+	Repo                            string `help:"Override repository path (default: auto-detect)"`
+	SessionName                     string `help:"Override session name (default: auto-detect from branch/directory)"`
+	TmuxStatusPosition              string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
+	Worktree                        string `help:"Override worktree path (default: current directory)"`
 }
 
 // Run executes the attach command
@@ -174,15 +175,16 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		logging.Logger.Info("Creating new session with execution ID", "execution_id", executionID)
 
 		sessionInfo = storage.SessionInfo{
-			Name:         sessionName,
-			DisplayName:  sessionName,
-			State:        state.StateIdle,
-			ExecutionID:  executionID,
-			LastUpdated:  time.Now().UTC(),
-			BranchName:   branchName,
-			WorktreePath: worktreePath,
-			RepoPath:     repoPath,
-			RepoInfo:     repoInfo,
+			AllowDangerouslySkipPermissions: a.AllowDangerouslySkipPermissions,
+			BranchName:                      branchName,
+			DisplayName:                     sessionName,
+			ExecutionID:                     executionID,
+			LastUpdated:                     time.Now().UTC(),
+			Name:                            sessionName,
+			RepoInfo:                        repoInfo,
+			RepoPath:                        repoPath,
+			State:                           state.StateIdle,
+			WorktreePath:                    worktreePath,
 		}
 	}
 

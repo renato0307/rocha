@@ -203,6 +203,21 @@ func NewStore(dbPath string) (*Store, error) {
 		}
 	}
 
+	// Manually create session_agent_cli_flags table
+	if !migrator.HasTable(&SessionAgentCLIFlags{}) {
+		if err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS session_agent_cli_flags (
+				session_name TEXT PRIMARY KEY,
+				allow_dangerously_skip_permissions INTEGER NOT NULL DEFAULT 0,
+				created_at DATETIME,
+				updated_at DATETIME,
+				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
+			)
+		`).Error; err != nil {
+			return nil, fmt.Errorf("failed to create session_agent_cli_flags table: %w", err)
+		}
+	}
+
 	// Configure connection pool after migration
 	// SQLite with WAL mode can handle multiple readers + 1 writer
 	sqlDB, err := db.DB()
@@ -265,6 +280,12 @@ func (s *Store) Load(ctx context.Context, showArchived bool) (*SessionState, err
 				return fmt.Errorf("failed to load archives: %w", err)
 			}
 
+			// Load all agent CLI flags at once
+			var agentCLIFlags []SessionAgentCLIFlags
+			if err := tx.Find(&agentCLIFlags).Error; err != nil {
+				return fmt.Errorf("failed to load agent CLI flags: %w", err)
+			}
+
 			// Build flag lookup map
 			flagMap := make(map[string]bool)
 			for _, flag := range flags {
@@ -294,6 +315,12 @@ func (s *Store) Load(ctx context.Context, showArchived bool) (*SessionState, err
 				if archive.IsArchived {
 					archiveMap[archive.SessionName] = true
 				}
+			}
+
+			// Build agent CLI flags lookup map
+			agentCLIFlagsMap := make(map[string]bool)
+			for _, flags := range agentCLIFlags {
+				agentCLIFlagsMap[flags.SessionName] = flags.AllowDangerouslySkipPermissions
 			}
 
 			// Build ordered names list and convert to map
@@ -331,23 +358,25 @@ func (s *Store) Load(ctx context.Context, showArchived bool) (*SessionState, err
 			}
 
 			for i, sess := range sessions {
-				// Get flag state, status, comment, and archive for top-level session
+				// Get flag state, status, comment, archive, and agent CLI flags for top-level session
 				isFlagged := flagMap[sess.Name]
 				comment := commentMap[sess.Name]
 				isArchived := archiveMap[sess.Name]
+				allowSkipPerms := agentCLIFlagsMap[sess.Name]
 
 				// Load nested session if exists (parent_name = this session's name)
 				var nestedSession Session
 				err := tx.Where("parent_name = ?", sess.Name).First(&nestedSession).Error
 				if err == nil {
-					// Nested session found (nested sessions are never flagged, don't have status, no comment, and not archived)
-					nestedInfo := convertToSessionInfo(nestedSession, false, nil, "", false)
-					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived)
+					// Nested session found (nested sessions are never flagged, don't have status, no comment, not archived, and no agent CLI flags)
+					nestedAllowSkipPerms := agentCLIFlagsMap[nestedSession.Name]
+					nestedInfo := convertToSessionInfo(nestedSession, false, nil, "", false, nestedAllowSkipPerms)
+					sessInfo := convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived, allowSkipPerms)
 					sessInfo.ShellSession = &nestedInfo
 					state.Sessions[sess.Name] = sessInfo
 				} else if errors.Is(err, gorm.ErrRecordNotFound) {
 					// No nested session
-					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived)
+					state.Sessions[sess.Name] = convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived, allowSkipPerms)
 				} else {
 					return fmt.Errorf("failed to load nested session for %s: %w", sess.Name, err)
 				}
@@ -407,6 +436,20 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 				}
 				delete(existingNames, sessInfo.Name)
 
+				// Save or delete agent CLI flags based on the field value
+				if sessInfo.AllowDangerouslySkipPermissions {
+					flags := SessionAgentCLIFlags{
+						SessionName:                     sessInfo.Name,
+						AllowDangerouslySkipPermissions: true,
+					}
+					if err := tx.Save(&flags).Error; err != nil {
+						return fmt.Errorf("failed to save session agent CLI flags: %w", err)
+					}
+				} else {
+					// Delete agent CLI flags record if false (cleanup)
+					tx.Where("session_name = ?", sessInfo.Name).Delete(&SessionAgentCLIFlags{})
+				}
+
 				// Save nested session if exists (as regular Session with ParentName set)
 				if sessInfo.ShellSession != nil {
 					nested := convertFromSessionInfo(*sessInfo.ShellSession)
@@ -423,6 +466,20 @@ func (s *Store) Save(ctx context.Context, state *SessionState) error {
 						return fmt.Errorf("failed to save nested session for %s: %w", sessInfo.Name, err)
 					}
 					delete(existingNames, sessInfo.ShellSession.Name)
+
+					// Save or delete agent CLI flags for nested session
+					if sessInfo.ShellSession.AllowDangerouslySkipPermissions {
+						nestedFlags := SessionAgentCLIFlags{
+							SessionName:                     sessInfo.ShellSession.Name,
+							AllowDangerouslySkipPermissions: true,
+						}
+						if err := tx.Save(&nestedFlags).Error; err != nil {
+							return fmt.Errorf("failed to save nested session agent CLI flags: %w", err)
+						}
+					} else {
+						// Delete agent CLI flags record if false (cleanup)
+						tx.Where("session_name = ?", sessInfo.ShellSession.Name).Delete(&SessionAgentCLIFlags{})
+					}
 				}
 			}
 
@@ -708,6 +765,28 @@ func (s *Store) AddSession(ctx context.Context, sessInfo SessionInfo) error {
 				if err := tx.Create(&nested).Error; err != nil {
 					return fmt.Errorf("failed to create nested session: %w", err)
 				}
+
+				// Save agent CLI flags for nested session if enabled
+				if sessInfo.ShellSession.AllowDangerouslySkipPermissions {
+					nestedFlags := SessionAgentCLIFlags{
+						SessionName:                     sessInfo.ShellSession.Name,
+						AllowDangerouslySkipPermissions: true,
+					}
+					if err := tx.Create(&nestedFlags).Error; err != nil {
+						return fmt.Errorf("failed to create nested session agent CLI flags: %w", err)
+					}
+				}
+			}
+
+			// Save agent CLI flags if enabled
+			if sessInfo.AllowDangerouslySkipPermissions {
+				flags := SessionAgentCLIFlags{
+					SessionName:                     sessInfo.Name,
+					AllowDangerouslySkipPermissions: true,
+				}
+				if err := tx.Create(&flags).Error; err != nil {
+					return fmt.Errorf("failed to create session agent CLI flags: %w", err)
+				}
 			}
 
 			return nil
@@ -739,6 +818,8 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	var status SessionStatus
 	var comment SessionComment
 	var archive SessionArchive
+	var agentCLIFlags SessionAgentCLIFlags
+	var nestedAgentCLIFlags SessionAgentCLIFlags
 	statusMap := make(map[string]*string)
 
 	err := withRetry(func() error {
@@ -775,10 +856,24 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 				return err
 			}
 
+			// Try to get agent CLI flags
+			err = tx.Where("session_name = ?", name).First(&agentCLIFlags).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
 			// Try to get nested session
 			err = tx.Where("parent_name = ?", name).First(&nestedSession).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
+			}
+
+			// If nested session exists, try to get its agent CLI flags
+			if nestedSession.Name != "" {
+				err = tx.Where("session_name = ?", nestedSession.Name).First(&nestedAgentCLIFlags).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
 			}
 
 			return nil
@@ -795,11 +890,13 @@ func (s *Store) GetSession(ctx context.Context, name string) (*SessionInfo, erro
 	isFlagged := flag.IsFlagged
 	commentText := comment.Comment
 	isArchived := archive.IsArchived
-	info := convertToSessionInfo(session, isFlagged, statusMap, commentText, isArchived)
+	allowSkipPerms := agentCLIFlags.AllowDangerouslySkipPermissions
+	info := convertToSessionInfo(session, isFlagged, statusMap, commentText, isArchived, allowSkipPerms)
 
 	// Add nested session if found (nested sessions are never flagged, don't have status, no comment, and not archived)
 	if nestedSession.Name != "" {
-		nestedInfo := convertToSessionInfo(nestedSession, false, nil, "", false)
+		nestedAllowSkipPerms := nestedAgentCLIFlags.AllowDangerouslySkipPermissions
+		nestedInfo := convertToSessionInfo(nestedSession, false, nil, "", false, nestedAllowSkipPerms)
 		info.ShellSession = &nestedInfo
 	}
 
@@ -814,6 +911,7 @@ func (s *Store) ListSessions(ctx context.Context, showArchived bool) ([]SessionI
 	var statuses []SessionStatus
 	var comments []SessionComment
 	var archives []SessionArchive
+	var agentCLIFlags []SessionAgentCLIFlags
 
 	err := withRetry(func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -853,6 +951,11 @@ func (s *Store) ListSessions(ctx context.Context, showArchived bool) ([]SessionI
 
 			// Get all archives
 			if err := tx.Find(&archives).Error; err != nil {
+				return err
+			}
+
+			// Get all agent CLI flags
+			if err := tx.Find(&agentCLIFlags).Error; err != nil {
 				return err
 			}
 
@@ -903,17 +1006,25 @@ func (s *Store) ListSessions(ctx context.Context, showArchived bool) ([]SessionI
 		}
 	}
 
+	// Build agent CLI flags lookup map
+	agentCLIFlagsMap := make(map[string]bool)
+	for _, flags := range agentCLIFlags {
+		agentCLIFlagsMap[flags.SessionName] = flags.AllowDangerouslySkipPermissions
+	}
+
 	// Convert to SessionInfo with nested sessions
 	result := make([]SessionInfo, len(sessions))
 	for i, sess := range sessions {
 		isFlagged := flagMap[sess.Name]
 		comment := commentMap[sess.Name]
 		isArchived := archiveMap[sess.Name]
-		info := convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived)
+		allowSkipPerms := agentCLIFlagsMap[sess.Name]
+		info := convertToSessionInfo(sess, isFlagged, statusMap, comment, isArchived, allowSkipPerms)
 
 		// Add nested session if exists (nested sessions are never flagged, don't have status, no comment, and not archived)
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedInfo := convertToSessionInfo(nested, false, nil, "", false)
+			nestedAllowSkipPerms := agentCLIFlagsMap[nested.Name]
+			nestedInfo := convertToSessionInfo(nested, false, nil, "", false, nestedAllowSkipPerms)
 			info.ShellSession = &nestedInfo
 		}
 
@@ -953,7 +1064,7 @@ func withRetry(fn func() error, maxRetries int) error {
 }
 
 // Helper conversion functions
-func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string, comment string, isArchived bool) SessionInfo {
+func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*string, comment string, isArchived bool, allowSkipPerms bool) SessionInfo {
 	var status *string
 	if statusMap != nil {
 		if s, ok := statusMap[s.Name]; ok {
@@ -962,21 +1073,22 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 	}
 
 	return SessionInfo{
-		BranchName:   s.BranchName,
-		Comment:      comment,
-		DisplayName:  s.DisplayName,
-		ExecutionID:  s.ExecutionID,
-		GitStats:     nil, // Not persisted
-		IsArchived:   isArchived,
-		IsFlagged:    isFlagged,
-		LastUpdated:  s.LastUpdated,
-		Name:         s.Name,
-		RepoInfo:     s.RepoInfo,
-		RepoPath:     s.RepoPath,
-		ShellSession: nil,
-		State:        s.State,
-		Status:       status,
-		WorktreePath: s.WorktreePath,
+		AllowDangerouslySkipPermissions: allowSkipPerms,
+		BranchName:                      s.BranchName,
+		Comment:                         comment,
+		DisplayName:                     s.DisplayName,
+		ExecutionID:                     s.ExecutionID,
+		GitStats:                        nil, // Not persisted
+		IsArchived:                      isArchived,
+		IsFlagged:                       isFlagged,
+		LastUpdated:                     s.LastUpdated,
+		Name:                            s.Name,
+		RepoInfo:                        s.RepoInfo,
+		RepoPath:                        s.RepoPath,
+		ShellSession:                    nil,
+		State:                           s.State,
+		Status:                          status,
+		WorktreePath:                    s.WorktreePath,
 	}
 }
 

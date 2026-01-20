@@ -343,8 +343,20 @@ func (c *DefaultClient) Detach(sessionName string) error {
 
 // GetAttachCommand returns an exec.Cmd configured for attaching to a session.
 // This is useful for integration with frameworks like Bubble Tea's tea.ExecProcess.
+// It unsets TMUX and TMUX_PANE environment variables to allow attaching from within tmux.
 func (c *DefaultClient) GetAttachCommand(sessionName string) *exec.Cmd {
 	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+
+	// Copy current environment and remove TMUX variables to allow nested attach
+	env := os.Environ()
+	var cleanEnv []string
+	for _, e := range env {
+		if !strings.HasPrefix(e, "TMUX=") && !strings.HasPrefix(e, "TMUX_PANE=") {
+			cleanEnv = append(cleanEnv, e)
+		}
+	}
+	cmd.Env = cleanEnv
+
 	return cmd
 }
 

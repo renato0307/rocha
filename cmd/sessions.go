@@ -201,13 +201,14 @@ func (s *SessionsViewCmd) Run(cli *CLI) error {
 
 // SessionsAddCmd adds a new session
 type SessionsAddCmd struct {
-	Name         string `arg:"" help:"Name of the session to add"`
-	DisplayName  string `help:"Display name for the session" default:""`
-	State        string `help:"Initial state" enum:"idle,working,waiting,exited" default:"idle"`
-	RepoPath     string `help:"Repository path" default:""`
-	RepoInfo     string `help:"Repository info" default:""`
-	BranchName   string `help:"Branch name" default:""`
-	WorktreePath string `help:"Worktree path" default:""`
+	AllowDangerouslySkipPermissions bool   `help:"Skip permission prompts in Claude (DANGEROUS)"`
+	BranchName                      string `help:"Branch name" default:""`
+	DisplayName                     string `help:"Display name for the session" default:""`
+	Name                            string `arg:"" help:"Name of the session to add"`
+	RepoInfo                        string `help:"Repository info" default:""`
+	RepoPath                        string `help:"Repository path" default:""`
+	State                           string `help:"Initial state" enum:"idle,working,waiting,exited" default:"idle"`
+	WorktreePath                    string `help:"Worktree path" default:""`
 }
 
 // Run executes the add command
@@ -224,15 +225,16 @@ func (s *SessionsAddCmd) Run(cli *CLI) error {
 	}
 
 	sessInfo := storage.SessionInfo{
-		Name:         s.Name,
-		DisplayName:  displayName,
-		State:        s.State,
-		ExecutionID:  uuid.New().String(),
-		LastUpdated:  time.Now().UTC(),
-		RepoPath:     s.RepoPath,
-		RepoInfo:     s.RepoInfo,
-		BranchName:   s.BranchName,
-		WorktreePath: s.WorktreePath,
+		AllowDangerouslySkipPermissions: s.AllowDangerouslySkipPermissions,
+		BranchName:                      s.BranchName,
+		DisplayName:                     displayName,
+		ExecutionID:                     uuid.New().String(),
+		LastUpdated:                     time.Now().UTC(),
+		Name:                            s.Name,
+		RepoInfo:                        s.RepoInfo,
+		RepoPath:                        s.RepoPath,
+		State:                           s.State,
+		WorktreePath:                    s.WorktreePath,
 	}
 
 	if err := store.AddSession(context.Background(), sessInfo); err != nil {

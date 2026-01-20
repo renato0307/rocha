@@ -31,8 +31,9 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 		sessionName = "unknown"
 	}
 
-	// Load current state to get ExecutionID for this session
+	// Load current state to get ExecutionID and agent CLI flags for this session
 	var executionID string
+	var allowDangerouslySkipPermissions bool
 	dbPath := expandPath(cli.DBPath)
 	store, err := storage.NewStore(dbPath)
 	if err != nil {
@@ -52,10 +53,15 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 				executionID = "unknown"
 			}
 		} else {
-			// Get ExecutionID from session info
+			// Get ExecutionID and agent CLI flags from session info
 			if session, exists := st.Sessions[sessionName]; exists {
 				executionID = session.ExecutionID
+				allowDangerouslySkipPermissions = session.AllowDangerouslySkipPermissions
 				logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
+				if allowDangerouslySkipPermissions {
+					logging.Logger.Warn("DANGEROUS MODE ENABLED: Claude will skip permission prompts",
+						"session", sessionName)
+				}
 			} else {
 				// Session not found, fallback to env or unknown
 				executionID = os.Getenv("ROCHA_EXECUTION_ID")
@@ -69,7 +75,8 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 
 	logging.Logger.Info("Starting Claude with hooks",
 		"session", sessionName,
-		"execution_id", executionID)
+		"execution_id", executionID,
+		"allow_dangerously_skip_permissions", allowDangerouslySkipPermissions)
 
 	// Build the hooks configuration with multiple event types
 	hooks := map[string]interface{}{
@@ -170,6 +177,14 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 
 	// Build claude command with settings
 	args := []string{"--settings", string(hooksJSON)}
+
+	// Add --allow-dangerously-skip-permissions flag if enabled for this session
+	if allowDangerouslySkipPermissions {
+		args = append(args, "--allow-dangerously-skip-permissions")
+		logging.Logger.Warn("Adding --allow-dangerously-skip-permissions to Claude command",
+			"session", sessionName)
+	}
+
 	args = append(args, s.Args...)
 
 	// Find claude executable
