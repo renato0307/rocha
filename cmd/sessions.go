@@ -25,7 +25,7 @@ type SessionsCmd struct {
 	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
 	Del     SessionsDelCmd     `cmd:"del" help:"Delete a session"`
 	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
-	Move    SessionsMvCmd      `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
+	Move    SessionsMoveCmd    `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
 	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 }
 
@@ -254,15 +254,19 @@ func (s *SessionsAddCmd) Run(cli *CLI) error {
 
 // SessionsDelCmd deletes a session
 type SessionsDelCmd struct {
-	Force          bool   `help:"Force deletion without confirmation" short:"f"`
-	KillTmux       bool   `help:"Kill tmux session before deleting" short:"k"`
-	Name           string `arg:"" help:"Name of the session to delete"`
-	RemoveWorktree bool   `help:"Remove associated git worktree" short:"w"`
+	Force              bool   `help:"Force deletion without confirmation" short:"f"`
+	Name               string `arg:"" help:"Name of the session to delete"`
+	SkipKillTmux       bool   `help:"Skip killing tmux session" short:"k"`
+	SkipRemoveWorktree bool   `help:"Skip removing associated git worktree" short:"w"`
 }
 
 // Run executes the del command
 func (s *SessionsDelCmd) Run(cli *CLI) error {
-	logging.Logger.Info("Executing sessions del command", "session", s.Name, "killTmux", s.KillTmux, "removeWorktree", s.RemoveWorktree, "force", s.Force)
+	// Calculate actual actions (inverted from skip flags)
+	killTmux := !s.SkipKillTmux
+	removeWorktree := !s.SkipRemoveWorktree
+
+	logging.Logger.Info("Executing sessions del command", "session", s.Name, "killTmux", killTmux, "removeWorktree", removeWorktree, "force", s.Force)
 
 	ctx := context.Background()
 	store, err := storage.NewStore(paths.GetDBPath())
@@ -285,10 +289,10 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 	if !s.Force {
 		logging.Logger.Debug("Prompting user for confirmation", "session", s.Name)
 		fmt.Printf("⚠ WARNING: This will delete session '%s'\n", s.Name)
-		if s.KillTmux {
+		if killTmux {
 			fmt.Println("  • Kill tmux session")
 		}
-		if s.RemoveWorktree && sessInfo.WorktreePath != "" {
+		if removeWorktree && sessInfo.WorktreePath != "" {
 			fmt.Printf("  • Remove worktree at '%s'\n", sessInfo.WorktreePath)
 		}
 		fmt.Print("\nContinue? (y/N): ")
@@ -305,8 +309,8 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 	// Delete session using operations package
 	logging.Logger.Info("Deleting session", "session", s.Name)
 	err = operations.DeleteSession(ctx, s.Name, store, operations.DeleteSessionOptions{
-		KillTmux:       s.KillTmux,
-		RemoveWorktree: s.RemoveWorktree,
+		KillTmux:       killTmux,
+		RemoveWorktree: removeWorktree,
 	})
 	if err != nil {
 		logging.Logger.Error("Failed to delete session", "session", s.Name, "error", err)
@@ -318,8 +322,8 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 	return nil
 }
 
-// SessionsMvCmd moves sessions between ROCHA_HOME directories
-type SessionsMvCmd struct {
+// SessionsMoveCmd moves sessions between ROCHA_HOME directories
+type SessionsMoveCmd struct {
 	Force bool     `help:"Skip confirmation prompt" short:"f"`
 	From  string   `help:"Source ROCHA_HOME path" required:"true"`
 	Names []string `arg:"" help:"Names of sessions to move" required:"true"`
@@ -327,7 +331,7 @@ type SessionsMvCmd struct {
 }
 
 // Run executes the move command
-func (s *SessionsMvCmd) Run(cli *CLI) error {
+func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	logging.Logger.Info("Executing sessions move command", "sessions", s.Names, "from", s.From, "to", s.To, "force", s.Force)
 
 	ctx := context.Background()
