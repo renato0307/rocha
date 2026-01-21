@@ -726,6 +726,36 @@ func (s *Store) UpdateComment(ctx context.Context, sessionName, comment string) 
 	}, 3)
 }
 
+// UpdateSessionClaudeDir updates the ClaudeDir field for a single session atomically
+func (s *Store) UpdateSessionClaudeDir(ctx context.Context, name, claudeDir string) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Check if session exists
+			var session Session
+			if err := tx.Where("name = ?", name).First(&session).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("session %s not found", name)
+				}
+				return err
+			}
+
+			// Update ClaudeDir and last_updated
+			updates := map[string]interface{}{
+				"claude_dir":   claudeDir,
+				"last_updated": time.Now().UTC(),
+			}
+			result := tx.Model(&Session{}).Where("name = ?", name).Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", name)
+			}
+			return nil
+		})
+	}, 3)
+}
+
 // ToggleArchive toggles the archive state for a session
 func (s *Store) ToggleArchive(ctx context.Context, sessionName string) error {
 	return withRetry(func() error {
