@@ -24,7 +24,7 @@ type SessionsCmd struct {
 	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
 	Del     SessionsDelCmd     `cmd:"del" help:"Delete a session"`
 	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
-	Mv      SessionsMvCmd      `cmd:"mv" help:"Move sessions between ROCHA_HOME directories"`
+	Move    SessionsMvCmd      `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
 	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 }
 
