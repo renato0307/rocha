@@ -16,6 +16,7 @@ type Settings struct {
 	Editor                          string      `json:"editor,omitempty"`
 	ErrorClearDelay                 *int        `json:"error_clear_delay,omitempty"`
 	MaxLogFiles                     *int        `json:"max_log_files,omitempty"`
+	Profile                         string      `json:"profile,omitempty"`
 	ShowTimestamps                  *bool       `json:"show_timestamps,omitempty"`
 	StatusColors                    StringArray `json:"status_colors,omitempty"`
 	Statuses                        StringArray `json:"statuses,omitempty"`

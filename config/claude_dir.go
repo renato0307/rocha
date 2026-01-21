@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -11,9 +12,17 @@ import (
 )
 
 // DefaultClaudeDir returns the default Claude directory
-// Checks CLAUDE_CONFIG_DIR environment variable first, then falls back to ~/.claude
+// Checks ROCHA_PROFILE first for profile-specific Claude dir, then CLAUDE_CONFIG_DIR environment variable, then falls back to ~/.claude
 func DefaultClaudeDir() string {
-	// Check environment variable first
+	// Check if profile is active and compute profile-specific Claude dir
+	if profile := os.Getenv("ROCHA_PROFILE"); profile != "" && profile != "default" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(homeDir, fmt.Sprintf(".claude_%s", profile))
+		}
+	}
+
+	// Check environment variable
 	if envDir := os.Getenv("CLAUDE_CONFIG_DIR"); envDir != "" {
 		return paths.ExpandPath(envDir)
 	}
