@@ -293,3 +293,39 @@ func BuildWorktreePath(base, repoInfo, sessionName string) string {
 		"repo_info", repoInfo)
 	return filepath.Join(base, sanitizedSession)
 }
+
+// RepairWorktrees repairs git worktree references after moving
+// Must be run from the .main directory with paths to all moved worktrees
+// This is necessary when both the main repository and worktrees have been moved
+func RepairWorktrees(mainRepoPath string, worktreePaths []string) error {
+	logging.Logger.Info("Repairing worktree references",
+		"mainRepo", mainRepoPath,
+		"worktreeCount", len(worktreePaths))
+
+	if len(worktreePaths) == 0 {
+		logging.Logger.Debug("No worktrees to repair")
+		return nil
+	}
+
+	// Build args: git worktree repair <path1> <path2> ...
+	args := []string{"worktree", "repair"}
+	args = append(args, worktreePaths...)
+
+	logging.Logger.Debug("Running git worktree repair", "args", args)
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = mainRepoPath // Run from .main directory
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logging.Logger.Error("Git worktree repair failed",
+			"error", err,
+			"output", string(output))
+		return fmt.Errorf("failed to repair worktrees: %w\nOutput: %s",
+			err, string(output))
+	}
+
+	logging.Logger.Info("Worktree references repaired successfully",
+		"output", string(output))
+	return nil
+}

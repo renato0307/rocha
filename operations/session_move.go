@@ -14,6 +14,236 @@ import (
 	"rocha/tmux"
 )
 
+// MoveRepository moves all sessions from a single repository
+// Returns: list of moved session names, error
+func MoveRepository(
+	ctx context.Context,
+	repoInfo string,
+	sourceStore *storage.Store,
+	destStore *storage.Store,
+	sourceRochaHome string,
+	destRochaHome string,
+	tmuxClient tmux.SessionManager,
+) ([]string, error) {
+	logging.Logger.Info("Moving repository", "repo", repoInfo, "from", sourceRochaHome, "to", destRochaHome)
+
+	// Get all sessions with matching RepoInfo
+	allSessions, err := sourceStore.ListSessions(ctx, false)
+	if err != nil {
+		logging.Logger.Error("Failed to list sessions", "error", err)
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	var repoSessions []storage.SessionInfo
+	for _, sess := range allSessions {
+		if sess.RepoInfo == repoInfo {
+			repoSessions = append(repoSessions, sess)
+		}
+	}
+
+	if len(repoSessions) == 0 {
+		logging.Logger.Error("No sessions found for repository", "repo", repoInfo)
+		return nil, fmt.Errorf("no sessions found for repository: %s", repoInfo)
+	}
+
+	logging.Logger.Info("Found sessions for repository", "repo", repoInfo, "count", len(repoSessions))
+
+	// Extract shared .main path from first session
+	mainRepoPath := repoSessions[0].RepoPath
+	if mainRepoPath == "" {
+		logging.Logger.Warn("No RepoPath found for repository sessions", "repo", repoInfo)
+		fmt.Printf("⚠ Warning: No .main directory found for repository %s\n", repoInfo)
+		// Continue without moving .main (might be non-git sessions)
+	}
+
+	// Validate all sessions share the same .main path
+	for _, sess := range repoSessions {
+		if sess.RepoPath != mainRepoPath {
+			logging.Logger.Error("Sessions have different RepoPath values", "repo", repoInfo, "expected", mainRepoPath, "found", sess.RepoPath)
+			return nil, fmt.Errorf("sessions in repository %s have different .main paths", repoInfo)
+		}
+	}
+
+	// Kill all tmux sessions first
+	logging.Logger.Debug("Killing tmux sessions for repository", "repo", repoInfo)
+	for _, sess := range repoSessions {
+		fmt.Printf("Killing tmux session '%s'...\n", sess.Name)
+		if err := tmuxClient.Kill(sess.Name); err != nil {
+			logging.Logger.Warn("Failed to kill tmux session", "session", sess.Name, "error", err)
+			fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sess.Name, err)
+		}
+
+		// Kill shell session if exists
+		if sess.ShellSession != nil {
+			shellName := sess.ShellSession.Name
+			logging.Logger.Debug("Killing shell session", "session", shellName)
+			if err := tmuxClient.Kill(shellName); err != nil {
+				logging.Logger.Warn("Failed to kill shell session", "session", shellName, "error", err)
+				fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", shellName, err)
+			}
+		}
+	}
+
+	// Move .main directory if it exists
+	if mainRepoPath != "" {
+		sourceMainPath := mainRepoPath
+		destMainPath := strings.Replace(mainRepoPath, sourceRochaHome, destRochaHome, 1)
+
+		logging.Logger.Info("Moving .main directory", "from", sourceMainPath, "to", destMainPath)
+		fmt.Printf("Moving .main directory...\n")
+
+		if err := moveMainDirectory(sourceMainPath, destMainPath); err != nil {
+			logging.Logger.Error("Failed to move .main directory", "error", err)
+			return nil, fmt.Errorf("failed to move .main directory: %w", err)
+		}
+		fmt.Printf("✓ Moved .main directory\n")
+
+		// Update mainRepoPath to point to new location
+		mainRepoPath = destMainPath
+	}
+
+	// Move all worktrees and collect paths for repair
+	var movedWorktreePaths []string
+	for _, sess := range repoSessions {
+		// Update session paths
+		updateSessionPaths(&sess, sourceRochaHome, destRochaHome)
+
+		// Move worktree if exists
+		if sess.WorktreePath != "" {
+			sourceWorktree := strings.Replace(sess.WorktreePath, destRochaHome, sourceRochaHome, 1)
+			destWorktree := sess.WorktreePath
+
+			fmt.Printf("Moving worktree '%s'...\n", sess.Name)
+			logging.Logger.Info("Moving worktree", "session", sess.Name, "from", sourceWorktree, "to", destWorktree)
+
+			if err := moveWorktree(sourceWorktree, destWorktree); err != nil {
+				logging.Logger.Warn("Failed to move worktree", "session", sess.Name, "error", err)
+				fmt.Printf("⚠ Warning: Failed to move worktree for %s: %v\n", sess.Name, err)
+			} else {
+				movedWorktreePaths = append(movedWorktreePaths, destWorktree)
+				fmt.Printf("✓ Moved worktree '%s'\n", sess.Name)
+			}
+		}
+
+		// Add session to destination store
+		logging.Logger.Debug("Adding session to destination store", "session", sess.Name)
+		if err := destStore.AddSession(ctx, sess); err != nil {
+			logging.Logger.Error("Failed to add session to destination", "session", sess.Name, "error", err)
+			return nil, fmt.Errorf("failed to add session %s to destination: %w", sess.Name, err)
+		}
+	}
+
+	// Repair git worktree references if we moved .main and worktrees
+	if mainRepoPath != "" && len(movedWorktreePaths) > 0 {
+		fmt.Printf("Repairing git worktree references...\n")
+		logging.Logger.Info("Repairing worktree references", "mainRepo", mainRepoPath, "worktreeCount", len(movedWorktreePaths))
+
+		if err := git.RepairWorktrees(mainRepoPath, movedWorktreePaths); err != nil {
+			logging.Logger.Error("Failed to repair worktrees", "error", err)
+			return nil, fmt.Errorf("failed to repair worktrees: %w", err)
+		}
+		fmt.Printf("✓ Repaired worktree references\n")
+	}
+
+	// Delete sessions from source store
+	fmt.Printf("Cleaning up source database...\n")
+	movedSessionNames := []string{}
+	for _, sess := range repoSessions {
+		logging.Logger.Debug("Deleting session from source", "session", sess.Name)
+		if err := sourceStore.DeleteSession(ctx, sess.Name); err != nil {
+			logging.Logger.Warn("Failed to delete session from source", "session", sess.Name, "error", err)
+			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", sess.Name, err)
+		} else {
+			movedSessionNames = append(movedSessionNames, sess.Name)
+		}
+	}
+
+	logging.Logger.Info("Repository moved successfully", "repo", repoInfo, "sessionCount", len(movedSessionNames))
+	return movedSessionNames, nil
+}
+
+// moveMainDirectory moves a .main directory from source to destination
+func moveMainDirectory(sourcePath, destPath string) error {
+	logging.Logger.Info("Moving .main directory", "from", sourcePath, "to", destPath)
+
+	// Check if source exists
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		logging.Logger.Warn("Source .main directory does not exist", "path", sourcePath)
+		return fmt.Errorf("source .main directory does not exist: %s", sourcePath)
+	}
+
+	// Check if destination already exists
+	if _, err := os.Stat(destPath); err == nil {
+		// Destination exists - check if it's the same repo
+		logging.Logger.Debug("Destination .main already exists, checking if same repo", "path", destPath)
+
+		sourceRemote := git.GetRemoteURL(sourcePath)
+		destRemote := git.GetRemoteURL(destPath)
+
+		if sourceRemote == "" || destRemote == "" {
+			logging.Logger.Warn("Could not get remote URL for comparison", "sourceRemote", sourceRemote, "destRemote", destRemote)
+			return fmt.Errorf(".main directory already exists at destination: %s", destPath)
+		}
+
+		// Normalize URLs for comparison
+		if !isSameRepo(sourceRemote, destRemote) {
+			logging.Logger.Error("Destination .main is different repository", "sourceRemote", sourceRemote, "destRemote", destRemote)
+			return fmt.Errorf(".main directory at destination is a different repository.\nSource: %s\nDestination: %s", sourceRemote, destRemote)
+		}
+
+		// Same repo - use existing .main, don't move
+		logging.Logger.Info("Destination .main is same repository, using existing", "path", destPath)
+		fmt.Printf("✓ Using existing .main at destination (same repository)\n")
+		return nil
+	}
+
+	// Create parent directories for destination
+	logging.Logger.Debug("Creating destination directory", "path", filepath.Dir(destPath))
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		logging.Logger.Error("Failed to create destination directory", "path", filepath.Dir(destPath), "error", err)
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	// Try atomic rename first (works if same filesystem)
+	logging.Logger.Debug("Attempting atomic rename", "from", sourcePath, "to", destPath)
+	err := os.Rename(sourcePath, destPath)
+	if err == nil {
+		logging.Logger.Info(".main directory moved using atomic rename", "from", sourcePath, "to", destPath)
+		return nil
+	}
+
+	// If rename fails, fall back to copy + delete (for cross-filesystem moves)
+	logging.Logger.Debug("Atomic rename failed, falling back to copy+delete", "error", err)
+	if err := copyDirectory(sourcePath, destPath); err != nil {
+		logging.Logger.Error("Failed to copy .main directory", "from", sourcePath, "to", destPath, "error", err)
+		return fmt.Errorf("failed to copy .main directory: %w", err)
+	}
+
+	// Remove source after successful copy
+	logging.Logger.Debug("Removing source .main directory after copy", "path", sourcePath)
+	if err := os.RemoveAll(sourcePath); err != nil {
+		logging.Logger.Error("Failed to remove source .main directory after copy", "path", sourcePath, "error", err)
+		return fmt.Errorf("failed to remove source .main directory after copy: %w", err)
+	}
+
+	logging.Logger.Info(".main directory moved using copy+delete", "from", sourcePath, "to", destPath)
+	return nil
+}
+
+// isSameRepo checks if two URLs point to the same repository
+func isSameRepo(url1, url2 string) bool {
+	normalize := func(url string) string {
+		// Remove .git suffix
+		url = strings.TrimSuffix(url, ".git")
+		url = strings.TrimSuffix(url, "/")
+		// Convert to lowercase for comparison
+		url = strings.ToLower(url)
+		return url
+	}
+
+	return normalize(url1) == normalize(url2)
+}
+
 // MoveSession handles moving a single session between stores
 // It copies the session data and moves the worktree (if it exists)
 func MoveSession(
@@ -164,17 +394,28 @@ func DeleteSession(
 	return nil
 }
 
-// updateSessionPaths updates WorktreePath and ClaudeDir in session info
+// updateSessionPaths updates WorktreePath, RepoPath, and ClaudeDir in session info
 func updateSessionPaths(sessInfo *storage.SessionInfo, sourceRochaHome, destRochaHome string) {
 	logging.Logger.Debug("Updating session paths", "session", sessInfo.Name, "from", sourceRochaHome, "to", destRochaHome)
 
 	oldWorktreePath := sessInfo.WorktreePath
+	oldRepoPath := sessInfo.RepoPath
 	oldClaudeDir := sessInfo.ClaudeDir
 
 	// Update WorktreePath
 	if sessInfo.WorktreePath != "" {
 		sessInfo.WorktreePath = strings.Replace(
 			sessInfo.WorktreePath,
+			sourceRochaHome,
+			destRochaHome,
+			1,
+		)
+	}
+
+	// Update RepoPath (.main directory path)
+	if sessInfo.RepoPath != "" {
+		sessInfo.RepoPath = strings.Replace(
+			sessInfo.RepoPath,
 			sourceRochaHome,
 			destRochaHome,
 			1,
@@ -194,6 +435,7 @@ func updateSessionPaths(sessInfo *storage.SessionInfo, sourceRochaHome, destRoch
 	logging.Logger.Debug("Paths updated",
 		"session", sessInfo.Name,
 		"worktreePath", oldWorktreePath, "→", sessInfo.WorktreePath,
+		"repoPath", oldRepoPath, "→", sessInfo.RepoPath,
 		"claudeDir", oldClaudeDir, "→", sessInfo.ClaudeDir)
 
 	// Update shell session paths if exists

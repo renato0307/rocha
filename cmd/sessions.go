@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"rocha/git"
 	"rocha/logging"
@@ -336,15 +337,22 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 type SessionsMoveCmd struct {
 	Force bool     `help:"Skip confirmation prompt" short:"f"`
 	From  string   `help:"Source ROCHA_HOME path" required:"true"`
-	Names []string `arg:"" help:"Names of sessions to move" required:"true"`
+	Repos []string `help:"Repository identifiers (owner/repo format)" short:"r" required:"true"`
 	To    string   `help:"Destination ROCHA_HOME path" required:"true"`
 }
 
 // Run executes the move command
 func (s *SessionsMoveCmd) Run(cli *CLI) error {
-	logging.Logger.Info("Executing sessions move command", "sessions", s.Names, "from", s.From, "to", s.To, "force", s.Force)
+	logging.Logger.Info("Executing sessions move command", "repos", s.Repos, "from", s.From, "to", s.To, "force", s.Force)
 
 	ctx := context.Background()
+
+	// Validate repo format
+	for _, repo := range s.Repos {
+		if !strings.Contains(repo, "/") {
+			return fmt.Errorf("invalid repo format '%s': must be in owner/repo format", repo)
+		}
+	}
 
 	// Expand paths
 	sourceHome := paths.ExpandPath(s.From)
@@ -363,28 +371,6 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	if err := os.MkdirAll(destHome, 0755); err != nil {
 		logging.Logger.Error("Failed to create destination ROCHA_HOME", "path", destHome, "error", err)
 		return fmt.Errorf("failed to create destination ROCHA_HOME: %w", err)
-	}
-
-	// Display warning and ask for confirmation
-	if !s.Force {
-		logging.Logger.Debug("Prompting user for confirmation", "sessions", s.Names)
-		fmt.Println("⚠ WARNING: This operation will:")
-		fmt.Println("  • Kill tmux sessions for the selected sessions")
-		fmt.Println("  • Move worktrees to the new ROCHA_HOME location")
-		fmt.Printf("  • Move %d session(s) from %s to %s\n", len(s.Names), sourceHome, destHome)
-		fmt.Println("\nSessions to move:")
-		for _, name := range s.Names {
-			fmt.Printf("  • %s\n", name)
-		}
-		fmt.Print("\nContinue? (y/N): ")
-		var response string
-		fmt.Scanln(&response)
-		if response != "y" && response != "Y" {
-			logging.Logger.Info("User cancelled session move", "sessions", s.Names)
-			fmt.Println("Cancelled")
-			return nil
-		}
-		logging.Logger.Info("User confirmed session move", "sessions", s.Names)
 	}
 
 	// Open both databases
@@ -409,69 +395,69 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	// Create tmux client
 	tmuxClient := tmux.NewClient()
 
-	// PHASE 1: COPY
-	logging.Logger.Info("Starting Phase 1: Copy", "sessions", s.Names)
-	fmt.Println("\n📦 Phase 1: Copying sessions to destination...")
-	copiedSessions := []string{}
-	for _, name := range s.Names {
-		logging.Logger.Debug("Copying session", "session", name)
-		fmt.Printf("Copying session '%s'...\n", name)
-		err := operations.MoveSession(ctx, name, sourceStore, destStore, sourceHome, destHome, tmuxClient)
+	// Get session counts per repo for confirmation message
+	repoSessionCounts := make(map[string]int)
+	for _, repo := range s.Repos {
+		sessions, err := sourceStore.ListSessions(ctx, false)
 		if err != nil {
-			logging.Logger.Error("Failed to copy session", "session", name, "error", err)
-			return fmt.Errorf("failed to copy session %s: %w", name, err)
+			logging.Logger.Error("Failed to list sessions", "error", err)
+			return fmt.Errorf("failed to list sessions: %w", err)
 		}
-		copiedSessions = append(copiedSessions, name)
-		fmt.Printf("✓ Copied '%s'\n", name)
+		count := 0
+		for _, sess := range sessions {
+			if sess.RepoInfo == repo {
+				count++
+			}
+		}
+		repoSessionCounts[repo] = count
 	}
-	logging.Logger.Info("Phase 1 complete", "copiedCount", len(copiedSessions))
 
-	// PHASE 2: VERIFY
-	logging.Logger.Info("Starting Phase 2: Verify", "sessions", copiedSessions)
-	fmt.Println("\n✅ Phase 2: Verifying sessions at destination...")
-	for _, name := range copiedSessions {
-		logging.Logger.Debug("Verifying session", "session", name)
-		fmt.Printf("Verifying session '%s'...\n", name)
-		err := operations.VerifySession(ctx, name, destStore)
-		if err != nil {
-			logging.Logger.Error("Verification failed", "session", name, "error", err)
-			return fmt.Errorf("verification failed: %w", err)
+	// Display warning and ask for confirmation
+	if !s.Force {
+		logging.Logger.Debug("Prompting user for confirmation", "repos", s.Repos)
+		fmt.Println("⚠ WARNING: This operation will:")
+		fmt.Println("  • Kill tmux sessions for all sessions in the specified repositories")
+		fmt.Println("  • Move .main directories and all worktrees to the new ROCHA_HOME location")
+		fmt.Println("  • Repair git worktree references")
+		fmt.Printf("  • Move sessions from %s to %s\n", sourceHome, destHome)
+		fmt.Println("\nRepositories to move:")
+		totalSessions := 0
+		for _, repo := range s.Repos {
+			count := repoSessionCounts[repo]
+			totalSessions += count
+			fmt.Printf("  • %s (%d session(s))\n", repo, count)
 		}
-		fmt.Printf("✓ Verified '%s'\n", name)
+		fmt.Printf("\nTotal: %d session(s) across %d repositor(y/ies)\n", totalSessions, len(s.Repos))
+		fmt.Print("\nContinue? (y/N): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			logging.Logger.Info("User cancelled session move", "repos", s.Repos)
+			fmt.Println("Cancelled")
+			return nil
+		}
+		logging.Logger.Info("User confirmed session move", "repos", s.Repos)
 	}
-	logging.Logger.Info("Phase 2 complete - all sessions verified")
 
-	// PHASE 3: DELETE
-	logging.Logger.Info("Starting Phase 3: Delete from source", "sessions", copiedSessions)
-	fmt.Println("\n🗑️  Phase 3: Deleting sessions from source...")
-	successCount := 0
-	for _, name := range copiedSessions {
-		logging.Logger.Debug("Deleting session from source", "session", name)
-		fmt.Printf("Deleting session '%s' from source...\n", name)
-		// Note: tmux was already killed in MoveSession, only need to clean up worktree
-		err := operations.DeleteSession(ctx, name, sourceStore, operations.DeleteSessionOptions{
-			KillTmux:       false, // Already killed in Phase 1
-			RemoveWorktree: true,  // Clean up source worktree
-		}, tmuxClient)
+	// Move each repository
+	allMovedSessions := []string{}
+	for _, repo := range s.Repos {
+		fmt.Printf("\n📦 Moving repository: %s\n", repo)
+		logging.Logger.Info("Starting repository move", "repo", repo)
+
+		movedSessions, err := operations.MoveRepository(ctx, repo, sourceStore, destStore, sourceHome, destHome, tmuxClient)
 		if err != nil {
-			logging.Logger.Warn("Failed to delete session from source", "session", name, "error", err)
-			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", name, err)
-			continue
+			logging.Logger.Error("Failed to move repository", "repo", repo, "error", err)
+			return fmt.Errorf("failed to move repository %s: %w", repo, err)
 		}
-		successCount++
-		fmt.Printf("✓ Deleted '%s' from source\n", name)
+
+		allMovedSessions = append(allMovedSessions, movedSessions...)
+		fmt.Printf("✓ Moved repository '%s' (%d session(s))\n", repo, len(movedSessions))
 	}
-	logging.Logger.Info("Phase 3 complete", "successCount", successCount, "totalCount", len(copiedSessions))
 
 	// Report results
-	fmt.Printf("\n✓ Successfully moved %d session(s)\n", successCount)
-	if successCount < len(copiedSessions) {
-		failedCount := len(copiedSessions) - successCount
-		logging.Logger.Warn("Some sessions may need manual cleanup", "failedCount", failedCount)
-		fmt.Printf("⚠ %d session(s) may need manual cleanup from source\n", failedCount)
-	}
-
-	logging.Logger.Info("Sessions move command completed successfully", "movedCount", successCount)
+	fmt.Printf("\n✓ Successfully moved %d session(s) across %d repositor(y/ies)\n", len(allMovedSessions), len(s.Repos))
+	logging.Logger.Info("Sessions move command completed successfully", "movedCount", len(allMovedSessions), "repoCount", len(s.Repos))
 	return nil
 }
 
