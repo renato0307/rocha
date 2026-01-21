@@ -12,6 +12,7 @@ import (
 	"rocha/operations"
 	"rocha/paths"
 	"rocha/storage"
+	"rocha/tmux"
 
 	"text/tabwriter"
 	"time"
@@ -312,12 +313,15 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 		logging.Logger.Info("User confirmed session deletion", "session", s.Name)
 	}
 
+	// Create tmux client
+	tmuxClient := tmux.NewClient()
+
 	// Delete session using operations package
 	logging.Logger.Info("Deleting session", "session", s.Name)
 	err = operations.DeleteSession(ctx, s.Name, store, operations.DeleteSessionOptions{
 		KillTmux:       killTmux,
 		RemoveWorktree: removeWorktree,
-	})
+	}, tmuxClient)
 	if err != nil {
 		logging.Logger.Error("Failed to delete session", "session", s.Name, "error", err)
 		return fmt.Errorf("failed to delete session: %w", err)
@@ -402,6 +406,9 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	}
 	defer destStore.Close()
 
+	// Create tmux client
+	tmuxClient := tmux.NewClient()
+
 	// PHASE 1: COPY
 	logging.Logger.Info("Starting Phase 1: Copy", "sessions", s.Names)
 	fmt.Println("\n📦 Phase 1: Copying sessions to destination...")
@@ -409,7 +416,7 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	for _, name := range s.Names {
 		logging.Logger.Debug("Copying session", "session", name)
 		fmt.Printf("Copying session '%s'...\n", name)
-		err := operations.MoveSession(ctx, name, sourceStore, destStore, sourceHome, destHome)
+		err := operations.MoveSession(ctx, name, sourceStore, destStore, sourceHome, destHome, tmuxClient)
 		if err != nil {
 			logging.Logger.Error("Failed to copy session", "session", name, "error", err)
 			return fmt.Errorf("failed to copy session %s: %w", name, err)
@@ -445,7 +452,7 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 		err := operations.DeleteSession(ctx, name, sourceStore, operations.DeleteSessionOptions{
 			KillTmux:       false, // Already killed in Phase 1
 			RemoveWorktree: true,  // Clean up source worktree
-		})
+		}, tmuxClient)
 		if err != nil {
 			logging.Logger.Warn("Failed to delete session from source", "session", name, "error", err)
 			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", name, err)
@@ -519,6 +526,9 @@ func (s *SessionSetCmd) Run(cli *CLI) error {
 	defer store.Close()
 	logging.Logger.Debug("Database opened successfully")
 
+	// Create tmux client
+	tmuxClient := tmux.NewClient()
+
 	// Get sessions to update
 	var sessionNames []string
 	if s.All {
@@ -575,7 +585,7 @@ func (s *SessionSetCmd) Run(cli *CLI) error {
 
 			// Kill main session
 			logging.Logger.Debug("Killing main tmux session", "session", name)
-			if err := operations.KillTmuxSession(name); err != nil {
+			if err := tmuxClient.Kill(name); err != nil {
 				logging.Logger.Warn("Failed to kill tmux session", "session", name, "error", err)
 				fmt.Printf("⚠ Warning: Failed to kill tmux session '%s': %v\n", name, err)
 			} else {
@@ -586,7 +596,7 @@ func (s *SessionSetCmd) Run(cli *CLI) error {
 			// Kill shell session if exists
 			shellName := name + "-shell"
 			logging.Logger.Debug("Attempting to kill shell session", "session", shellName)
-			if err := operations.KillTmuxSession(shellName); err != nil {
+			if err := tmuxClient.Kill(shellName); err != nil {
 				// Shell session might not exist, just log debug
 				logging.Logger.Debug("Shell session not found or already killed", "session", shellName)
 			} else {
@@ -616,7 +626,7 @@ func (s *SessionSetCmd) Run(cli *CLI) error {
 			}
 		}
 
-		runningSessions, err := operations.GetRunningTmuxSessions(successfulSessions)
+		runningSessions, err := operations.GetRunningTmuxSessions(successfulSessions, tmuxClient)
 		if err != nil {
 			logging.Logger.Warn("Failed to check running tmux sessions", "error", err)
 		} else if len(runningSessions) > 0 {

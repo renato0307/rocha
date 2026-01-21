@@ -3,12 +3,11 @@ package operations
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"rocha/logging"
 	"rocha/paths"
 	"rocha/storage"
+	"rocha/tmux"
 )
 
 // SetSessionClaudeDir updates ClaudeDir for a single session
@@ -35,24 +34,21 @@ func SetSessionClaudeDir(
 }
 
 // GetRunningTmuxSessions returns list of tmux sessions that are currently running
-func GetRunningTmuxSessions(sessionNames []string) ([]string, error) {
+func GetRunningTmuxSessions(sessionNames []string, tmuxClient tmux.SessionManager) ([]string, error) {
 	logging.Logger.Debug("Checking for running tmux sessions", "sessions", sessionNames)
 
 	// Get all running tmux sessions
-	cmd := exec.Command("tmux", "ls", "-F", "#{session_name}")
-	output, err := cmd.Output()
+	sessions, err := tmuxClient.List()
 	if err != nil {
-		// tmux ls returns error if no sessions exist
+		// List returns error if no sessions exist
 		logging.Logger.Debug("No tmux sessions running or tmux error", "error", err)
 		return []string{}, nil
 	}
 
-	// Parse output into map for quick lookup
+	// Build map for quick lookup
 	runningSessions := make(map[string]bool)
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		if line != "" {
-			runningSessions[line] = true
-		}
+	for _, session := range sessions {
+		runningSessions[session.Name] = true
 	}
 
 	// Filter requested sessions that are running
