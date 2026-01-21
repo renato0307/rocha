@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+
 	"rocha/git"
+	"rocha/logging"
+	"rocha/operations"
 	"rocha/paths"
 	"rocha/storage"
+
 	"text/tabwriter"
 	"time"
 
@@ -16,11 +21,12 @@ import (
 
 // SessionsCmd manages sessions
 type SessionsCmd struct {
-	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
-	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
-	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 	Add     SessionsAddCmd     `cmd:"add" help:"Add a new session"`
+	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
 	Del     SessionsDelCmd     `cmd:"del" help:"Delete a session"`
+	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
+	Move    SessionsMoveCmd    `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
+	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 }
 
 // SessionsArchiveCmd archives or unarchives a session
@@ -248,39 +254,210 @@ func (s *SessionsAddCmd) Run(cli *CLI) error {
 
 // SessionsDelCmd deletes a session
 type SessionsDelCmd struct {
-	Name  string `arg:"" help:"Name of the session to delete"`
-	Force bool   `help:"Force deletion without confirmation" short:"f"`
+	Force              bool   `help:"Force deletion without confirmation" short:"f"`
+	Name               string `arg:"" help:"Name of the session to delete"`
+	SkipKillTmux       bool   `help:"Skip killing tmux session" short:"k"`
+	SkipRemoveWorktree bool   `help:"Skip removing associated git worktree" short:"w"`
 }
 
 // Run executes the del command
 func (s *SessionsDelCmd) Run(cli *CLI) error {
+	// Calculate actual actions (inverted from skip flags)
+	killTmux := !s.SkipKillTmux
+	removeWorktree := !s.SkipRemoveWorktree
+
+	logging.Logger.Info("Executing sessions del command", "session", s.Name, "killTmux", killTmux, "removeWorktree", removeWorktree, "force", s.Force)
+
+	ctx := context.Background()
 	store, err := storage.NewStore(paths.GetDBPath())
 	if err != nil {
+		logging.Logger.Error("Failed to open database", "error", err)
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer store.Close()
 
 	// Check if session exists
-	_, err = store.GetSession(context.Background(), s.Name)
+	logging.Logger.Debug("Checking if session exists", "session", s.Name)
+	sessInfo, err := store.GetSession(ctx, s.Name)
 	if err != nil {
+		logging.Logger.Error("Session not found", "session", s.Name, "error", err)
 		return fmt.Errorf("session not found: %w", err)
 	}
+	logging.Logger.Debug("Session found", "session", s.Name, "worktreePath", sessInfo.WorktreePath)
 
-	// Ask for confirmation unless --force is used
+	// Display warning and ask for confirmation unless --force is used
 	if !s.Force {
-		fmt.Printf("Are you sure you want to delete session '%s'? (y/N): ", s.Name)
+		logging.Logger.Debug("Prompting user for confirmation", "session", s.Name)
+		fmt.Printf("⚠ WARNING: This will delete session '%s'\n", s.Name)
+		if killTmux {
+			fmt.Println("  • Kill tmux session")
+		}
+		if removeWorktree && sessInfo.WorktreePath != "" {
+			fmt.Printf("  • Remove worktree at '%s'\n", sessInfo.WorktreePath)
+		}
+		fmt.Print("\nContinue? (y/N): ")
 		var response string
 		fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
+			logging.Logger.Info("User cancelled session deletion", "session", s.Name)
 			fmt.Println("Cancelled")
 			return nil
 		}
+		logging.Logger.Info("User confirmed session deletion", "session", s.Name)
 	}
 
-	if err := store.DeleteSession(context.Background(), s.Name); err != nil {
+	// Delete session using operations package
+	logging.Logger.Info("Deleting session", "session", s.Name)
+	err = operations.DeleteSession(ctx, s.Name, store, operations.DeleteSessionOptions{
+		KillTmux:       killTmux,
+		RemoveWorktree: removeWorktree,
+	})
+	if err != nil {
+		logging.Logger.Error("Failed to delete session", "session", s.Name, "error", err)
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
 
+	logging.Logger.Info("Session deleted successfully via CLI", "session", s.Name)
 	fmt.Printf("✓ Session '%s' deleted successfully\n", s.Name)
+	return nil
+}
+
+// SessionsMoveCmd moves sessions between ROCHA_HOME directories
+type SessionsMoveCmd struct {
+	Force bool     `help:"Skip confirmation prompt" short:"f"`
+	From  string   `help:"Source ROCHA_HOME path" required:"true"`
+	Names []string `arg:"" help:"Names of sessions to move" required:"true"`
+	To    string   `help:"Destination ROCHA_HOME path" required:"true"`
+}
+
+// Run executes the move command
+func (s *SessionsMoveCmd) Run(cli *CLI) error {
+	logging.Logger.Info("Executing sessions move command", "sessions", s.Names, "from", s.From, "to", s.To, "force", s.Force)
+
+	ctx := context.Background()
+
+	// Expand paths
+	sourceHome := paths.ExpandPath(s.From)
+	destHome := paths.ExpandPath(s.To)
+	logging.Logger.Debug("Paths expanded", "sourceHome", sourceHome, "destHome", destHome)
+
+	// Validate source path exists
+	logging.Logger.Debug("Validating source path", "path", sourceHome)
+	if _, err := os.Stat(sourceHome); os.IsNotExist(err) {
+		logging.Logger.Error("Source ROCHA_HOME does not exist", "path", sourceHome)
+		return fmt.Errorf("source ROCHA_HOME does not exist: %s", sourceHome)
+	}
+
+	// Create destination path if it doesn't exist
+	logging.Logger.Debug("Creating destination directory if needed", "path", destHome)
+	if err := os.MkdirAll(destHome, 0755); err != nil {
+		logging.Logger.Error("Failed to create destination ROCHA_HOME", "path", destHome, "error", err)
+		return fmt.Errorf("failed to create destination ROCHA_HOME: %w", err)
+	}
+
+	// Display warning and ask for confirmation
+	if !s.Force {
+		logging.Logger.Debug("Prompting user for confirmation", "sessions", s.Names)
+		fmt.Println("⚠ WARNING: This operation will:")
+		fmt.Println("  • Kill tmux sessions for the selected sessions")
+		fmt.Println("  • Move worktrees to the new ROCHA_HOME location")
+		fmt.Printf("  • Move %d session(s) from %s to %s\n", len(s.Names), sourceHome, destHome)
+		fmt.Println("\nSessions to move:")
+		for _, name := range s.Names {
+			fmt.Printf("  • %s\n", name)
+		}
+		fmt.Print("\nContinue? (y/N): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			logging.Logger.Info("User cancelled session move", "sessions", s.Names)
+			fmt.Println("Cancelled")
+			return nil
+		}
+		logging.Logger.Info("User confirmed session move", "sessions", s.Names)
+	}
+
+	// Open both databases
+	sourceDBPath := filepath.Join(sourceHome, "state.db")
+	destDBPath := filepath.Join(destHome, "state.db")
+	logging.Logger.Debug("Opening databases", "source", sourceDBPath, "dest", destDBPath)
+
+	sourceStore, err := storage.NewStore(sourceDBPath)
+	if err != nil {
+		logging.Logger.Error("Failed to open source database", "path", sourceDBPath, "error", err)
+		return fmt.Errorf("failed to open source database: %w", err)
+	}
+	defer sourceStore.Close()
+
+	destStore, err := storage.NewStore(destDBPath)
+	if err != nil {
+		logging.Logger.Error("Failed to open destination database", "path", destDBPath, "error", err)
+		return fmt.Errorf("failed to open destination database: %w", err)
+	}
+	defer destStore.Close()
+
+	// PHASE 1: COPY
+	logging.Logger.Info("Starting Phase 1: Copy", "sessions", s.Names)
+	fmt.Println("\n📦 Phase 1: Copying sessions to destination...")
+	copiedSessions := []string{}
+	for _, name := range s.Names {
+		logging.Logger.Debug("Copying session", "session", name)
+		fmt.Printf("Copying session '%s'...\n", name)
+		err := operations.MoveSession(ctx, name, sourceStore, destStore, sourceHome, destHome)
+		if err != nil {
+			logging.Logger.Error("Failed to copy session", "session", name, "error", err)
+			return fmt.Errorf("failed to copy session %s: %w", name, err)
+		}
+		copiedSessions = append(copiedSessions, name)
+		fmt.Printf("✓ Copied '%s'\n", name)
+	}
+	logging.Logger.Info("Phase 1 complete", "copiedCount", len(copiedSessions))
+
+	// PHASE 2: VERIFY
+	logging.Logger.Info("Starting Phase 2: Verify", "sessions", copiedSessions)
+	fmt.Println("\n✅ Phase 2: Verifying sessions at destination...")
+	for _, name := range copiedSessions {
+		logging.Logger.Debug("Verifying session", "session", name)
+		fmt.Printf("Verifying session '%s'...\n", name)
+		err := operations.VerifySession(ctx, name, destStore)
+		if err != nil {
+			logging.Logger.Error("Verification failed", "session", name, "error", err)
+			return fmt.Errorf("verification failed: %w", err)
+		}
+		fmt.Printf("✓ Verified '%s'\n", name)
+	}
+	logging.Logger.Info("Phase 2 complete - all sessions verified")
+
+	// PHASE 3: DELETE
+	logging.Logger.Info("Starting Phase 3: Delete from source", "sessions", copiedSessions)
+	fmt.Println("\n🗑️  Phase 3: Deleting sessions from source...")
+	successCount := 0
+	for _, name := range copiedSessions {
+		logging.Logger.Debug("Deleting session from source", "session", name)
+		fmt.Printf("Deleting session '%s' from source...\n", name)
+		// Note: tmux was already killed in MoveSession, only need to clean up worktree
+		err := operations.DeleteSession(ctx, name, sourceStore, operations.DeleteSessionOptions{
+			KillTmux:       false, // Already killed in Phase 1
+			RemoveWorktree: true,  // Clean up source worktree
+		})
+		if err != nil {
+			logging.Logger.Warn("Failed to delete session from source", "session", name, "error", err)
+			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", name, err)
+			continue
+		}
+		successCount++
+		fmt.Printf("✓ Deleted '%s' from source\n", name)
+	}
+	logging.Logger.Info("Phase 3 complete", "successCount", successCount, "totalCount", len(copiedSessions))
+
+	// Report results
+	fmt.Printf("\n✓ Successfully moved %d session(s)\n", successCount)
+	if successCount < len(copiedSessions) {
+		failedCount := len(copiedSessions) - successCount
+		logging.Logger.Warn("Some sessions may need manual cleanup", "failedCount", failedCount)
+		fmt.Printf("⚠ %d session(s) may need manual cleanup from source\n", failedCount)
+	}
+
+	logging.Logger.Info("Sessions move command completed successfully", "movedCount", successCount)
 	return nil
 }

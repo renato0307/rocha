@@ -95,6 +95,11 @@ When doing code make sure you:
 - [ ] All errors returned as values
 - [ ] Small code copied, not imported
 - [ ] Syscalls use build tags
+
+### Logging & Errors
+- [ ] Always use rocha logging package
+- [ ] DO NOT use slog directly
+- [ ] Add logs to ensure that we can use --debug to trace execution flow and troubleshoot issues
 ```
 
 ### Phase 2: Implementation → Write Code
