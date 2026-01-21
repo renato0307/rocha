@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"rocha/editor"
 	"rocha/git"
 	"rocha/logging"
@@ -405,7 +406,20 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestNewSession {
 		m.sessionList.RequestNewSession = false
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, "")
+
+		// Pre-fill repo field if starting in a git folder
+		defaultRepoSource := ""
+		cwd, _ := os.Getwd()
+		if isGit, repoPath := git.IsGitRepo(cwd); isGit {
+			if remoteURL := git.GetRemoteURL(repoPath); remoteURL != "" {
+				defaultRepoSource = remoteURL
+				logging.Logger.Info("Pre-filling repository field with remote URL", "remote_url", remoteURL)
+			} else {
+				logging.Logger.Warn("Git repository has no remote configured, leaving repo field empty")
+			}
+		}
+
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, defaultRepoSource)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = stateCreatingSession
 		return m, m.sessionForm.Init()

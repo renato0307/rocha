@@ -10,8 +10,15 @@ import (
 	"rocha/storage"
 )
 
-// DefaultClaudeDir returns the default Claude directory (~/.claude)
+// DefaultClaudeDir returns the default Claude directory
+// Checks CLAUDE_CONFIG_DIR environment variable first, then falls back to ~/.claude
 func DefaultClaudeDir() string {
+	// Check environment variable first
+	if envDir := os.Getenv("CLAUDE_CONFIG_DIR"); envDir != "" {
+		return paths.ExpandPath(envDir)
+	}
+
+	// Fall back to ~/.claude
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		logging.Logger.Warn("Failed to get home directory for ClaudeDir", "error", err)
