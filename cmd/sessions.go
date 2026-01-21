@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+
 	"rocha/git"
+	"rocha/operations"
 	"rocha/paths"
 	"rocha/storage"
+
 	"text/tabwriter"
 	"time"
 
@@ -16,11 +20,12 @@ import (
 
 // SessionsCmd manages sessions
 type SessionsCmd struct {
-	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
-	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
-	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 	Add     SessionsAddCmd     `cmd:"add" help:"Add a new session"`
+	Archive SessionsArchiveCmd `cmd:"archive" help:"Archive or unarchive a session"`
 	Del     SessionsDelCmd     `cmd:"del" help:"Delete a session"`
+	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
+	Mv      SessionsMvCmd      `cmd:"mv" help:"Move sessions between ROCHA_HOME directories"`
+	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 }
 
 // SessionsArchiveCmd archives or unarchives a session
@@ -282,5 +287,113 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 	}
 
 	fmt.Printf("✓ Session '%s' deleted successfully\n", s.Name)
+	return nil
+}
+
+// SessionsMvCmd moves sessions between ROCHA_HOME directories
+type SessionsMvCmd struct {
+	Force bool     `help:"Skip confirmation prompt" short:"f"`
+	From  string   `help:"Source ROCHA_HOME path" required:"true"`
+	Names []string `arg:"" help:"Names of sessions to move" required:"true"`
+	To    string   `help:"Destination ROCHA_HOME path" required:"true"`
+}
+
+// Run executes the move command
+func (s *SessionsMvCmd) Run(cli *CLI) error {
+	ctx := context.Background()
+
+	// Expand paths
+	sourceHome := paths.ExpandPath(s.From)
+	destHome := paths.ExpandPath(s.To)
+
+	// Validate source path exists
+	if _, err := os.Stat(sourceHome); os.IsNotExist(err) {
+		return fmt.Errorf("source ROCHA_HOME does not exist: %s", sourceHome)
+	}
+
+	// Create destination path if it doesn't exist
+	if err := os.MkdirAll(destHome, 0755); err != nil {
+		return fmt.Errorf("failed to create destination ROCHA_HOME: %w", err)
+	}
+
+	// Display warning and ask for confirmation
+	if !s.Force {
+		fmt.Println("⚠ WARNING: This operation will:")
+		fmt.Println("  • Kill tmux sessions for the selected sessions")
+		fmt.Println("  • Move worktrees to the new ROCHA_HOME location")
+		fmt.Printf("  • Move %d session(s) from %s to %s\n", len(s.Names), sourceHome, destHome)
+		fmt.Println("\nSessions to move:")
+		for _, name := range s.Names {
+			fmt.Printf("  • %s\n", name)
+		}
+		fmt.Print("\nContinue? (y/N): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			fmt.Println("Cancelled")
+			return nil
+		}
+	}
+
+	// Open both databases
+	sourceDBPath := filepath.Join(sourceHome, "state.db")
+	destDBPath := filepath.Join(destHome, "state.db")
+
+	sourceStore, err := storage.NewStore(sourceDBPath)
+	if err != nil {
+		return fmt.Errorf("failed to open source database: %w", err)
+	}
+	defer sourceStore.Close()
+
+	destStore, err := storage.NewStore(destDBPath)
+	if err != nil {
+		return fmt.Errorf("failed to open destination database: %w", err)
+	}
+	defer destStore.Close()
+
+	// PHASE 1: COPY
+	fmt.Println("\n📦 Phase 1: Copying sessions to destination...")
+	copiedSessions := []string{}
+	for _, name := range s.Names {
+		fmt.Printf("Copying session '%s'...\n", name)
+		err := operations.MoveSession(ctx, name, sourceStore, destStore, sourceHome, destHome)
+		if err != nil {
+			return fmt.Errorf("failed to copy session %s: %w", name, err)
+		}
+		copiedSessions = append(copiedSessions, name)
+		fmt.Printf("✓ Copied '%s'\n", name)
+	}
+
+	// PHASE 2: VERIFY
+	fmt.Println("\n✅ Phase 2: Verifying sessions at destination...")
+	for _, name := range copiedSessions {
+		fmt.Printf("Verifying session '%s'...\n", name)
+		err := operations.VerifySession(ctx, name, destStore)
+		if err != nil {
+			return fmt.Errorf("verification failed: %w", err)
+		}
+		fmt.Printf("✓ Verified '%s'\n", name)
+	}
+
+	// PHASE 3: DELETE
+	fmt.Println("\n🗑️  Phase 3: Deleting sessions from source...")
+	successCount := 0
+	for _, name := range copiedSessions {
+		fmt.Printf("Deleting session '%s' from source...\n", name)
+		err := operations.DeleteSession(ctx, name, sourceStore)
+		if err != nil {
+			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", name, err)
+			continue
+		}
+		successCount++
+		fmt.Printf("✓ Deleted '%s' from source\n", name)
+	}
+
+	// Report results
+	fmt.Printf("\n✓ Successfully moved %d session(s)\n", successCount)
+	if successCount < len(copiedSessions) {
+		fmt.Printf("⚠ %d session(s) may need manual cleanup from source\n", len(copiedSessions)-successCount)
+	}
+
 	return nil
 }
