@@ -335,23 +335,21 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 
 // SessionsMoveCmd moves sessions between ROCHA_HOME directories
 type SessionsMoveCmd struct {
-	Force bool     `help:"Skip confirmation prompt" short:"f"`
-	From  string   `help:"Source ROCHA_HOME path" required:"true"`
-	Repos []string `help:"Repository identifiers (owner/repo format)" short:"r" required:"true"`
-	To    string   `help:"Destination ROCHA_HOME path" required:"true"`
+	Force bool   `help:"Skip confirmation prompt" short:"f"`
+	From  string `help:"Source ROCHA_HOME path" required:"true"`
+	Repo  string `help:"Repository identifier (owner/repo format)" short:"r" required:"true"`
+	To    string `help:"Destination ROCHA_HOME path" required:"true"`
 }
 
 // Run executes the move command
 func (s *SessionsMoveCmd) Run(cli *CLI) error {
-	logging.Logger.Info("Executing sessions move command", "repos", s.Repos, "from", s.From, "to", s.To, "force", s.Force)
+	logging.Logger.Info("Executing sessions move command", "repo", s.Repo, "from", s.From, "to", s.To, "force", s.Force)
 
 	ctx := context.Background()
 
 	// Validate repo format
-	for _, repo := range s.Repos {
-		if !strings.Contains(repo, "/") {
-			return fmt.Errorf("invalid repo format '%s': must be in owner/repo format", repo)
-		}
+	if !strings.Contains(s.Repo, "/") {
+		return fmt.Errorf("invalid repo format '%s': must be in owner/repo format", s.Repo)
 	}
 
 	// Expand paths
@@ -395,69 +393,52 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	// Create tmux client
 	tmuxClient := tmux.NewClient()
 
-	// Get session counts per repo for confirmation message
-	repoSessionCounts := make(map[string]int)
-	for _, repo := range s.Repos {
-		sessions, err := sourceStore.ListSessions(ctx, false)
-		if err != nil {
-			logging.Logger.Error("Failed to list sessions", "error", err)
-			return fmt.Errorf("failed to list sessions: %w", err)
+	// Get session count for confirmation message
+	sessions, err := sourceStore.ListSessions(ctx, false)
+	if err != nil {
+		logging.Logger.Error("Failed to list sessions", "error", err)
+		return fmt.Errorf("failed to list sessions: %w", err)
+	}
+	sessionCount := 0
+	for _, sess := range sessions {
+		if sess.RepoInfo == s.Repo {
+			sessionCount++
 		}
-		count := 0
-		for _, sess := range sessions {
-			if sess.RepoInfo == repo {
-				count++
-			}
-		}
-		repoSessionCounts[repo] = count
 	}
 
 	// Display warning and ask for confirmation
 	if !s.Force {
-		logging.Logger.Debug("Prompting user for confirmation", "repos", s.Repos)
+		logging.Logger.Debug("Prompting user for confirmation", "repo", s.Repo)
 		fmt.Println("⚠ WARNING: This operation will:")
-		fmt.Println("  • Kill tmux sessions for all sessions in the specified repositories")
-		fmt.Println("  • Move .main directories and all worktrees to the new ROCHA_HOME location")
+		fmt.Println("  • Kill tmux sessions for all sessions in the specified repository")
+		fmt.Println("  • Move .main directory and all worktrees to the new ROCHA_HOME location")
 		fmt.Println("  • Repair git worktree references")
 		fmt.Printf("  • Move sessions from %s to %s\n", sourceHome, destHome)
-		fmt.Println("\nRepositories to move:")
-		totalSessions := 0
-		for _, repo := range s.Repos {
-			count := repoSessionCounts[repo]
-			totalSessions += count
-			fmt.Printf("  • %s (%d session(s))\n", repo, count)
-		}
-		fmt.Printf("\nTotal: %d session(s) across %d repositor(y/ies)\n", totalSessions, len(s.Repos))
+		fmt.Printf("\nRepository to move: %s (%d session(s))\n", s.Repo, sessionCount)
 		fmt.Print("\nContinue? (y/N): ")
 		var response string
 		fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
-			logging.Logger.Info("User cancelled session move", "repos", s.Repos)
+			logging.Logger.Info("User cancelled session move", "repo", s.Repo)
 			fmt.Println("Cancelled")
 			return nil
 		}
-		logging.Logger.Info("User confirmed session move", "repos", s.Repos)
+		logging.Logger.Info("User confirmed session move", "repo", s.Repo)
 	}
 
-	// Move each repository
-	allMovedSessions := []string{}
-	for _, repo := range s.Repos {
-		fmt.Printf("\n📦 Moving repository: %s\n", repo)
-		logging.Logger.Info("Starting repository move", "repo", repo)
+	// Move the repository
+	fmt.Printf("\n📦 Moving repository: %s\n", s.Repo)
+	logging.Logger.Info("Starting repository move", "repo", s.Repo)
 
-		movedSessions, err := operations.MoveRepository(ctx, repo, sourceStore, destStore, sourceHome, destHome, tmuxClient)
-		if err != nil {
-			logging.Logger.Error("Failed to move repository", "repo", repo, "error", err)
-			return fmt.Errorf("failed to move repository %s: %w", repo, err)
-		}
-
-		allMovedSessions = append(allMovedSessions, movedSessions...)
-		fmt.Printf("✓ Moved repository '%s' (%d session(s))\n", repo, len(movedSessions))
+	movedSessions, err := operations.MoveRepository(ctx, s.Repo, sourceStore, destStore, sourceHome, destHome, tmuxClient)
+	if err != nil {
+		logging.Logger.Error("Failed to move repository", "repo", s.Repo, "error", err)
+		return fmt.Errorf("failed to move repository %s: %w", s.Repo, err)
 	}
 
 	// Report results
-	fmt.Printf("\n✓ Successfully moved %d session(s) across %d repositor(y/ies)\n", len(allMovedSessions), len(s.Repos))
-	logging.Logger.Info("Sessions move command completed successfully", "movedCount", len(allMovedSessions), "repoCount", len(s.Repos))
+	fmt.Printf("✓ Moved repository '%s' (%d session(s))\n", s.Repo, len(movedSessions))
+	logging.Logger.Info("Sessions move command completed successfully", "movedCount", len(movedSessions), "repo", s.Repo)
 	return nil
 }
 

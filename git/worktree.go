@@ -241,6 +241,9 @@ func sanitizePathComponent(component string) string {
 		return ""
 	}
 
+	// Convert to lowercase for consistent directory names
+	component = strings.ToLower(component)
+
 	// Remove control characters and problematic filesystem chars
 	var builder strings.Builder
 	for _, r := range component {

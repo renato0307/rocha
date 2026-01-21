@@ -63,7 +63,6 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 	sf := &SessionForm{
 		result: SessionFormResult{
 			AllowDangerouslySkipPermissions: allowDangerouslySkipPermissionsDefault,
-			CreateWorktree:                  true, // Default to true
 			RepoSource:                      defaultRepoSource,
 		},
 		sessionManager:     sessionManager,
@@ -91,38 +90,25 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 	logging.Logger.Debug("Creating session form", "is_git_repo", isGit, "cwd", cwd)
 
 	// Build form fields - all in one group
-	var sessionNameField *huh.Input
-	if isGit {
-		// For git repos, show suggested branch name in session name description
-		sessionNameField = huh.NewInput().
-			Title("Session name").
-			Value(&sf.result.SessionName).
-			DescriptionFunc(func() string {
-				if sf.result.SessionName != "" {
-					if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
-						return fmt.Sprintf("Suggested branch name: %s", sanitized)
-					}
+	// Always show suggested branch name for consistency
+	// Users can provide a repo URL even when not in a git folder
+	sessionNameField := huh.NewInput().
+		Title("Session name").
+		Value(&sf.result.SessionName).
+		DescriptionFunc(func() string {
+			if sf.result.SessionName != "" {
+				if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
+					return fmt.Sprintf("Suggested branch name: %s", sanitized)
 				}
-				return ""
-			}, &sf.result.SessionName).
-			Validate(func(s string) error {
-				if s == "" {
-					return fmt.Errorf("session name required")
-				}
-				return nil
-			})
-	} else {
-		// For non-git repos, just show session name field
-		sessionNameField = huh.NewInput().
-			Title("Session name").
-			Value(&sf.result.SessionName).
-			Validate(func(s string) error {
-				if s == "" {
-					return fmt.Errorf("session name required")
-				}
-				return nil
-			})
-	}
+			}
+			return ""
+		}, &sf.result.SessionName).
+		Validate(func(s string) error {
+			if s == "" {
+				return fmt.Errorf("session name required")
+			}
+			return nil
+		})
 
 	fields := []huh.Field{
 		sessionNameField,
@@ -131,7 +117,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 			Title("Repository (optional)").
 			DescriptionFunc(func() string {
 				if sf.result.RepoSource == "" {
-					return "Git URL or local path. Leave empty for current directory."
+					return "Git remote URL. Leave empty for current directory."
 				}
 				// Try to parse and show detected branch
 				if repoSource, err := git.ParseRepoSource(sf.result.RepoSource); err == nil && repoSource.Branch != "" {
@@ -145,7 +131,7 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 				if s == "" {
 					return nil // Empty is OK, will use current directory
 				}
-				// Check if it's a URL or local path (strip branch fragment first)
+				// Only accept git URLs (strip branch fragment first for validation)
 				checkPath := s
 				if idx := strings.Index(s, "#"); idx >= 0 {
 					checkPath = s[:idx]
@@ -153,54 +139,33 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 				if git.IsGitURL(checkPath) {
 					return nil // Valid URL format
 				}
-				// Check if it's an existing directory
-				if strings.HasPrefix(checkPath, "~") {
-					homeDir, err := os.UserHomeDir()
-					if err != nil {
-						return fmt.Errorf("failed to expand home directory")
-					}
-					checkPath = filepath.Join(homeDir, checkPath[1:])
-				}
-				if _, err := os.Stat(checkPath); err != nil {
-					if os.IsNotExist(err) {
-						return fmt.Errorf("local path does not exist")
-					}
-					return fmt.Errorf("invalid path: %v", err)
-				}
-				return nil
+				return fmt.Errorf("must be a git URL (e.g., https://github.com/owner/repo or git@github.com:owner/repo)")
 			}),
 	}
 
-	// Only add worktree options if in a git repo OR if repo source is provided
-	if isGit || sf.result.RepoSource != "" {
-		fields = append(fields,
-			huh.NewConfirm().
-				Title("Create worktree?").
-				Description("Creates an isolated git worktree for this session").
-				Value(&sf.result.CreateWorktree).
-				Affirmative("Yes").
-				Negative("No"),
-			huh.NewInput().
-				Title("Override branch name").
-				Description("Leave empty to use suggested name above. Must match git naming rules.").
-				Value(&sf.result.BranchName).
-				Validate(func(s string) error {
-					if s == "" {
-						return nil // Empty is OK, will use suggested name
+	// Always show branch name override field for consistency
+	// Users can provide a repo URL even when not in a git folder
+	fields = append(fields,
+		huh.NewInput().
+			Title("Override branch name (optional)").
+			Description("Leave empty to use suggested name above. Must match git naming rules.").
+			Value(&sf.result.BranchName).
+			Validate(func(s string) error {
+				if s == "" {
+					return nil // Empty is OK, will use suggested name
+				}
+				// Validate user-provided name
+				if err := git.ValidateBranchName(s); err != nil {
+					// Show what it would become if sanitized
+					sanitized, sanitizeErr := git.SanitizeBranchName(s)
+					if sanitizeErr == nil {
+						return fmt.Errorf("invalid branch name: %v (suggestion: %s)", err, sanitized)
 					}
-					// Validate user-provided name
-					if err := git.ValidateBranchName(s); err != nil {
-						// Show what it would become if sanitized
-						sanitized, sanitizeErr := git.SanitizeBranchName(s)
-						if sanitizeErr == nil {
-							return fmt.Errorf("invalid branch name: %v (suggestion: %s)", err, sanitized)
-						}
-						return fmt.Errorf("invalid branch name: %v", err)
-					}
-					return nil
-				}),
-		)
-	}
+					return fmt.Errorf("invalid branch name: %v", err)
+				}
+				return nil
+			}),
+	)
 
 	// Add CLAUDE_CONFIG_DIR field
 	fields = append(fields,
@@ -311,8 +276,10 @@ func (sf *SessionForm) createSessionCmd() tea.Cmd {
 func (sf *SessionForm) createSession() error {
 	sessionName := sf.result.SessionName
 	branchName := sf.result.BranchName
-	createWorktree := sf.result.CreateWorktree
 	repoSource := sf.result.RepoSource
+
+	// Automatically create worktree if repo is provided, otherwise don't
+	createWorktree := repoSource != ""
 
 	logging.Logger.Info("Creating session",
 		"name", sessionName,

@@ -231,13 +231,41 @@ func moveMainDirectory(sourcePath, destPath string) error {
 }
 
 // isSameRepo checks if two URLs point to the same repository
+// Normalizes URLs for comparison (handles .git suffix, https vs ssh, etc.)
 func isSameRepo(url1, url2 string) bool {
 	normalize := func(url string) string {
 		// Remove .git suffix
 		url = strings.TrimSuffix(url, ".git")
 		url = strings.TrimSuffix(url, "/")
+
 		// Convert to lowercase for comparison
 		url = strings.ToLower(url)
+
+		// Normalize different URL formats to canonical form (host/owner/repo)
+		// Handle: https://github.com/owner/repo
+		if strings.HasPrefix(url, "https://") {
+			url = strings.TrimPrefix(url, "https://")
+		} else if strings.HasPrefix(url, "http://") {
+			url = strings.TrimPrefix(url, "http://")
+		}
+		// Handle: ssh://git@github.com/owner/repo
+		if strings.HasPrefix(url, "ssh://") {
+			url = strings.TrimPrefix(url, "ssh://")
+			// Remove user@ part
+			if idx := strings.Index(url, "@"); idx >= 0 {
+				url = url[idx+1:]
+			}
+		}
+		// Handle: git@github.com:owner/repo
+		if strings.Contains(url, "@") && strings.Contains(url, ":") {
+			// Format: git@host:path
+			parts := strings.SplitN(url, "@", 2)
+			if len(parts) == 2 {
+				// parts[1] is "host:path"
+				url = strings.Replace(parts[1], ":", "/", 1)
+			}
+		}
+
 		return url
 	}
 
