@@ -104,9 +104,24 @@ type Model struct {
 	worktreePath              string
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string) *Model {
+// ModelConfig holds configuration for creating a Model
+type ModelConfig struct {
+	DevMode            bool
+	Editor             string
+	ErrorClearDelay    time.Duration
+	ShowTimestamps     bool
+	StatusConfig       *StatusConfig
+	Store              *storage.Store
+	TimestampConfig    *TimestampColorConfig
+	TmuxClient         tmux.Client
+	TmuxStatusPosition string
+	WorktreePath       string
+}
+
+// NewModelFromConfig creates a Model from a ModelConfig
+func NewModelFromConfig(cfg ModelConfig) *Model {
 	// Load session state - this is the source of truth
-	sessionState, stateErr := store.Load(context.Background(), false)
+	sessionState, stateErr := cfg.Store.Load(context.Background(), false)
 	var errMsg error
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
@@ -116,7 +131,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 
 	// Convert showTimestamps flag to TimestampMode
 	var initialMode TimestampMode
-	if showTimestamps {
+	if cfg.ShowTimestamps {
 		initialMode = TimestampRelative
 	} else {
 		initialMode = TimestampHidden
@@ -126,25 +141,40 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string,
 	keys := NewKeyMap()
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, worktreePath, tmuxStatusPosition)
+	sessionList := NewSessionList(cfg.TmuxClient, cfg.Store, cfg.Editor, cfg.StatusConfig, cfg.TimestampConfig, cfg.DevMode, initialMode, keys, cfg.WorktreePath, cfg.TmuxStatusPosition)
 
 	return &Model{
-		devMode:            devMode,
-		editor:             editor,
+		devMode:            cfg.DevMode,
+		editor:             cfg.Editor,
 		err:                errMsg,
-		errorClearDelay:    errorClearDelay,
+		errorClearDelay:    cfg.ErrorClearDelay,
 		keys:               keys,
 		sessionList:        sessionList,
 		sessionState:       sessionState,
 		state:              stateList,
-		statusConfig:       statusConfig,
-		store:              store,
-		timestampConfig:    timestampConfig,
+		statusConfig:       cfg.StatusConfig,
+		store:              cfg.Store,
+		timestampConfig:    cfg.TimestampConfig,
 		timestampMode:      initialMode,
-		tmuxClient:         tmuxClient,
-		tmuxStatusPosition: tmuxStatusPosition,
-		worktreePath:       worktreePath,
+		tmuxClient:         cfg.TmuxClient,
+		tmuxStatusPosition: cfg.TmuxStatusPosition,
+		worktreePath:       cfg.WorktreePath,
 	}
+}
+
+func NewModel(tmuxClient tmux.Client, store *storage.Store, worktreePath string, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string) *Model {
+	return NewModelFromConfig(ModelConfig{
+		DevMode:            devMode,
+		Editor:             editor,
+		ErrorClearDelay:    errorClearDelay,
+		ShowTimestamps:     showTimestamps,
+		StatusConfig:       statusConfig,
+		Store:              store,
+		TimestampConfig:    timestampConfig,
+		TmuxClient:         tmuxClient,
+		TmuxStatusPosition: tmuxStatusPosition,
+		WorktreePath:       worktreePath,
+	})
 }
 
 func (m *Model) Init() tea.Cmd {

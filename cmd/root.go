@@ -30,6 +30,7 @@ type CLI struct {
 	DBPath       string           `help:"Path to SQLite database" type:"path" default:"~/.rocha/state.db" env:"ROCHA_DB_PATH"`
 
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
+	Server      ServerCmd      `cmd:"server" help:"Start SSH server for remote access"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
 	Status      StatusCmd      `cmd:"status" help:"Show session state counts for tmux status bar" hidden:""`
 	Attach      AttachCmd      `cmd:"attach" help:"Attach to tmux session (creates if needed)"`
@@ -255,8 +256,23 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		r.TimestampWarningColor,
 		r.TimestampStaleColor,
 	)
+
+	// Create model using factory
+	cfg := ui.ModelConfig{
+		DevMode:            r.Dev,
+		Editor:             r.Editor,
+		ErrorClearDelay:    errorClearDelay,
+		ShowTimestamps:     r.ShowTimestamps,
+		StatusConfig:       statusConfig,
+		Store:              store,
+		TimestampConfig:    timestampConfig,
+		TmuxClient:         tmuxClient,
+		TmuxStatusPosition: r.TmuxStatusPosition,
+		WorktreePath:       r.WorktreePath,
+	}
+
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.WorktreePath, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition),
+		ui.NewModelFromConfig(cfg),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)
