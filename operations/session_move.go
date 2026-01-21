@@ -36,7 +36,7 @@ func MoveSession(
 
 	// Kill tmux session (graceful failure - session might not be running)
 	logging.Logger.Debug("Killing tmux session", "session", sessionName)
-	if err := killTmuxSession(sessionName); err != nil {
+	if err := KillTmuxSession(sessionName); err != nil {
 		// Log warning but continue - tmux session might not exist
 		logging.Logger.Warn("Failed to kill tmux session", "session", sessionName, "error", err)
 		fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sessionName, err)
@@ -46,7 +46,7 @@ func MoveSession(
 	if sessInfo.ShellSession != nil {
 		shellName := sessInfo.ShellSession.Name
 		logging.Logger.Debug("Killing shell session", "session", shellName)
-		if err := killTmuxSession(shellName); err != nil {
+		if err := KillTmuxSession(shellName); err != nil {
 			logging.Logger.Warn("Failed to kill shell session", "session", shellName, "error", err)
 			fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", shellName, err)
 		}
@@ -127,14 +127,14 @@ func DeleteSession(
 		// Kill shell session if exists
 		if sessInfo.ShellSession != nil {
 			logging.Logger.Debug("Killing shell session", "session", sessInfo.ShellSession.Name)
-			if err := killTmuxSession(sessInfo.ShellSession.Name); err != nil {
+			if err := KillTmuxSession(sessInfo.ShellSession.Name); err != nil {
 				logging.Logger.Warn("Failed to kill shell session", "session", sessInfo.ShellSession.Name, "error", err)
 				fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", sessInfo.ShellSession.Name, err)
 			}
 		}
 
 		// Kill main session
-		if err := killTmuxSession(sessionName); err != nil {
+		if err := KillTmuxSession(sessionName); err != nil {
 			logging.Logger.Warn("Failed to kill tmux session", "session", sessionName, "error", err)
 			fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sessionName, err)
 		}
@@ -162,8 +162,8 @@ func DeleteSession(
 	return nil
 }
 
-// killTmuxSession kills a tmux session
-func killTmuxSession(sessionName string) error {
+// KillTmuxSession kills a tmux session
+func KillTmuxSession(sessionName string) error {
 	logging.Logger.Debug("Killing tmux session", "session", sessionName)
 	cmd := exec.Command("tmux", "kill-session", "-t", sessionName)
 	if err := cmd.Run(); err != nil {

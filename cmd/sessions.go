@@ -26,6 +26,7 @@ type SessionsCmd struct {
 	Del     SessionsDelCmd     `cmd:"del" help:"Delete a session"`
 	List    SessionsListCmd    `cmd:"list" help:"List all sessions" default:"1"`
 	Move    SessionsMoveCmd    `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
+	Set     SessionSetCmd      `cmd:"set" help:"Set session configuration"`
 	View    SessionsViewCmd    `cmd:"view" help:"View a specific session"`
 }
 
@@ -194,6 +195,11 @@ func (s *SessionsViewCmd) Run(cli *CLI) error {
 	fmt.Printf("Repo Info: %s\n", session.RepoInfo)
 	fmt.Printf("Branch Name: %s\n", session.BranchName)
 	fmt.Printf("Worktree Path: %s\n", session.WorktreePath)
+	if session.ClaudeDir != "" {
+		fmt.Printf("Claude Dir: %s\n", session.ClaudeDir)
+	} else {
+		fmt.Printf("Claude Dir: <default>\n")
+	}
 
 	if session.ShellSession != nil {
 		fmt.Printf("\nShell Session:\n")
@@ -459,5 +465,196 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	}
 
 	logging.Logger.Info("Sessions move command completed successfully", "movedCount", successCount)
+	return nil
+}
+
+// SessionSetCmd sets configuration for a session
+type SessionSetCmd struct {
+	Name     string `arg:"" optional:"" help:"Name of the session (omit when using --all)"`
+	All      bool   `help:"Apply to all sessions" short:"a"`
+	KillTmux bool   `help:"Kill tmux sessions to apply changes immediately" short:"k"`
+	Value    string `help:"Value to set (empty string to clear)" required:""`
+	Variable string `help:"Variable to set" short:"v" enum:"claudedir" required:""`
+}
+
+// AfterApply validates that either Name or All is provided, but not both
+func (s *SessionSetCmd) AfterApply() error {
+	hasName := s.Name != ""
+	hasAll := s.All
+
+	// XOR validation: must have exactly one of Name or All
+	if hasName && hasAll {
+		return fmt.Errorf("cannot specify both <name> and --all")
+	}
+	if !hasName && !hasAll {
+		return fmt.Errorf("must specify either <name> or --all")
+	}
+
+	return nil
+}
+
+// Run executes the set command
+func (s *SessionSetCmd) Run(cli *CLI) error {
+	ctx := context.Background()
+
+	logging.Logger.Info("Executing session set command",
+		"name", s.Name,
+		"variable", s.Variable,
+		"value", s.Value,
+		"all", s.All,
+		"killTmux", s.KillTmux)
+
+	// Note: AfterApply() has already validated Name/All XOR
+	// Note: Variable enum validation is handled by Kong
+	logging.Logger.Debug("Arguments validated by Kong and AfterApply")
+
+	// Open database
+	dbPath := paths.GetDBPath()
+	logging.Logger.Debug("Opening database", "path", dbPath)
+	store, err := storage.NewStore(dbPath)
+	if err != nil {
+		logging.Logger.Error("Failed to open database", "path", dbPath, "error", err)
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+	logging.Logger.Debug("Database opened successfully")
+
+	// Get sessions to update
+	var sessionNames []string
+	if s.All {
+		logging.Logger.Info("Updating ClaudeDir for all sessions", "value", s.Value)
+		sessions, err := store.ListSessions(ctx, false) // Skip archived
+		if err != nil {
+			logging.Logger.Error("Failed to list sessions", "error", err)
+			return fmt.Errorf("failed to list sessions: %w", err)
+		}
+		for _, sess := range sessions {
+			sessionNames = append(sessionNames, sess.Name)
+		}
+		logging.Logger.Debug("Retrieved sessions to update", "count", len(sessionNames), "sessions", sessionNames)
+		fmt.Printf("Updating ClaudeDir for %d sessions...\n", len(sessionNames))
+	} else {
+		sessionNames = []string{s.Name}
+		logging.Logger.Debug("Updating single session", "session", s.Name)
+	}
+
+	// Update each session
+	logging.Logger.Info("Starting session updates", "count", len(sessionNames))
+	successCount := 0
+	var failedSessions []string
+	for _, name := range sessionNames {
+		logging.Logger.Debug("Updating session", "session", name, "value", s.Value)
+		if err := operations.SetSessionClaudeDir(ctx, name, s.Value, store); err != nil {
+			logging.Logger.Warn("Failed to update session", "session", name, "error", err)
+			fmt.Printf("⚠ Failed to update '%s': %v\n", name, err)
+			failedSessions = append(failedSessions, name)
+			continue
+		}
+		successCount++
+		logging.Logger.Debug("Session updated successfully", "session", name)
+		fmt.Printf("✓ Updated '%s'\n", name)
+	}
+	logging.Logger.Info("Session updates completed", "successCount", successCount, "failedCount", len(failedSessions))
+
+	// Kill tmux sessions if requested
+	if s.KillTmux {
+		logging.Logger.Info("Killing tmux sessions", "count", successCount)
+		for _, name := range sessionNames {
+			// Skip failed sessions
+			skip := false
+			for _, failed := range failedSessions {
+				if failed == name {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				logging.Logger.Debug("Skipping tmux kill for failed session", "session", name)
+				continue
+			}
+
+			// Kill main session
+			logging.Logger.Debug("Killing main tmux session", "session", name)
+			if err := operations.KillTmuxSession(name); err != nil {
+				logging.Logger.Warn("Failed to kill tmux session", "session", name, "error", err)
+				fmt.Printf("⚠ Warning: Failed to kill tmux session '%s': %v\n", name, err)
+			} else {
+				logging.Logger.Debug("Main tmux session killed", "session", name)
+				fmt.Printf("✓ Killed tmux session '%s'\n", name)
+			}
+
+			// Kill shell session if exists
+			shellName := name + "-shell"
+			logging.Logger.Debug("Attempting to kill shell session", "session", shellName)
+			if err := operations.KillTmuxSession(shellName); err != nil {
+				// Shell session might not exist, just log debug
+				logging.Logger.Debug("Shell session not found or already killed", "session", shellName)
+			} else {
+				logging.Logger.Debug("Shell tmux session killed", "session", shellName)
+				fmt.Printf("✓ Killed tmux session '%s'\n", shellName)
+			}
+		}
+		logging.Logger.Info("Tmux session kills completed")
+	}
+
+	// Show warning if tmux sessions are still running
+	if !s.KillTmux {
+		logging.Logger.Debug("Checking for running tmux sessions")
+		// Check which sessions are running
+		successfulSessions := []string{}
+		for _, name := range sessionNames {
+			// Check if this session was updated successfully
+			failed := false
+			for _, f := range failedSessions {
+				if f == name {
+					failed = true
+					break
+				}
+			}
+			if !failed {
+				successfulSessions = append(successfulSessions, name)
+			}
+		}
+
+		runningSessions, err := operations.GetRunningTmuxSessions(successfulSessions)
+		if err != nil {
+			logging.Logger.Warn("Failed to check running tmux sessions", "error", err)
+		} else if len(runningSessions) > 0 {
+			logging.Logger.Info("Found running tmux sessions with old CLAUDE_CONFIG_DIR", "count", len(runningSessions), "sessions", runningSessions)
+			fmt.Println()
+			fmt.Printf("⚠ Warning: %d tmux session(s) are still running with old CLAUDE_CONFIG_DIR:\n", len(runningSessions))
+			for _, name := range runningSessions {
+				fmt.Printf("  • %s\n", name)
+			}
+			fmt.Println()
+			fmt.Println("Restart them to apply changes:")
+			if s.All {
+				fmt.Printf("  rocha session set --all claudedir %q --kill-tmux\n", s.Value)
+			} else {
+				fmt.Printf("  rocha session set %s claudedir %q --kill-tmux\n", s.Name, s.Value)
+			}
+			fmt.Println()
+			fmt.Println("Or manually:")
+			for _, name := range runningSessions {
+				fmt.Printf("  tmux kill-session -t %s\n", name)
+			}
+		} else {
+			logging.Logger.Debug("No running tmux sessions found for updated sessions")
+		}
+	}
+
+	// Print summary
+	logging.Logger.Info("Session set command completed", "successCount", successCount, "totalCount", len(sessionNames))
+	fmt.Println()
+	if successCount == len(sessionNames) {
+		if s.Value == "" {
+			fmt.Printf("✓ Cleared ClaudeDir for %d session(s) (will use default)\n", successCount)
+		} else {
+			fmt.Printf("✓ Updated ClaudeDir for %d session(s)\n", successCount)
+		}
+	} else {
+		fmt.Printf("✓ Updated %d of %d session(s)\n", successCount, len(sessionNames))
+	}
+
 	return nil
 }
