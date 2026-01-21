@@ -341,12 +341,19 @@ func (sf *SessionForm) createSession() error {
 	claudeDir = config.ResolveClaudeDir(sf.store, repoInfo, sf.result.ClaudeDir)
 	logging.Logger.Info("Resolved ClaudeDir", "path", claudeDir)
 
-	// If the resolved ClaudeDir is the same as the default, treat it as "no customization"
-	// This ensures we don't set CLAUDE_CONFIG_DIR env var unnecessarily
-	defaultDir := config.DefaultClaudeDir()
-	if claudeDir == defaultDir {
-		logging.Logger.Info("ClaudeDir is default, not setting custom override", "default", defaultDir)
-		claudeDir = "" // Empty means: use Claude's default, don't set env var
+	// If the resolved ClaudeDir is the same as the system default (~/.claude),
+	// treat it as "no customization". This ensures we don't set CLAUDE_CONFIG_DIR
+	// env var unnecessarily.
+	// Note: We compare with the hardcoded system default, NOT DefaultClaudeDir(),
+	// because DefaultClaudeDir() includes the current environment's CLAUDE_CONFIG_DIR
+	// which would incorrectly clear custom directories.
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		systemDefault := filepath.Join(homeDir, ".claude")
+		if claudeDir == systemDefault {
+			logging.Logger.Info("ClaudeDir is system default, not setting custom override", "default", systemDefault)
+			claudeDir = "" // Empty means: use Claude's default, don't set env var
+		}
 	}
 
 	// 3. Create worktree if requested
