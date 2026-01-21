@@ -36,6 +36,7 @@ type CLI struct {
 	PlaySound   PlaySoundCmd   `cmd:"play-sound" help:"Play notification sound (cross-platform)" hidden:""`
 	Notify      NotifyCmd      `cmd:"notify" help:"Handle notification event from Claude hooks" hidden:""`
 	Sessions    SessionsCmd    `cmd:"sessions" help:"Manage sessions (list, view, add, del)"`
+	Settings    SettingsCmd    `cmd:"settings" help:"Manage settings (meta)"`
 
 	// Internal field for settings (not a flag)
 	settings *config.Settings `kong:"-"`
