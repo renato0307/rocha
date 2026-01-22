@@ -78,8 +78,7 @@ type Model struct {
 	allowDangerouslySkipPermissionsDefault bool                  // Default value from settings for new sessions
 	devMode                                bool                  // Development mode (shows version info in dialogs)
 	editor                                 string                // Editor to open sessions in
-	err                                    error
-	errorClearDelay                        time.Duration         // Duration before errors auto-clear
+	errorManager                           *ErrorManager         // Error display and auto-clearing
 	formRemoveWorktree                     *bool                 // Worktree removal decision (pointer to persist across updates)
 	formRemoveWorktreeArchive              *bool                 // Worktree removal decision for archive (pointer to persist across updates)
 	height                                 int
@@ -108,10 +107,10 @@ type Model struct {
 func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
-	var errMsg error
+	errorManager := NewErrorManager(errorClearDelay)
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
-		errMsg = fmt.Errorf("failed to load state: %w", stateErr)
+		errorManager.SetError(fmt.Errorf("failed to load state: %w", stateErr))
 		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 
@@ -133,8 +132,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, error
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
 		devMode:                                devMode,
 		editor:                                 editor,
-		err:                                    errMsg,
-		errorClearDelay:                        errorClearDelay,
+		errorManager:                           errorManager,
 		keys:                                   keys,
 		sessionList:                            sessionList,
 		sessionState:                           sessionState,
@@ -180,7 +178,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle clear error message
 	if _, ok := msg.(clearErrorMsg); ok {
-		m.clearError()
+		m.errorManager.ClearError()
 		return m, nil
 	}
 
@@ -200,14 +198,14 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle errors from attach failures (e.g., tmux nested session errors)
 	if err, ok := msg.(error); ok {
-		m.setError(fmt.Errorf("failed to attach to session: %w", err))
-		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		m.errorManager.SetError(fmt.Errorf("failed to attach to session: %w", err))
+		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
 	// Hidden test command: alt+shift+e generates Model-level error (persists 5 seconds)
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "alt+E" {
-		m.setError(fmt.Errorf("this is a persistent Model-level test error that demonstrates the error display functionality with automatic height adjustment and will clear after five seconds to verify that the list height properly expands back to normal and ensures all session items remain visible throughout the entire error lifecycle"))
-		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		m.errorManager.SetError(fmt.Errorf("this is a persistent Model-level test error that demonstrates the error display functionality with automatic height adjustment and will clear after five seconds to verify that the list height properly expands back to normal and ensures all session items remain visible throughout the entire error lifecycle"))
+		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
 	// Toggle timestamps display mode with 't' key
@@ -339,13 +337,13 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		sessionInfo, exists := m.sessionState.Sessions[session.Name]
 		if !exists || sessionInfo.WorktreePath == "" {
-			m.err = fmt.Errorf("no worktree associated with session '%s'", session.Name)
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+			m.errorManager.SetError(fmt.Errorf("no worktree associated with session '%s'", session.Name))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
 
 		if err := editor.OpenInEditor(sessionInfo.WorktreePath, m.editor); err != nil {
-			m.err = fmt.Errorf("failed to open editor: %w", err)
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+			m.errorManager.SetError(fmt.Errorf("failed to open editor: %w", err))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
 
 		return m, m.sessionList.Init()
@@ -356,16 +354,16 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionList.SessionToToggleFlag = nil
 
 		if err := m.store.ToggleFlag(context.Background(), session.Name); err != nil {
-			m.err = fmt.Errorf("failed to toggle flag: %w", err)
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+			m.errorManager.SetError(fmt.Errorf("failed to toggle flag: %w", err))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
 
 		// Reload session state
 		sessionState, err := m.store.Load(context.Background(), false)
 		if err != nil {
-			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
+			m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 			m.sessionList.RefreshFromState()
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
 		m.sessionState = sessionState
 
@@ -463,8 +461,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.sessionList.RequestTestError {
 		m.sessionList.RequestTestError = false
-		m.setError(fmt.Errorf("this is a very long test error message to verify that the error display truncation functionality works correctly and ensures that error text wraps properly across multiple lines and eventually gets truncated with ellipsis if it exceeds the maximum allowed length of three lines which should be enforced by the formatErrorForDisplay function"))
-		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		m.errorManager.SetError(fmt.Errorf("this is a very long test error message to verify that the error display truncation functionality works correctly and ensures that error text wraps properly across multiple lines and eventually gets truncated with ellipsis if it exceeds the maximum allowed length of three lines which should be enforced by the formatErrorForDisplay function"))
+		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
 	return m, cmd
@@ -495,18 +493,18 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if session creation failed
 			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to create session: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				m.errorManager.SetError(fmt.Errorf("failed to create session: %w", result.Error))
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 
 			if !result.Cancelled {
 				// Reload session state
 				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 					log.Printf("Warning: failed to reload session state: %v", err)
 					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 				} else {
 					m.sessionState = sessionState
 				}
@@ -548,17 +546,17 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if rename failed
 			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to rename session: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				m.errorManager.SetError(fmt.Errorf("failed to rename session: %w", result.Error))
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 
 			if !result.Cancelled {
 				// Reload session state
 				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 				} else {
 					m.sessionState = sessionState
 				}
@@ -598,17 +596,17 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if status update failed
 			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to update status: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				m.errorManager.SetError(fmt.Errorf("failed to update status: %w", result.Error))
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 
 			if !result.Cancelled {
 				// Reload session state
 				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 				} else {
 					m.sessionState = sessionState
 				}
@@ -648,17 +646,17 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if comment update failed
 			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to update comment: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				m.errorManager.SetError(fmt.Errorf("failed to update comment: %w", result.Error))
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 
 			if !result.Cancelled {
 				// Reload session state
 				sessionState, err := m.store.Load(context.Background(), false)
 				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 				} else {
 					m.sessionState = sessionState
 				}
@@ -698,8 +696,8 @@ func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Check if send text failed
 			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to send text: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+				m.errorManager.SetError(fmt.Errorf("failed to send text: %w", result.Error))
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 
 			return m, m.sessionList.Init()
@@ -738,15 +736,6 @@ func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 type detachedMsg struct{}
 
-type clearErrorMsg struct{}
-
-// clearErrorAfterDelay returns a command that sends clearErrorMsg after the configured delay
-func (m *Model) clearErrorAfterDelay() tea.Cmd {
-	return tea.Tick(m.errorClearDelay, func(time.Time) tea.Msg {
-		return clearErrorMsg{}
-	})
-}
-
 // attachToSession suspends Bubble Tea, attaches to a tmux session via the abstraction layer,
 // and returns a detachedMsg when the user detaches
 func (m *Model) attachToSession(sessionName string) tea.Cmd {
@@ -773,11 +762,11 @@ func (m *Model) attachToSession(sessionName string) tea.Cmd {
 }
 
 // getOrCreateShellSession returns shell session name, creating if needed
-// Returns empty string on error (error stored in m.err)
+// Returns empty string on error (error stored in errorManager)
 func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 	sessionInfo, ok := m.sessionState.Sessions[session.Name]
 	if !ok {
-		m.err = fmt.Errorf("session info not found: %s", session.Name)
+		m.errorManager.SetError(fmt.Errorf("session info not found: %s", session.Name))
 		return ""
 	}
 
@@ -801,7 +790,7 @@ func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
 	// Create shell session in tmux
 	_, err := m.tmuxClient.CreateShellSession(shellSessionName, workingDir, m.tmuxStatusPosition)
 	if err != nil {
-		m.err = fmt.Errorf("failed to create shell session: %w", err)
+		m.errorManager.SetError(fmt.Errorf("failed to create shell session: %w", err))
 		return ""
 	}
 
@@ -847,8 +836,8 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 
 	// Kill main Claude session
 	if err := m.tmuxClient.Kill(session.Name); err != nil {
-		m.setError(fmt.Errorf("failed to kill session '%s': %w", session.Name, err))
-		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay()) // Continue polling and clear error after delay
+		m.errorManager.SetError(fmt.Errorf("failed to kill session '%s': %w", session.Name, err))
+		return tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay()) // Continue polling and clear error after delay
 	}
 
 	// Check if session has worktree and remove it from state
@@ -863,7 +852,7 @@ func (m *Model) killSession(session *tmux.Session) tea.Cmd {
 	} else {
 		delete(st.Sessions, session.Name)
 		if err := m.store.Save(context.Background(), st); err != nil {
-			log.Printf("Warning: failed to save state: %w", err)
+			log.Printf("Warning: failed to save state: %v", err)
 		}
 		m.sessionState = st
 	}
@@ -961,7 +950,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 			if removeWorktree {
 				logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
 				if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
-					m.setError(fmt.Errorf("failed to remove worktree: %w", err))
+					m.errorManager.SetError(fmt.Errorf("failed to remove worktree: %w", err))
 					logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
 					worktreeErr = true
 				} else {
@@ -982,7 +971,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 
 			// If there was a worktree error, add clearErrorAfterDelay to the batch
 			if worktreeErr {
-				return m, tea.Batch(killCmd, m.clearErrorAfterDelay())
+				return m, tea.Batch(killCmd, m.errorManager.ClearAfterDelay())
 			}
 			return m, killCmd
 		}
@@ -1028,9 +1017,9 @@ func (m *Model) View() string {
 
 		// Always reserve 2 lines for errors (keeps layout stable)
 		view += "\n"
-		if m.err != nil {
+		if m.errorManager.HasError() {
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-			errorText := formatErrorForDisplay(m.err, m.width)
+			errorText := formatErrorForDisplay(m.errorManager.GetError(), m.width)
 			view += errorStyle.Render(errorText)
 		} else {
 			// Empty line to maintain spacing
@@ -1074,17 +1063,6 @@ func (m *Model) View() string {
 	return ""
 }
 
-// setError sets model error.
-// Error will be displayed in the reserved 2-line error area.
-func (m *Model) setError(err error) {
-	m.err = err
-}
-
-// clearError clears model error.
-func (m *Model) clearError() {
-	m.err = nil
-}
-
 // archiveSession archives a session and optionally removes its worktree
 func (m *Model) archiveSession(session *tmux.Session, removeWorktree bool) tea.Cmd {
 	logging.Logger.Info("Archiving session", "name", session.Name, "removeWorktree", removeWorktree)
@@ -1096,7 +1074,7 @@ func (m *Model) archiveSession(session *tmux.Session, removeWorktree bool) tea.C
 	if removeWorktree && hasInfo && sessionInfo.WorktreePath != "" {
 		logging.Logger.Info("Removing worktree", "path", sessionInfo.WorktreePath, "repo", sessionInfo.RepoPath)
 		if err := git.RemoveWorktree(sessionInfo.RepoPath, sessionInfo.WorktreePath); err != nil {
-			m.setError(fmt.Errorf("failed to remove worktree, continuing with archive: %w", err))
+			m.errorManager.SetError(fmt.Errorf("failed to remove worktree, continuing with archive: %w", err))
 			logging.Logger.Error("Failed to remove worktree", "error", err, "path", sessionInfo.WorktreePath)
 		} else {
 			logging.Logger.Info("Worktree removed successfully", "path", sessionInfo.WorktreePath)
@@ -1105,16 +1083,16 @@ func (m *Model) archiveSession(session *tmux.Session, removeWorktree bool) tea.C
 
 	// Toggle archive state
 	if err := m.store.ToggleArchive(context.Background(), session.Name); err != nil {
-		m.setError(fmt.Errorf("failed to archive session: %w", err))
-		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		m.errorManager.SetError(fmt.Errorf("failed to archive session: %w", err))
+		return tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
 	// Reload session state (showArchived=false, so archived session will disappear)
 	sessionState, err := m.store.Load(context.Background(), false)
 	if err != nil {
-		m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
+		m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 		m.sessionList.RefreshFromState()
-		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		return tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 	m.sessionState = sessionState
 
