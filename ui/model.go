@@ -482,266 +482,172 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionForm.Update(msg)
 	m.sessionForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionForm.Content().(*SessionForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionForm.Content().(*SessionForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionForm = nil
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to create session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		}
 
-			// Check if session creation failed
-			if result.Error != nil {
-				m.errorManager.SetError(fmt.Errorf("failed to create session: %w", result.Error))
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
+				log.Printf("Warning: failed to reload session state: %v", err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
-					log.Printf("Warning: failed to reload session state: %v", err)
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-				// Select the newly added session (always at position 0)
-				m.sessionList.list.Select(0)
-			}
-
-			return m, m.sessionList.Init()
+			// Select the newly added session (always at position 0)
+			m.sessionList.list.Select(0)
 		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionRenameForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionRenameForm.Update(msg)
 	m.sessionRenameForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionRenameForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionRenameForm = nil
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to rename session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		}
 
-			// Check if rename failed
-			if result.Error != nil {
-				m.errorManager.SetError(fmt.Errorf("failed to rename session: %w", result.Error))
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-			}
-
-			return m, m.sessionList.Init()
 		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionStatusForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionStatusForm.Update(msg)
 	m.sessionStatusForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionStatusForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionStatusForm = nil
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to update status: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		}
 
-			// Check if status update failed
-			if result.Error != nil {
-				m.errorManager.SetError(fmt.Errorf("failed to update status: %w", result.Error))
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-			}
-
-			return m, m.sessionList.Init()
 		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionCommentForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionCommentForm.Update(msg)
 	m.sessionCommentForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionCommentForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionCommentForm = nil
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to update comment: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		}
 
-			// Check if comment update failed
-			if result.Error != nil {
-				m.errorManager.SetError(fmt.Errorf("failed to update comment: %w", result.Error))
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-			}
-
-			return m, m.sessionList.Init()
 		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sendTextForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sendTextForm.Update(msg)
 	m.sendTextForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sendTextForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sendTextForm = nil
-
-			// Check if send text failed
-			if result.Error != nil {
-				m.errorManager.SetError(fmt.Errorf("failed to send text: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
-			}
-
-			return m, m.sessionList.Init()
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to send text: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
-func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.helpScreen = nil
-			return m, m.sessionList.Init()
-		}
+// reloadSessionStateAfterDialog reloads state and refreshes list.
+// Eliminates the 8 duplications of reload pattern across dialog handlers.
+func (m *Model) reloadSessionStateAfterDialog() error {
+	newState, err := m.store.Load(context.Background(), false)
+	if err != nil {
+		return fmt.Errorf("failed to refresh sessions: %w", err)
 	}
+	m.sessionState = newState
+	m.sessionList.RefreshFromState()
+	return nil
+}
 
-	// Forward message to Dialog
+func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.helpScreen.Update(msg)
 	m.helpScreen = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.helpScreen.Content().(*HelpScreen); ok {
-		if content.Completed {
-			// Return to list state
-			m.state = stateList
-			m.helpScreen = nil
-			return m, m.sessionList.Init()
-		}
+	// Check if dialog completed
+	if content, ok := m.helpScreen.Content().(*HelpScreen); ok && content.Completed {
+		m.state = stateList
+		m.helpScreen = nil
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
