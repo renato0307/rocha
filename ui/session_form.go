@@ -227,9 +227,10 @@ func (sf *SessionForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			sf.Completed = true
 			sf.cancelled = true
 			sf.result.Cancelled = true
-			return sf, tea.Quit
+			return sf, nil
 		}
 	}
 
