@@ -101,8 +101,8 @@ func newSessionActionsKeys() SessionActionsKeys {
 			key.WithHelp("ctrl+enter", "shell (>_)"),
 		),
 		QuickOpen: key.NewBinding(
-			key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7"),
-			key.WithHelp("alt+1-7", "quick open"),
+			key.WithKeys("1", "2", "3", "4", "5", "6", "7"),
+			key.WithHelp("1-7", "quick open"),
 		),
 	}
 }
