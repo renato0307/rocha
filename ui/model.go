@@ -64,14 +64,15 @@ type uiState int
 
 const (
 	stateList uiState = iota
-	stateCreatingSession
+	stateCommentingSession
 	stateConfirmingArchive
 	stateConfirmingWorktreeRemoval
+	stateCreatingSession
 	stateHelp
+	stateOptionsMenu
 	stateRenamingSession
 	stateSendingText
 	stateSettingStatus
-	stateCommentingSession
 )
 
 type Model struct {
@@ -85,6 +86,8 @@ type Model struct {
 	height                                 int
 	helpScreen                             *Dialog               // Help screen dialog
 	keys                                   KeyMap                // Keyboard shortcuts
+	optionsMenu                            *Dialog               // Options menu dialog
+	optionsMenuSession                     *tmux.Session         // Session for options menu
 	sendTextForm                           *Dialog               // Send text to tmux dialog
 	sessionCommentForm                     *Dialog               // Session comment dialog
 	sessionForm                            *Dialog               // Session creation dialog
@@ -157,22 +160,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateList:
 		return m.updateList(msg)
-	case stateCreatingSession:
-		return m.updateCreatingSession(msg)
+	case stateCommentingSession:
+		return m.updateCommentingSession(msg)
 	case stateConfirmingArchive:
 		return m.updateConfirmingArchive(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
+	case stateCreatingSession:
+		return m.updateCreatingSession(msg)
 	case stateHelp:
 		return m.updateHelp(msg)
+	case stateOptionsMenu:
+		return m.updateOptionsMenu(msg)
 	case stateRenamingSession:
 		return m.updateRenamingSession(msg)
 	case stateSendingText:
 		return m.updateSendingText(msg)
 	case stateSettingStatus:
 		return m.updateSettingStatus(msg)
-	case stateCommentingSession:
-		return m.updateCommentingSession(msg)
 	}
 	return m, nil
 }
@@ -349,6 +354,18 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, m.sessionList.Init()
+	}
+
+	if m.sessionList.RequestOptionsMenu {
+		m.sessionList.RequestOptionsMenu = false
+		session := m.sessionList.SessionForOptionsMenu
+		m.sessionList.SessionForOptionsMenu = nil
+
+		contentForm := NewOptionsMenu(session)
+		m.optionsMenu = NewDialog("Options", contentForm, m.devMode)
+		m.optionsMenuSession = session
+		m.state = stateOptionsMenu
+		return m, m.optionsMenu.Init()
 	}
 
 	if m.sessionList.SessionToToggleFlag != nil {
@@ -736,6 +753,51 @@ func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) updateOptionsMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle Escape or Ctrl+C to cancel
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			m.state = stateList
+			m.optionsMenu = nil
+			m.optionsMenuSession = nil
+			return m, m.sessionList.Init()
+		}
+	}
+
+	// Forward message to Dialog
+	updated, cmd := m.optionsMenu.Update(msg)
+	m.optionsMenu = updated.(*Dialog)
+
+	// Access wrapped content to check completion
+	if content, ok := m.optionsMenu.Content().(*OptionsMenu); ok {
+		if content.Completed {
+			result := content.Result()
+
+			// Return to list state
+			m.state = stateList
+			m.optionsMenu = nil
+			m.optionsMenuSession = nil
+
+			// Handle cancelled
+			if result.Cancelled {
+				return m, m.sessionList.Init()
+			}
+
+			// Handle selected action (placeholder - all actions show "coming soon")
+			return m, m.handleOptionsMenuAction(result)
+		}
+	}
+
+	return m, cmd
+}
+
+// handleOptionsMenuAction handles the selected action from the options menu
+func (m *Model) handleOptionsMenuAction(result OptionsMenuResult) tea.Cmd {
+	// All actions are placeholders for now
+	m.setError(fmt.Errorf("'%s' is not yet implemented", result.ActionID))
+	return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+}
+
 type detachedMsg struct{}
 
 type clearErrorMsg struct{}
@@ -1053,6 +1115,10 @@ func (m *Model) View() string {
 	case stateHelp:
 		if m.helpScreen != nil {
 			return m.helpScreen.View()
+		}
+	case stateOptionsMenu:
+		if m.optionsMenu != nil {
+			return m.optionsMenu.View()
 		}
 	case stateRenamingSession:
 		if m.sessionRenameForm != nil {

@@ -22,11 +22,12 @@ type SessionMetadataKeys struct {
 
 // SessionActionsKeys defines key bindings for session actions (open, shell, editor, quick open)
 type SessionActionsKeys struct {
-	Detach     key.Binding
-	Open       key.Binding
-	OpenEditor key.Binding
-	OpenShell  key.Binding
-	QuickOpen  key.Binding
+	Detach      key.Binding
+	Open        key.Binding
+	OpenEditor  key.Binding
+	OpenShell   key.Binding
+	OptionsMenu key.Binding
+	QuickOpen   key.Binding
 }
 
 // newSessionManagementKeys creates session management key bindings
@@ -99,6 +100,10 @@ func newSessionActionsKeys() SessionActionsKeys {
 		OpenShell: key.NewBinding(
 			key.WithKeys("alt+enter"),
 			key.WithHelp("alt+enter", "shell (>_)"),
+		),
+		OptionsMenu: key.NewBinding(
+			key.WithKeys("O"),
+			key.WithHelp("shift+o", "options menu"),
 		),
 		QuickOpen: key.NewBinding(
 			key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7"),

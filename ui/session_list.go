@@ -244,8 +244,10 @@ type SessionList struct {
 	RequestHelp           bool          // User pressed 'h' or '?'
 	RequestNewSession     bool          // User pressed 'n'
 	RequestNewSessionFrom bool          // User pressed 'shift+n' (new from same repo)
+	RequestOptionsMenu    bool          // User pressed 'shift+o' (options menu)
 	RequestTestError      bool          // User pressed 'alt+e' (test command)
 	SelectedSession       *tmux.Session // Session user wants to attach to
+	SessionForOptionsMenu *tmux.Session // Session for options menu
 	SessionForTemplate    *tmux.Session // Session to use as template for new session
 	SelectedShellSession  *tmux.Session // Session user wants shell session for
 	SessionToArchive      *tmux.Session // Session user wants to archive
@@ -470,6 +472,13 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, sl.keys.SessionActions.OpenEditor):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToOpenEditor = item.Session
+				return sl, nil
+			}
+
+		case key.Matches(msg, sl.keys.SessionActions.OptionsMenu):
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.RequestOptionsMenu = true
+				sl.SessionForOptionsMenu = item.Session
 				return sl, nil
 			}
 
