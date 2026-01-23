@@ -236,13 +236,13 @@ func GetRepoInfo(repoPath string) string {
 
 // sanitizePathComponent sanitizes a string for safe use as a path component
 // Similar to SanitizeBranchName but for filesystem paths
+// NOTE: We preserve original casing to avoid issues with gopls on macOS,
+// which does exact string matching on paths even though macOS filesystem
+// is case-insensitive.
 func sanitizePathComponent(component string) string {
 	if component == "" {
 		return ""
 	}
-
-	// Convert to lowercase for consistent directory names
-	component = strings.ToLower(component)
 
 	// Remove control characters and problematic filesystem chars
 	var builder strings.Builder
