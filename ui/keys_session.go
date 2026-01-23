@@ -97,8 +97,8 @@ func newSessionActionsKeys() SessionActionsKeys {
 			key.WithHelp("o", "editor"),
 		),
 		OpenShell: key.NewBinding(
-			key.WithKeys("ctrl+enter"),
-			key.WithHelp("ctrl+enter", "shell (>_)"),
+			key.WithKeys("ctrl+s"),
+			key.WithHelp("ctrl+s", "shell (>_)"),
 		),
 		QuickOpen: key.NewBinding(
 			key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
