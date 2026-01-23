@@ -505,10 +505,15 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return sl, sl.moveSelectedDown()
 
 		case key.Matches(msg, sl.keys.SessionActions.QuickOpen):
-			// Quick attach to session by number
+			// Quick attach to session by number (1-9, 0=10th)
 			numStr := msg.String()
 			num := int(numStr[0] - '0')
-			index := num - 1
+			var index int
+			if num == 0 {
+				index = 9 // 0 = 10th position (index 9)
+			} else {
+				index = num - 1 // 1-9 = indices 0-8
+			}
 
 			items := sl.list.VisibleItems()
 			if index >= 0 && index < len(items) {
