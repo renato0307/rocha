@@ -136,17 +136,17 @@ func newSessionActionsKeys() SessionActionsKeys {
 		},
 		OpenShell: KeyWithTip{
 			Binding: key.NewBinding(
-				key.WithKeys("alt+enter"),
-				key.WithHelp("alt+enter", "shell (>_)"),
+				key.WithKeys("ctrl+s"),
+				key.WithHelp("ctrl+s", "shell (>_)"),
 			),
-			Tip: newTip("press %s to open a shell session alongside claude", "alt+enter"),
+			Tip: newTip("press %s to open a shell session alongside claude", "ctrl+s"),
 		},
 		QuickOpen: KeyWithTip{
 			Binding: key.NewBinding(
-				key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7"),
-				key.WithHelp("alt+1-7", "quick open"),
+				key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
+				key.WithHelp("1-9,0", "quick open (0=10th)"),
 			),
-			Tip: newTip("press %s to quickly open sessions by their number", "alt+1-7"),
+			Tip: newTip("press %s to quickly open sessions by their number", "1-9,0"),
 		},
 	}
 }
