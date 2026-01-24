@@ -15,12 +15,13 @@ import (
 
 // GitStats holds detailed git statistics for a worktree
 type GitStats struct {
+	Additions     int       // Lines added in working directory
 	Ahead         int       // Commits ahead of tracking branch
 	Behind        int       // Commits behind tracking branch
-	Additions     int       // Lines added in working directory
-	Deletions     int       // Lines deleted in working directory
+	ChangedFiles  int       // Number of changed files in working directory
 	CommitHash    string    // Last commit hash (short)
 	CommitMessage string    // Last commit message (truncated)
+	Deletions     int       // Lines deleted in working directory
 	Error         error     // Error during fetching (if any)
 	FetchedAt     time.Time // When these stats were fetched
 }
@@ -71,13 +72,14 @@ func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) 
 
 	// Fetch file stats
 	g.Go(func() error {
-		additions, deletions, err := getFileStats(ctx, worktreePath)
+		additions, deletions, fileCount, err := getFileStats(ctx, worktreePath)
 		if err != nil {
 			logging.Logger.Debug("Failed to get file stats", "error", err)
 			// Non-fatal - continue with other stats
 			return nil
 		}
 		stats.Additions = additions
+		stats.ChangedFiles = fileCount
 		stats.Deletions = deletions
 		return nil
 	})
@@ -92,6 +94,7 @@ func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) 
 	logging.Logger.Debug("Git stats fetched successfully",
 		"ahead", stats.Ahead,
 		"behind", stats.Behind,
+		"changedFiles", stats.ChangedFiles,
 		"additions", stats.Additions,
 		"deletions", stats.Deletions)
 
@@ -128,18 +131,19 @@ func getAheadBehind(ctx context.Context, path string) (ahead int, behind int, er
 	return ahead, behind, nil
 }
 
-// getFileStats returns lines added and deleted in working directory
-func getFileStats(ctx context.Context, path string) (additions int, deletions int, err error) {
-	cmd := exec.CommandContext(ctx, "git", "diff", "--numstat", "HEAD")
-	cmd.Dir = path
+// getFileStats returns lines added, deleted, and number of changed files in working directory
+func getFileStats(ctx context.Context, path string) (additions, deletions, fileCount int, err error) {
+	// Get additions/deletions from git diff
+	diffCmd := exec.CommandContext(ctx, "git", "diff", "--numstat", "HEAD")
+	diffCmd.Dir = path
 
-	output, err := cmd.Output()
+	diffOutput, err := diffCmd.Output()
 	if err != nil {
-		return 0, 0, fmt.Errorf("git diff failed: %w", err)
+		return 0, 0, 0, fmt.Errorf("git diff failed: %w", err)
 	}
 
 	// Parse output: each line is "ADDED	DELETED	filename"
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	lines := strings.Split(strings.TrimSpace(string(diffOutput)), "\n")
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -166,7 +170,23 @@ func getFileStats(ctx context.Context, path string) (additions int, deletions in
 		}
 	}
 
-	return additions, deletions, nil
+	// Get file count from git status (includes untracked files)
+	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	statusCmd.Dir = path
+
+	statusOutput, err := statusCmd.Output()
+	if err != nil {
+		return additions, deletions, 0, fmt.Errorf("git status failed: %w", err)
+	}
+
+	statusLines := strings.Split(strings.TrimSpace(string(statusOutput)), "\n")
+	for _, line := range statusLines {
+		if line != "" {
+			fileCount++
+		}
+	}
+
+	return additions, deletions, fileCount, nil
 }
 
 // getLastCommit returns the last commit hash and message

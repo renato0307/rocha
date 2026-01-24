@@ -771,8 +771,8 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client, 
 					}
 
 					// Add file stats (if non-zero)
-					if stats.Additions > 0 || stats.Deletions > 0 {
-						gitRef += fmt.Sprintf(" | +%d -%d", stats.Additions, stats.Deletions)
+					if stats.ChangedFiles > 0 || stats.Additions > 0 || stats.Deletions > 0 {
+						gitRef += fmt.Sprintf(" | %d files +%d -%d", stats.ChangedFiles, stats.Additions, stats.Deletions)
 					}
 				}
 			}
