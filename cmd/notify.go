@@ -91,21 +91,31 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		sessionState = state.StateIdle // Session started and ready
 
 		// Check for initial prompt and send it
+		logging.Logger.Debug("Checking for initial prompt", "session", n.SessionName, "db_path", dbPath)
 		tmpStore, err := storage.NewStore(dbPath)
-		if err == nil {
+		if err != nil {
+			logging.Logger.Error("Failed to open database for initial prompt", "error", err)
+		} else {
 			defer tmpStore.Close()
 			session, err := tmpStore.GetSession(context.Background(), n.SessionName)
-			if err == nil && session.InitialPrompt != "" {
-				logging.Logger.Info("Sending initial prompt", "session", n.SessionName)
+			if err != nil {
+				logging.Logger.Error("Failed to get session for initial prompt", "error", err, "session", n.SessionName)
+			} else {
+				logging.Logger.Debug("Session retrieved", "session", n.SessionName, "initial_prompt_length", len(session.InitialPrompt))
+				if session.InitialPrompt != "" {
+					logging.Logger.Info("Sending initial prompt", "session", n.SessionName)
 
-				client := tmux.NewClient()
-				escapedPrompt := shellEscape(session.InitialPrompt)
+					client := tmux.NewClient()
+					escapedPrompt := shellEscape(session.InitialPrompt)
 
-				if err := client.SendKeys(n.SessionName, fmt.Sprintf("claude %s", escapedPrompt), "Enter"); err != nil {
-					logging.Logger.Error("Failed to send initial prompt", "error", err)
+					if err := client.SendKeys(n.SessionName, escapedPrompt, "Enter"); err != nil {
+						logging.Logger.Error("Failed to send initial prompt", "error", err)
+					} else {
+						logging.Logger.Info("Initial prompt sent successfully")
+						sessionState = state.StateWorking // Update state since prompt was submitted
+					}
 				} else {
-					logging.Logger.Info("Initial prompt sent successfully")
-					sessionState = state.StateWorking // Update state since prompt was submitted
+					logging.Logger.Debug("No initial prompt found for session", "session", n.SessionName)
 				}
 			}
 		}

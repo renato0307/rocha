@@ -962,34 +962,36 @@ func convertToSessionInfo(s Session, isFlagged bool, statusMap map[string]*strin
 	}
 
 	return SessionInfo{
-		BranchName:   s.BranchName,
-		Comment:      comment,
-		DisplayName:  s.DisplayName,
-		ExecutionID:  s.ExecutionID,
-		GitStats:     nil, // Not persisted
-		IsArchived:   isArchived,
-		IsFlagged:    isFlagged,
-		LastUpdated:  s.LastUpdated,
-		Name:         s.Name,
-		RepoInfo:     s.RepoInfo,
-		RepoPath:     s.RepoPath,
-		ShellSession: nil,
-		State:        s.State,
-		Status:       status,
-		WorktreePath: s.WorktreePath,
+		BranchName:    s.BranchName,
+		Comment:       comment,
+		DisplayName:   s.DisplayName,
+		ExecutionID:   s.ExecutionID,
+		GitStats:      nil, // Not persisted
+		InitialPrompt: s.InitialPrompt,
+		IsArchived:    isArchived,
+		IsFlagged:     isFlagged,
+		LastUpdated:   s.LastUpdated,
+		Name:          s.Name,
+		RepoInfo:      s.RepoInfo,
+		RepoPath:      s.RepoPath,
+		ShellSession:  nil,
+		State:         s.State,
+		Status:        status,
+		WorktreePath:  s.WorktreePath,
 	}
 }
 
 func convertFromSessionInfo(info SessionInfo) Session {
 	return Session{
-		Name:         info.Name,
-		DisplayName:  info.DisplayName,
-		State:        info.State,
-		ExecutionID:  info.ExecutionID,
-		LastUpdated:  info.LastUpdated,
-		RepoPath:     info.RepoPath,
-		RepoInfo:     info.RepoInfo,
-		BranchName:   info.BranchName,
-		WorktreePath: info.WorktreePath,
+		BranchName:    info.BranchName,
+		DisplayName:   info.DisplayName,
+		ExecutionID:   info.ExecutionID,
+		InitialPrompt: info.InitialPrompt,
+		LastUpdated:   info.LastUpdated,
+		Name:          info.Name,
+		RepoInfo:      info.RepoInfo,
+		RepoPath:      info.RepoPath,
+		State:         info.State,
+		WorktreePath:  info.WorktreePath,
 	}
 }
