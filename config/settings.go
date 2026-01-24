@@ -19,6 +19,9 @@ type Settings struct {
 	ShowTimestamps                  *bool       `json:"show_timestamps,omitempty"`
 	StatusColors                    StringArray `json:"status_colors,omitempty"`
 	Statuses                        StringArray `json:"statuses,omitempty"`
+	TipsDisplayDurationSeconds      *int        `json:"tips_display_duration_seconds,omitempty"`
+	TipsEnabled                     *bool       `json:"tips_enabled,omitempty"`
+	TipsShowIntervalSeconds         *int        `json:"tips_show_interval_seconds,omitempty"`
 	TmuxStatusPosition              string      `json:"tmux_status_position,omitempty"`
 }
 

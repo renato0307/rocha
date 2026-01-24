@@ -96,19 +96,22 @@ func (c *CLI) AfterApply() error {
 
 // RunCmd starts the TUI application
 type RunCmd struct {
-	Dev                     bool   `help:"Enable development mode (shows version info in dialogs)"`
-	Editor                  string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
-	ErrorClearDelay         int    `help:"Seconds before error messages auto-clear" default:"10"`
-	ShowTimestamps          bool   `help:"Show relative timestamps for last state changes" default:"false"`
-	StatusColors            string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
-	StatusIcons             string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
-	Statuses                string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
-	TimestampRecentColor    string `help:"ANSI color code for recent timestamps" default:"241"`
-	TimestampRecentMinutes  int    `help:"Minutes threshold for recent timestamps (gray color)" default:"5"`
-	TimestampStaleColor     string `help:"ANSI color code for stale timestamps (matches waiting state ◐)" default:"1"`
-	TimestampWarningColor   string `help:"ANSI color code for warning timestamps (matches idle state ○)" default:"3"`
-	TimestampWarningMinutes int    `help:"Minutes threshold for warning timestamps (yellow color)" default:"20"`
-	TmuxStatusPosition      string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
+	Dev                        bool   `help:"Enable development mode (shows version info in dialogs)"`
+	Editor                     string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
+	ErrorClearDelay            int    `help:"Seconds before error messages auto-clear" default:"10"`
+	ShowTimestamps             bool   `help:"Show relative timestamps for last state changes" default:"false"`
+	StatusColors               string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
+	StatusIcons                string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
+	Statuses                   string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
+	TimestampRecentColor       string `help:"ANSI color code for recent timestamps" default:"241"`
+	TimestampRecentMinutes     int    `help:"Minutes threshold for recent timestamps (gray color)" default:"5"`
+	TimestampStaleColor        string `help:"ANSI color code for stale timestamps (matches waiting state ◐)" default:"1"`
+	TimestampWarningColor      string `help:"ANSI color code for warning timestamps (matches idle state ○)" default:"3"`
+	TimestampWarningMinutes    int    `help:"Minutes threshold for warning timestamps (yellow color)" default:"20"`
+	TipsDisplayDurationSeconds int    `help:"Seconds to display each tip" default:"90"`
+	TipsEnabled                bool   `help:"Enable rotating tips display" default:"true"`
+	TipsShowIntervalSeconds    int    `help:"Seconds between tips" default:"2"`
+	TmuxStatusPosition         string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
 }
 
 // Run executes the TUI
@@ -164,6 +167,23 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 				if cli.settings.TmuxStatusPosition != "" {
 					r.TmuxStatusPosition = cli.settings.TmuxStatusPosition
 				}
+			}
+		}
+
+		// Apply Tips settings
+		if r.TipsEnabled {
+			if cli.settings.TipsEnabled != nil && !*cli.settings.TipsEnabled {
+				r.TipsEnabled = false
+			}
+		}
+		if r.TipsDisplayDurationSeconds == 90 {
+			if cli.settings.TipsDisplayDurationSeconds != nil {
+				r.TipsDisplayDurationSeconds = *cli.settings.TipsDisplayDurationSeconds
+			}
+		}
+		if r.TipsShowIntervalSeconds == 2 {
+			if cli.settings.TipsShowIntervalSeconds != nil {
+				r.TipsShowIntervalSeconds = *cli.settings.TipsShowIntervalSeconds
 			}
 		}
 	}
@@ -243,8 +263,13 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 		r.TimestampWarningColor,
 		r.TimestampStaleColor,
 	)
+	tipsConfig := ui.TipsConfig{
+		DisplayDurationSeconds: r.TipsDisplayDurationSeconds,
+		Enabled:                r.TipsEnabled,
+		ShowIntervalSeconds:    r.TipsShowIntervalSeconds,
+	}
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition, allowDangerouslySkipPermissionsDefault),
+		ui.NewModel(tmuxClient, store, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition, allowDangerouslySkipPermissionsDefault, tipsConfig),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)

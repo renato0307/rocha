@@ -105,7 +105,7 @@ type Model struct {
 	worktreeRemovalForm                    *Dialog // Worktree removal dialog
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool) *Model {
+func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, tipsConfig TipsConfig) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
 	var errMsg error
@@ -127,7 +127,7 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, error
 	keys := NewKeyMap()
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition)
+	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
 
 	return &Model{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
@@ -188,7 +188,16 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
-		// SessionList handles its own sizing via Update()
+
+		// Calculate available height for SessionList's internal list
+		// Layout: Header (2) + spacing (1) + Legend (1) + spacing (1) + [List] + Bottom section (3)
+		// Bottom section: separator (1) + content (2 lines fixed)
+		// Total overhead: 8 lines
+		listHeight := msg.Height - 8
+		if listHeight < 1 {
+			listHeight = 1
+		}
+		m.sessionList.SetSize(msg.Width, msg.Height, listHeight)
 	}
 
 	// Handle detach message - session list auto-refreshes via polling
@@ -1026,15 +1035,20 @@ func (m *Model) View() string {
 	case stateList:
 		view := m.sessionList.View()
 
-		// Always reserve 2 lines for errors (keeps layout stable)
+		// Bottom section - fixed 2 lines (error or tip or empty)
+		// Always reserve 2 lines to prevent layout shift
 		view += "\n"
 		if m.err != nil {
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 			errorText := formatErrorForDisplay(m.err, m.width)
 			view += errorStyle.Render(errorText)
+			// Clear tip when error is shown
+			m.sessionList.ClearCurrentTip()
+		} else if tip := m.sessionList.GetCurrentTip(); tip != "" {
+			view += tip + "\n "
 		} else {
-			// Empty line to maintain spacing
-			view += " "
+			// Empty lines to maintain fixed 2-line spacing
+			view += " \n "
 		}
 
 		return view

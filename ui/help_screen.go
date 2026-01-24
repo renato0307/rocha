@@ -45,39 +45,39 @@ func buildHelpContent(keys *KeyMap) string {
 
 	// Navigation
 	content += helpGroupStyle.Render("Navigation") + "\n"
-	content += renderBinding(keys.Navigation.Up)
-	content += renderBinding(keys.Navigation.Down)
-	content += renderBinding(keys.Navigation.MoveUp)
-	content += renderBinding(keys.Navigation.MoveDown)
-	content += renderBinding(keys.Navigation.Filter)
-	content += renderBinding(keys.Navigation.ClearFilter)
+	content += renderBinding(keys.Navigation.Up.Binding)
+	content += renderBinding(keys.Navigation.Down.Binding)
+	content += renderBinding(keys.Navigation.MoveUp.Binding)
+	content += renderBinding(keys.Navigation.MoveDown.Binding)
+	content += renderBinding(keys.Navigation.Filter.Binding)
+	content += renderBinding(keys.Navigation.ClearFilter.Binding)
 
 	// Session Management
 	content += "\n" + helpGroupStyle.Render("Session Management") + "\n"
-	content += renderBinding(keys.SessionManagement.New)
-	content += renderBinding(keys.SessionManagement.NewFromRepo)
-	content += renderBinding(keys.SessionManagement.Rename)
-	content += renderBinding(keys.SessionManagement.Archive)
-	content += renderBinding(keys.SessionManagement.Kill)
+	content += renderBinding(keys.SessionManagement.New.Binding)
+	content += renderBinding(keys.SessionManagement.NewFromRepo.Binding)
+	content += renderBinding(keys.SessionManagement.Rename.Binding)
+	content += renderBinding(keys.SessionManagement.Archive.Binding)
+	content += renderBinding(keys.SessionManagement.Kill.Binding)
 
 	// Session Metadata
 	content += "\n" + helpGroupStyle.Render("Session Metadata") + "\n"
-	content += renderBinding(keys.SessionMetadata.Comment)
-	content += renderBinding(keys.SessionMetadata.Flag)
-	content += renderBinding(keys.SessionMetadata.StatusCycle)
-	content += renderBinding(keys.SessionMetadata.StatusSetForm)
+	content += renderBinding(keys.SessionMetadata.Comment.Binding)
+	content += renderBinding(keys.SessionMetadata.Flag.Binding)
+	content += renderBinding(keys.SessionMetadata.StatusCycle.Binding)
+	content += renderBinding(keys.SessionMetadata.StatusSetForm.Binding)
 
 	// Experimental Features
 	content += "\n" + helpGroupStyle.Render("Experimental Features") + "\n"
-	content += renderShortcut(keys.SessionMetadata.SendText.Help().Key, keys.SessionMetadata.SendText.Help().Desc + " (experimental)")
+	content += renderShortcut(keys.SessionMetadata.SendText.Binding.Help().Key, keys.SessionMetadata.SendText.Binding.Help().Desc + " (experimental)")
 
 	// Session Actions
 	content += "\n" + helpGroupStyle.Render("Session Actions") + "\n"
-	content += renderBinding(keys.SessionActions.Open)
-	content += renderBinding(keys.SessionActions.Detach)
-	content += renderBinding(keys.SessionActions.QuickOpen)
-	content += renderBinding(keys.SessionActions.OpenShell)
-	content += renderBinding(keys.SessionActions.OpenEditor)
+	content += renderBinding(keys.SessionActions.Open.Binding)
+	content += renderBinding(keys.SessionActions.Detach.Binding)
+	content += renderBinding(keys.SessionActions.QuickOpen.Binding)
+	content += renderBinding(keys.SessionActions.OpenShell.Binding)
+	content += renderBinding(keys.SessionActions.OpenEditor.Binding)
 
 	// Inside Session Shortcuts (tmux-level)
 	content += "\n" + helpGroupStyle.Render("Inside Session Shortcuts") + "\n"
@@ -87,10 +87,10 @@ func buildHelpContent(keys *KeyMap) string {
 
 	// Application
 	content += "\n" + helpGroupStyle.Render("Application") + "\n"
-	content += renderBinding(keys.Application.Timestamps)
-	content += renderBinding(keys.Application.Help)
-	content += renderBinding(keys.Application.Quit)
-	content += renderBinding(keys.Application.ForceQuit)
+	content += renderBinding(keys.Application.Timestamps.Binding)
+	content += renderBinding(keys.Application.Help.Binding)
+	content += renderBinding(keys.Application.Quit.Binding)
+	content += renderBinding(keys.Application.ForceQuit.Binding)
 
 	// State Indicators
 	content += "\n" + helpGroupStyle.Render("State Indicators (read-only)") + "\n"
