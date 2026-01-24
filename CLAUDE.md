@@ -34,7 +34,7 @@ go build -ldflags="-X rocha/version.Version=$(git branch --show-current)-v1 \
   -X rocha/version.Commit=$(git rev-parse HEAD) \
   -X rocha/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
   -X rocha/version.GoVersion=$(go version | awk '{print $3}')" \
-  -o ~/.local/bin/rocha-$(git branch --show-current)-v1
+  -o ./bin/rocha-$(git branch --show-current)-v1
 ```
 
 ### Running with Debug
