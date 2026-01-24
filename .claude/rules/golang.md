@@ -6,6 +6,10 @@ When doing code make sure you:
 - Don't use `interface{}`, use `any`
 - Sort the struct fields alphabetically
 - Split the imports into three groups: stdlib, dependencies, internal imports
+- I like readable code; one thing that impacts that are large methods; 
+  try to split methods in logical blocks with the same level of
+  abstraction so when reading the code we understand what it does without
+  the need of comments etc.
 
 
 ## Development Pace
