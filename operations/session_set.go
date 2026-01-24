@@ -33,6 +33,31 @@ func SetSessionClaudeDir(
 	return nil
 }
 
+// SetSessionSkipPermissions updates AllowDangerouslySkipPermissions flag for a single session
+func SetSessionSkipPermissions(
+	ctx context.Context,
+	sessionName string,
+	skipPermissions bool,
+	store *storage.Store,
+) error {
+	logging.Logger.Info("Setting skip permissions flag for session",
+		"session", sessionName,
+		"skipPermissions", skipPermissions)
+
+	// Update in database
+	if err := store.UpdateSessionSkipPermissions(ctx, sessionName, skipPermissions); err != nil {
+		logging.Logger.Error("Failed to update skip permissions flag",
+			"session", sessionName,
+			"error", err)
+		return fmt.Errorf("failed to update skip permissions flag: %w", err)
+	}
+
+	logging.Logger.Info("Skip permissions flag updated successfully",
+		"session", sessionName,
+		"skipPermissions", skipPermissions)
+	return nil
+}
+
 // GetRunningTmuxSessions returns list of tmux sessions that are currently running
 func GetRunningTmuxSessions(sessionNames []string, tmuxClient tmux.SessionManager) ([]string, error) {
 	logging.Logger.Debug("Checking for running tmux sessions", "sessions", sessionNames)

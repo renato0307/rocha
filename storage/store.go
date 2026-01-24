@@ -756,6 +756,50 @@ func (s *Store) UpdateSessionClaudeDir(ctx context.Context, name, claudeDir stri
 	}, 3)
 }
 
+// UpdateSessionSkipPermissions updates the AllowDangerouslySkipPermissions flag for a single session atomically
+func (s *Store) UpdateSessionSkipPermissions(ctx context.Context, name string, skipPermissions bool) error {
+	return withRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Check if session exists
+			var session Session
+			if err := tx.Where("name = ?", name).First(&session).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("session %s not found", name)
+				}
+				return err
+			}
+
+			// Update last_updated timestamp
+			updates := map[string]interface{}{
+				"last_updated": time.Now().UTC(),
+			}
+			result := tx.Model(&Session{}).Where("name = ?", name).Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", name)
+			}
+
+			// Save or delete agent CLI flags based on the value
+			if skipPermissions {
+				flags := SessionAgentCLIFlags{
+					SessionName:                     name,
+					AllowDangerouslySkipPermissions: true,
+				}
+				if err := tx.Save(&flags).Error; err != nil {
+					return fmt.Errorf("failed to save session agent CLI flags: %w", err)
+				}
+			} else {
+				// Delete agent CLI flags record if false (cleanup pattern)
+				tx.Where("session_name = ?", name).Delete(&SessionAgentCLIFlags{})
+			}
+
+			return nil
+		})
+	}, 3)
+}
+
 // ToggleArchive toggles the archive state for a session
 func (s *Store) ToggleArchive(ctx context.Context, sessionName string) error {
 	return withRetry(func() error {
