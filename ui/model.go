@@ -488,12 +488,18 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		return m, tea.Batch(initCmd, sizeCmd)
 
 	case ActionShowNewSessionDialog:
+		logging.Logger.Debug("Creating new session dialog",
+			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
+			"default_repo_source", result.DefaultRepoSource)
 		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()
 
 	case ActionShowNewSessionFromDialog:
+		logging.Logger.Debug("Creating new session from template dialog",
+			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
+			"default_repo_source", result.DefaultRepoSource)
 		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
 		m.state = result.NewState
