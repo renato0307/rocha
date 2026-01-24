@@ -559,7 +559,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, sl.keys.SessionActions.QuickOpen.Binding):
 			// Quick attach to session by number
-			numStr := msg.String()[4:] // Skip "alt+"
+			numStr := msg.String()
 			num := int(numStr[0] - '0')
 			index := num - 1
 

@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"rocha/editor"
 	"rocha/git"
 	"rocha/logging"
-	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
 	"time"
@@ -78,17 +75,18 @@ type Model struct {
 	allowDangerouslySkipPermissionsDefault bool                  // Default value from settings for new sessions
 	devMode                                bool                  // Development mode (shows version info in dialogs)
 	editor                                 string                // Editor to open sessions in
-	err                                    error
-	errorClearDelay                        time.Duration         // Duration before errors auto-clear
+	errorManager                           *ErrorManager         // Error display and auto-clearing
 	formRemoveWorktree                     *bool                 // Worktree removal decision (pointer to persist across updates)
 	formRemoveWorktreeArchive              *bool                 // Worktree removal decision for archive (pointer to persist across updates)
 	height                                 int
 	helpScreen                             *Dialog               // Help screen dialog
 	keys                                   KeyMap                // Keyboard shortcuts
+	listActionHandler                      *ListActionHandler    // Session list action processing
 	sendTextForm                           *Dialog               // Send text to tmux dialog
 	sessionCommentForm                     *Dialog               // Session comment dialog
 	sessionForm                            *Dialog               // Session creation dialog
 	sessionList                            *SessionList          // Session list component
+	sessionOps                             *SessionOperations    // Session lifecycle operations
 	sessionRenameForm                      *Dialog               // Session rename dialog
 	sessionState                           *storage.SessionState // State data for git metadata and status
 	sessionStatusForm                      *Dialog               // Session status dialog
@@ -108,10 +106,10 @@ type Model struct {
 func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, tipsConfig TipsConfig) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
-	var errMsg error
+	errorManager := NewErrorManager(errorClearDelay)
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
-		errMsg = fmt.Errorf("failed to load state: %w", stateErr)
+		errorManager.SetError(fmt.Errorf("failed to load state: %w", stateErr))
 		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
 	}
 
@@ -126,17 +124,36 @@ func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, error
 	// Create shared key map
 	keys := NewKeyMap()
 
+	// Create session operations component
+	sessionOps := NewSessionOperations(errorManager, store, tmuxClient, tmuxStatusPosition)
+
 	// Create session list component
 	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
+
+	// Create list action handler
+	listActionHandler := NewListActionHandler(
+		sessionList,
+		sessionState,
+		store,
+		editor,
+		statusConfig,
+		errorManager,
+		sessionOps,
+		tmuxClient,
+		tmuxStatusPosition,
+		devMode,
+		allowDangerouslySkipPermissionsDefault,
+	)
 
 	return &Model{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
 		devMode:                                devMode,
 		editor:                                 editor,
-		err:                                    errMsg,
-		errorClearDelay:                        errorClearDelay,
+		errorManager:                           errorManager,
 		keys:                                   keys,
+		listActionHandler:                      listActionHandler,
 		sessionList:                            sessionList,
+		sessionOps:                             sessionOps,
 		sessionState:                           sessionState,
 		state:                                  stateList,
 		statusConfig:                           statusConfig,
@@ -180,7 +197,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle clear error message
 	if _, ok := msg.(clearErrorMsg); ok {
-		m.clearError()
+		m.errorManager.ClearError()
 		return m, nil
 	}
 
@@ -209,14 +226,14 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle errors from attach failures (e.g., tmux nested session errors)
 	if err, ok := msg.(error); ok {
-		m.setError(fmt.Errorf("failed to attach to session: %w", err))
-		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		m.errorManager.SetError(fmt.Errorf("failed to attach to session: %w", err))
+		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
 	// Hidden test command: alt+shift+e generates Model-level error (persists 5 seconds)
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "alt+E" {
-		m.setError(fmt.Errorf("this is a persistent Model-level test error that demonstrates the error display functionality with automatic height adjustment and will clear after five seconds to verify that the list height properly expands back to normal and ensures all session items remain visible throughout the entire error lifecycle"))
-		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
+		m.errorManager.SetError(fmt.Errorf("this is a persistent Model-level test error that demonstrates the error display functionality with automatic height adjustment and will clear after five seconds to verify that the list height properly expands back to normal and ensures all session items remain visible throughout the entire error lifecycle"))
+		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
 	// Toggle timestamps display mode with 't' key
@@ -246,641 +263,269 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	if m.sessionList.SelectedSession != nil {
-		session := m.sessionList.SelectedSession
-		m.sessionList.SelectedSession = nil // Clear
-
-		// Attach to session using tmux abstraction
-		return m, m.attachToSession(session.Name)
-	}
-
-	// Check if user selected a shell session
-	if m.sessionList.SelectedShellSession != nil {
-		session := m.sessionList.SelectedShellSession
-		m.sessionList.SelectedShellSession = nil // Reset
-
-		shellSessionName := m.getOrCreateShellSession(session)
-		if shellSessionName != "" {
-			// Use existing attachToSession() helper (follows tmux abstraction)
-			return m, m.attachToSession(shellSessionName)
-		}
-		return m, cmd
-	}
-
-	if m.sessionList.SessionToKill != nil {
-		session := m.sessionList.SessionToKill
-		m.sessionList.SessionToKill = nil // Clear
-
-		// Check if session has worktree
-		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
-			m.sessionToKill = session
-			removeWorktree := false
-			m.formRemoveWorktree = &removeWorktree
-			m.worktreeRemovalForm = m.createWorktreeRemovalDialog(sessionInfo.WorktreePath)
-			m.state = stateConfirmingWorktreeRemoval
-			return m, m.worktreeRemovalForm.Init()
-		} else {
-			return m, m.killSession(session)
-		}
-	}
-
-	if m.sessionList.SessionToRename != nil {
-		session := m.sessionList.SessionToRename
-		m.sessionList.SessionToRename = nil // Clear
-
-		// Get current display name
-		currentDisplayName := session.Name
-		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.DisplayName != "" {
-			currentDisplayName = sessionInfo.DisplayName
-		}
-
-		contentForm := NewSessionRenameForm(m.tmuxClient, m.store, m.sessionState, session.Name, currentDisplayName)
-		m.sessionRenameForm = NewDialog("Rename Session", contentForm, m.devMode)
-		m.state = stateRenamingSession
-		return m, m.sessionRenameForm.Init()
-	}
-
-	if m.sessionList.SessionToSetStatus != nil {
-		session := m.sessionList.SessionToSetStatus
-		m.sessionList.SessionToSetStatus = nil // Clear
-
-		// Get current status
-		var currentStatus *string
-		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
-			currentStatus = sessionInfo.Status
-		}
-
-		contentForm := NewSessionStatusForm(m.store, session.Name, currentStatus, m.statusConfig)
-		m.sessionStatusForm = NewDialog("Set Status", contentForm, m.devMode)
-		m.state = stateSettingStatus
-		return m, m.sessionStatusForm.Init()
-	}
-
-	if m.sessionList.SessionToComment != nil {
-		session := m.sessionList.SessionToComment
-		m.sessionList.SessionToComment = nil // Clear
-
-		// Get current comment
-		currentComment := ""
-		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok {
-			currentComment = sessionInfo.Comment
-		}
-
-		contentForm := NewSessionCommentForm(m.store, session.Name, currentComment)
-		m.sessionCommentForm = NewDialog("Edit Session Comment", contentForm, m.devMode)
-		m.state = stateCommentingSession
-		return m, m.sessionCommentForm.Init()
-	}
-
-	if m.sessionList.SessionToSendText != nil {
-		session := m.sessionList.SessionToSendText
-		m.sessionList.SessionToSendText = nil // Clear
-
-		contentForm := NewSendTextForm(m.tmuxClient, session.Name)
-		m.sendTextForm = NewDialog("Send Text to Claude", contentForm, m.devMode)
-		m.state = stateSendingText
-		return m, m.sendTextForm.Init()
-	}
-
-	if m.sessionList.SessionToOpenEditor != nil {
-		session := m.sessionList.SessionToOpenEditor
-		m.sessionList.SessionToOpenEditor = nil
-
-		sessionInfo, exists := m.sessionState.Sessions[session.Name]
-		if !exists || sessionInfo.WorktreePath == "" {
-			m.err = fmt.Errorf("no worktree associated with session '%s'", session.Name)
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		if err := editor.OpenInEditor(sessionInfo.WorktreePath, m.editor); err != nil {
-			m.err = fmt.Errorf("failed to open editor: %w", err)
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		return m, m.sessionList.Init()
-	}
-
-	if m.sessionList.SessionToToggleFlag != nil {
-		session := m.sessionList.SessionToToggleFlag
-		m.sessionList.SessionToToggleFlag = nil
-
-		if err := m.store.ToggleFlag(context.Background(), session.Name); err != nil {
-			m.err = fmt.Errorf("failed to toggle flag: %w", err)
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-
-		// Reload session state
-		sessionState, err := m.store.Load(context.Background(), false)
-		if err != nil {
-			m.err = fmt.Errorf("failed to refresh sessions: %w", err)
-			m.sessionList.RefreshFromState()
-			return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-		}
-		m.sessionState = sessionState
-
-		// Refresh UI
-		m.sessionList.RefreshFromState()
-		return m, m.sessionList.Init()
-	}
-
-	if m.sessionList.SessionToArchive != nil {
-		session := m.sessionList.SessionToArchive
-		m.sessionList.SessionToArchive = nil
-
-		// Check if session has worktree
-		if sessionInfo, ok := m.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
-			m.sessionToArchive = session
-			removeWorktree := false
-			m.formRemoveWorktreeArchive = &removeWorktree
-			form := m.createArchiveWorktreeRemovalForm(sessionInfo.WorktreePath)
-			m.worktreeRemovalForm = NewDialog("Archive Session", form, m.devMode)
-			m.state = stateConfirmingArchive
-			return m, m.worktreeRemovalForm.Init()
-		} else {
-			return m, m.archiveSession(session, false)
-		}
-	}
-
-	if m.sessionList.RequestHelp {
-		m.sessionList.RequestHelp = false
-		contentForm := NewHelpScreen(&m.keys)
-		m.helpScreen = NewDialog("Help", contentForm, m.devMode)
-		m.state = stateHelp
-		// Send initial WindowSizeMsg so viewport can initialize
-		initCmd := m.helpScreen.Init()
-		updatedDialog, sizeCmd := m.helpScreen.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		m.helpScreen = updatedDialog.(*Dialog)
-		return m, tea.Batch(initCmd, sizeCmd)
-	}
-
-	if m.sessionList.RequestNewSession {
-		m.sessionList.RequestNewSession = false
-
-		// Pre-fill repo field if starting in a git folder
-		defaultRepoSource := ""
-		cwd, _ := os.Getwd()
-		if isGit, repoPath := git.IsGitRepo(cwd); isGit {
-			if remoteURL := git.GetRemoteURL(repoPath); remoteURL != "" {
-				defaultRepoSource = remoteURL
-				logging.Logger.Info("Pre-filling repository field with remote URL", "remote_url", remoteURL)
-			} else {
-				logging.Logger.Warn("Git repository has no remote configured, leaving repo field empty")
-			}
-		}
-
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, defaultRepoSource)
-		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
-		m.state = stateCreatingSession
-		return m, m.sessionForm.Init()
-	}
-
-	if m.sessionList.RequestNewSessionFrom {
-		m.sessionList.RequestNewSessionFrom = false
-		// Get the repo source from the selected session
-		var repoSource string
-		if m.sessionList.SessionForTemplate != nil {
-			if sessionInfo, exists := m.sessionState.Sessions[m.sessionList.SessionForTemplate.Name]; exists {
-				repoSource = sessionInfo.RepoSource
-
-				// If RepoSource is empty but RepoPath exists, fetch remote URL and update DB
-				if repoSource == "" && sessionInfo.RepoPath != "" {
-					logging.Logger.Info("RepoSource empty, fetching remote URL from RepoPath", "repo_path", sessionInfo.RepoPath)
-					if remoteURL := git.GetRemoteURL(sessionInfo.RepoPath); remoteURL != "" {
-						repoSource = remoteURL
-						logging.Logger.Info("Fetched remote URL, updating database", "remote_url", remoteURL)
-
-						// Update the session in the database with the fetched RepoSource
-						if err := m.store.UpdateSessionRepoSource(context.Background(), m.sessionList.SessionForTemplate.Name, remoteURL); err != nil {
-							logging.Logger.Error("Failed to update RepoSource in database", "error", err)
-						} else {
-							// Also update in-memory state
-							sessionInfo.RepoSource = remoteURL
-							m.sessionState.Sessions[m.sessionList.SessionForTemplate.Name] = sessionInfo
-						}
-					}
-				}
-
-				logging.Logger.Info("Creating new session from template", "template_session", m.sessionList.SessionForTemplate.Name, "repo_source", repoSource)
-			}
-		}
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, repoSource)
-		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
-		m.state = stateCreatingSession
-		m.sessionList.SessionForTemplate = nil // Clear template reference
-		return m, m.sessionForm.Init()
-	}
-
-	if m.sessionList.RequestTestError {
-		m.sessionList.RequestTestError = false
-		m.setError(fmt.Errorf("this is a very long test error message to verify that the error display truncation functionality works correctly and ensures that error text wraps properly across multiple lines and eventually gets truncated with ellipsis if it exceeds the maximum allowed length of three lines which should be enforced by the formatErrorForDisplay function"))
-		return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-	}
-
-	return m, cmd
+	// Process actions via ListActionHandler
+	actionResult := m.listActionHandler.ProcessActions()
+	return m.handleActionResult(actionResult, cmd)
 }
 
 func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionForm.Update(msg)
 	m.sessionForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionForm.Content().(*SessionForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionForm.Content().(*SessionForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionForm = nil
-
-			// Check if session creation failed
-			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to create session: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-					log.Printf("Warning: failed to reload session state: %v", err)
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-				// Select the newly added session (always at position 0)
-				m.sessionList.list.Select(0)
-			}
-
-			return m, m.sessionList.Init()
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to create session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
+
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
+				log.Printf("Warning: failed to reload session state: %v", err)
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+			}
+			// Select the newly added session (always at position 0)
+			m.sessionList.list.Select(0)
+		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionRenameForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionRenameForm.Update(msg)
 	m.sessionRenameForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionRenameForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionRenameForm = nil
-
-			// Check if rename failed
-			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to rename session: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-			}
-
-			return m, m.sessionList.Init()
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to rename session: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
+
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+			}
+		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionStatusForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionStatusForm.Update(msg)
 	m.sessionStatusForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionStatusForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionStatusForm = nil
-
-			// Check if status update failed
-			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to update status: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-			}
-
-			return m, m.sessionList.Init()
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to update status: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
+
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+			}
+		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sessionCommentForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionCommentForm.Update(msg)
 	m.sessionCommentForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sessionCommentForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sessionCommentForm = nil
-
-			// Check if comment update failed
-			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to update comment: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			}
-
-			if !result.Cancelled {
-				// Reload session state
-				sessionState, err := m.store.Load(context.Background(), false)
-				if err != nil {
-					m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-					m.sessionList.RefreshFromState()
-					return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-				} else {
-					m.sessionState = sessionState
-				}
-				// Refresh session list component
-				m.sessionList.RefreshFromState()
-			}
-
-			return m, m.sessionList.Init()
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to update comment: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
+
+		if !result.Cancelled {
+			// Use helper - eliminates duplication
+			if err := m.reloadSessionStateAfterDialog(); err != nil {
+				m.errorManager.SetError(err)
+				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+			}
+		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.sendTextForm = nil
-			return m, m.sessionList.Init()
-		}
-	}
-
-	// Forward message to Dialog
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sendTextForm.Update(msg)
 	m.sendTextForm = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok {
-		if content.Completed {
-			result := content.Result()
+	// Check if dialog completed
+	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok && content.Completed {
+		result := content.Result()
+		m.state = stateList
+		m.sendTextForm = nil
 
-			// Return to list state
-			m.state = stateList
-			m.sendTextForm = nil
-
-			// Check if send text failed
-			if result.Error != nil {
-				m.setError(fmt.Errorf("failed to send text: %w", result.Error))
-				return m, tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-			}
-
-			return m, m.sessionList.Init()
+		if result.Error != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to send text: %w", result.Error))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 		}
+
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
-func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle Escape or Ctrl+C to cancel
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
-			m.state = stateList
-			m.helpScreen = nil
-			return m, m.sessionList.Init()
-		}
+// reloadSessionStateAfterDialog reloads state and refreshes list.
+// Eliminates the 8 duplications of reload pattern across dialog handlers.
+func (m *Model) reloadSessionStateAfterDialog() error {
+	newState, err := m.store.Load(context.Background(), false)
+	if err != nil {
+		return fmt.Errorf("failed to refresh sessions: %w", err)
 	}
+	m.sessionState = newState
+	m.sessionList.RefreshFromState()
+	return nil
+}
 
-	// Forward message to Dialog
+// handleActionResult processes the result from ListActionHandler and takes appropriate action.
+func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch result.ActionType {
+	case ActionNone:
+		if result.Cmd != nil {
+			return m, result.Cmd
+		}
+		return m, fallbackCmd
+
+	case ActionAttachSession, ActionAttachShellSession:
+		return m, result.Cmd
+
+	case ActionKillSession, ActionArchiveSession, ActionOpenEditor, ActionToggleFlag:
+		return m, result.Cmd
+
+	case ActionShowKillWorktreeDialog:
+		m.sessionToKill = result.SessionToKill
+		removeWorktree := false
+		m.formRemoveWorktree = &removeWorktree
+		m.worktreeRemovalForm = m.createWorktreeRemovalDialog(result.WorktreePath)
+		m.state = stateConfirmingWorktreeRemoval
+		return m, m.worktreeRemovalForm.Init()
+
+	case ActionShowArchiveWorktreeDialog:
+		m.sessionToArchive = result.SessionToArchive
+		removeWorktree := false
+		m.formRemoveWorktreeArchive = &removeWorktree
+		form := m.createArchiveWorktreeRemovalForm(result.WorktreePath)
+		m.worktreeRemovalForm = NewDialog("Archive Session", form, m.devMode)
+		m.state = stateConfirmingArchive
+		return m, m.worktreeRemovalForm.Init()
+
+	case ActionShowRenameDialog:
+		m.sessionRenameForm = NewDialog(result.DialogTitle, result.DialogContent, m.devMode)
+		m.state = result.NewState
+		return m, m.sessionRenameForm.Init()
+
+	case ActionShowStatusDialog:
+		m.sessionStatusForm = NewDialog(result.DialogTitle, result.DialogContent, m.devMode)
+		m.state = result.NewState
+		return m, m.sessionStatusForm.Init()
+
+	case ActionShowCommentDialog:
+		m.sessionCommentForm = NewDialog(result.DialogTitle, result.DialogContent, m.devMode)
+		m.state = result.NewState
+		return m, m.sessionCommentForm.Init()
+
+	case ActionShowSendTextDialog:
+		m.sendTextForm = NewDialog(result.DialogTitle, result.DialogContent, m.devMode)
+		m.state = result.NewState
+		return m, m.sendTextForm.Init()
+
+	case ActionShowHelpDialog:
+		contentForm := NewHelpScreen(&m.keys)
+		m.helpScreen = NewDialog("Help", contentForm, m.devMode)
+		m.state = result.NewState
+		// Send initial WindowSizeMsg so viewport can initialize
+		initCmd := m.helpScreen.Init()
+		updatedDialog, sizeCmd := m.helpScreen.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.helpScreen = updatedDialog.(*Dialog)
+		return m, tea.Batch(initCmd, sizeCmd)
+
+	case ActionShowNewSessionDialog:
+		logging.Logger.Debug("Creating new session dialog",
+			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
+			"default_repo_source", result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
+		m.state = result.NewState
+		return m, m.sessionForm.Init()
+
+	case ActionShowNewSessionFromDialog:
+		logging.Logger.Debug("Creating new session from template dialog",
+			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
+			"default_repo_source", result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
+		m.state = result.NewState
+		return m, m.sessionForm.Init()
+
+	default:
+		return m, fallbackCmd
+	}
+}
+
+func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.helpScreen.Update(msg)
 	m.helpScreen = updated.(*Dialog)
 
-	// Access wrapped content to check completion
-	if content, ok := m.helpScreen.Content().(*HelpScreen); ok {
-		if content.Completed {
-			// Return to list state
-			m.state = stateList
-			m.helpScreen = nil
-			return m, m.sessionList.Init()
-		}
+	// Check if dialog completed
+	if content, ok := m.helpScreen.Content().(*HelpScreen); ok && content.Completed {
+		m.state = stateList
+		m.helpScreen = nil
+		return m, m.sessionList.Init()
 	}
 
 	return m, cmd
 }
 
 type detachedMsg struct{}
-
-type clearErrorMsg struct{}
-
-// clearErrorAfterDelay returns a command that sends clearErrorMsg after the configured delay
-func (m *Model) clearErrorAfterDelay() tea.Cmd {
-	return tea.Tick(m.errorClearDelay, func(time.Time) tea.Msg {
-		return clearErrorMsg{}
-	})
-}
-
-// attachToSession suspends Bubble Tea, attaches to a tmux session via the abstraction layer,
-// and returns a detachedMsg when the user detaches
-func (m *Model) attachToSession(sessionName string) tea.Cmd {
-	logging.Logger.Info("Attaching to session via abstraction layer", "name", sessionName)
-
-	// Get the attach command from the abstraction layer
-	cmd := m.tmuxClient.GetAttachCommand(sessionName)
-
-	// Log the exact command being executed
-	logging.Logger.Debug("Executing tmux attach command",
-		"command", cmd.Path,
-		"args", cmd.Args,
-		"session_name", sessionName)
-
-	// Use tea.ExecProcess to suspend Bubble Tea and run the command
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		if err != nil {
-			logging.Logger.Error("Failed to attach to session", "error", err, "name", sessionName)
-			return err
-		}
-		logging.Logger.Info("Detached from session", "name", sessionName)
-		return detachedMsg{}
-	})
-}
-
-// getOrCreateShellSession returns shell session name, creating if needed
-// Returns empty string on error (error stored in m.err)
-func (m *Model) getOrCreateShellSession(session *tmux.Session) string {
-	sessionInfo, ok := m.sessionState.Sessions[session.Name]
-	if !ok {
-		m.err = fmt.Errorf("session info not found: %s", session.Name)
-		return ""
-	}
-
-	// Check if shell session already exists
-	if sessionInfo.ShellSession != nil {
-		// Check if tmux session exists
-		if m.tmuxClient.Exists(sessionInfo.ShellSession.Name) {
-			return sessionInfo.ShellSession.Name
-		}
-	}
-
-	// Create shell session name
-	shellSessionName := fmt.Sprintf("%s-shell", session.Name)
-
-	// Determine working directory
-	workingDir := sessionInfo.WorktreePath
-	if workingDir == "" {
-		workingDir = sessionInfo.RepoPath
-	}
-
-	// Create shell session in tmux
-	_, err := m.tmuxClient.CreateShellSession(shellSessionName, workingDir, m.tmuxStatusPosition)
-	if err != nil {
-		m.err = fmt.Errorf("failed to create shell session: %w", err)
-		return ""
-	}
-
-	// Create nested SessionInfo for shell session
-	shellInfo := storage.SessionInfo{
-		Name:         shellSessionName,
-		ShellSession: nil, // Shell sessions don't have their own shells
-		DisplayName:  "",  // No display name for shell sessions
-		State:        state.StateIdle,
-		ExecutionID:  sessionInfo.ExecutionID,
-		LastUpdated:  time.Now().UTC(),
-		RepoPath:     sessionInfo.RepoPath,
-		RepoInfo:     sessionInfo.RepoInfo,
-		BranchName:   sessionInfo.BranchName,
-		WorktreePath: sessionInfo.WorktreePath,
-	}
-
-	// Update parent session with nested shell info
-	sessionInfo.ShellSession = &shellInfo
-	m.sessionState.Sessions[session.Name] = sessionInfo
-
-	if err := m.store.Save(context.Background(), m.sessionState); err != nil {
-		logging.Logger.Warn("Failed to save shell session to state", "error", err)
-	}
-
-	return shellSessionName
-}
-
-// killSession kills a session and removes it from state
-func (m *Model) killSession(session *tmux.Session) tea.Cmd {
-	logging.Logger.Info("Killing session", "name", session.Name)
-
-	// Get session info to check for shell session
-	sessionInfo, hasInfo := m.sessionState.Sessions[session.Name]
-
-	// Kill shell session if it exists
-	if hasInfo && sessionInfo.ShellSession != nil {
-		logging.Logger.Info("Killing shell session", "name", sessionInfo.ShellSession.Name)
-		if err := m.tmuxClient.Kill(sessionInfo.ShellSession.Name); err != nil {
-			logging.Logger.Warn("Failed to kill shell session", "error", err)
-		}
-	}
-
-	// Kill main Claude session
-	if err := m.tmuxClient.Kill(session.Name); err != nil {
-		m.setError(fmt.Errorf("failed to kill session '%s': %w", session.Name, err))
-		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay()) // Continue polling and clear error after delay
-	}
-
-	// Check if session has worktree and remove it from state
-	if hasInfo && sessionInfo.WorktreePath != "" {
-		logging.Logger.Info("Session had worktree", "path", sessionInfo.WorktreePath)
-	}
-
-	// Remove session from state
-	st, err := m.store.Load(context.Background(), false)
-	if err != nil {
-		log.Printf("Warning: failed to load state: %v", err)
-	} else {
-		delete(st.Sessions, session.Name)
-		if err := m.store.Save(context.Background(), st); err != nil {
-			log.Printf("Warning: failed to save state: %w", err)
-		}
-		m.sessionState = st
-	}
-
-	// Refresh session list component
-	m.sessionList.RefreshFromState()
-	return m.sessionList.Init() // Continue polling
-}
 
 func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
@@ -921,7 +566,7 @@ func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.formRemoveWorktreeArchive = nil
 
 			// Archive with worktree removal decision
-			return m, m.archiveSession(session, removeWorktree)
+			return m, m.sessionOps.ArchiveSession(session, removeWorktree, m.sessionState, m.sessionList)
 		}
 	}
 
@@ -970,7 +615,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 			if removeWorktree {
 				logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
 				if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
-					m.setError(fmt.Errorf("failed to remove worktree: %w", err))
+					m.errorManager.SetError(fmt.Errorf("failed to remove worktree: %w", err))
 					logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
 					worktreeErr = true
 				} else {
@@ -981,7 +626,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 			}
 
 			// Kill the session
-			killCmd := m.killSession(session)
+			killCmd := m.sessionOps.KillSession(session, m.sessionState, m.sessionList)
 
 			// Reset state
 			m.state = stateList
@@ -991,7 +636,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 
 			// If there was a worktree error, add clearErrorAfterDelay to the batch
 			if worktreeErr {
-				return m, tea.Batch(killCmd, m.clearErrorAfterDelay())
+				return m, tea.Batch(killCmd, m.errorManager.ClearAfterDelay())
 			}
 			return m, killCmd
 		}
@@ -1038,9 +683,9 @@ func (m *Model) View() string {
 		// Bottom section - fixed 2 lines (error or tip or empty)
 		// Always reserve 2 lines to prevent layout shift
 		view += "\n"
-		if m.err != nil {
+		if m.errorManager.HasError() {
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-			errorText := formatErrorForDisplay(m.err, m.width)
+			errorText := formatErrorForDisplay(m.errorManager.GetError(), m.width)
 			view += errorStyle.Render(errorText)
 			// Clear tip when error is shown
 			m.sessionList.ClearCurrentTip()
@@ -1086,53 +731,4 @@ func (m *Model) View() string {
 		}
 	}
 	return ""
-}
-
-// setError sets model error.
-// Error will be displayed in the reserved 2-line error area.
-func (m *Model) setError(err error) {
-	m.err = err
-}
-
-// clearError clears model error.
-func (m *Model) clearError() {
-	m.err = nil
-}
-
-// archiveSession archives a session and optionally removes its worktree
-func (m *Model) archiveSession(session *tmux.Session, removeWorktree bool) tea.Cmd {
-	logging.Logger.Info("Archiving session", "name", session.Name, "removeWorktree", removeWorktree)
-
-	// Get session info
-	sessionInfo, hasInfo := m.sessionState.Sessions[session.Name]
-
-	// Remove worktree if requested
-	if removeWorktree && hasInfo && sessionInfo.WorktreePath != "" {
-		logging.Logger.Info("Removing worktree", "path", sessionInfo.WorktreePath, "repo", sessionInfo.RepoPath)
-		if err := git.RemoveWorktree(sessionInfo.RepoPath, sessionInfo.WorktreePath); err != nil {
-			m.setError(fmt.Errorf("failed to remove worktree, continuing with archive: %w", err))
-			logging.Logger.Error("Failed to remove worktree", "error", err, "path", sessionInfo.WorktreePath)
-		} else {
-			logging.Logger.Info("Worktree removed successfully", "path", sessionInfo.WorktreePath)
-		}
-	}
-
-	// Toggle archive state
-	if err := m.store.ToggleArchive(context.Background(), session.Name); err != nil {
-		m.setError(fmt.Errorf("failed to archive session: %w", err))
-		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-	}
-
-	// Reload session state (showArchived=false, so archived session will disappear)
-	sessionState, err := m.store.Load(context.Background(), false)
-	if err != nil {
-		m.setError(fmt.Errorf("failed to refresh sessions: %w", err))
-		m.sessionList.RefreshFromState()
-		return tea.Batch(m.sessionList.Init(), m.clearErrorAfterDelay())
-	}
-	m.sessionState = sessionState
-
-	// Refresh UI
-	m.sessionList.RefreshFromState()
-	return m.sessionList.Init()
 }

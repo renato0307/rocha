@@ -251,6 +251,8 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	if cli.settings != nil && cli.settings.AllowDangerouslySkipPermissions != nil {
 		allowDangerouslySkipPermissionsDefault = *cli.settings.AllowDangerouslySkipPermissions
 	}
+	logging.Logger.Debug("Allow dangerously skip permissions default from settings",
+		"value", allowDangerouslySkipPermissionsDefault)
 
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")

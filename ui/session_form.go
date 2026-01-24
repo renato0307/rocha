@@ -72,6 +72,10 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
 
+	logging.Logger.Debug("Creating session form with default values",
+		"allow_dangerously_skip_permissions_default", allowDangerouslySkipPermissionsDefault,
+		"default_repo_source", defaultRepoSource)
+
 	// Check if we're in a git repository
 	cwd, _ := os.Getwd()
 	isGit, repo := git.IsGitRepo(cwd)
@@ -187,6 +191,8 @@ func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, se
 	)
 
 	// Add skip permissions field for all repos
+	logging.Logger.Debug("Creating skip permissions field",
+		"current_value", sf.result.AllowDangerouslySkipPermissions)
 	fields = append(fields,
 		huh.NewConfirm().
 			Title("Skip permission prompts? (DANGEROUS)").
@@ -227,9 +233,10 @@ func (sf *SessionForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+			sf.Completed = true
 			sf.cancelled = true
 			sf.result.Cancelled = true
-			return sf, tea.Quit
+			return sf, nil
 		}
 	}
 
