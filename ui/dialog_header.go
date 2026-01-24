@@ -10,7 +10,7 @@ import (
 // renderHeader creates a consistent header used across the entire application.
 // It displays the app name with optional version info (in dev mode) and tagline.
 // If subtitle is provided, it's rendered below the tagline (used for dialog form titles).
-func renderHeader(devMode bool, subtitle string) string {
+func renderHeader(devMode bool, subtitle string, _ string) string {
 	// Title style - matches session list (color 99, bold)
 	appNameStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -61,5 +61,5 @@ func renderHeader(devMode bool, subtitle string) string {
 // form component in a Dialog using NewDialog(), which will automatically add
 // the header. This enforces consistent headers "by design" across all dialogs.
 func renderDialogHeader(devMode bool, formTitle string) string {
-	return renderHeader(devMode, formTitle)
+	return renderHeader(devMode, formTitle, "") // No tip for dialogs
 }
