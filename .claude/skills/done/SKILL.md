@@ -241,7 +241,33 @@ Guidelines:
 - Test plan should be actionable checklist items
 - **NO** "Generated with Claude Code" or AI attribution footer
 
-### 4.5 Create PR
+### 4.5 Push Branch (if needed)
+
+Before creating the PR, check if the branch has been pushed:
+
+```bash
+git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null
+```
+
+**If this command fails** (no upstream branch set):
+
+Push the branch and set upstream:
+```bash
+git push -u origin <branch-name>
+```
+
+**If this command succeeds** (upstream branch exists):
+
+Check if local is ahead of remote:
+```bash
+git status -sb
+```
+
+If the output shows `[ahead N]` or `[ahead N, behind M]`:
+- After rebase, the branch needs a force push
+- Run: `git push --force-with-lease`
+
+### 4.6 Create PR
 
 Use heredoc for proper formatting:
 
@@ -262,11 +288,10 @@ EOF
 )" --base main
 ```
 
-### 4.6 Handle PR Creation Result
+### 4.7 Handle PR Creation Result
 
 **If successful**:
 - Display the PR URL to the user
-- Inform user: "If this branch was previously pushed, you may need to force push: `git push --force-with-lease`"
 
 **If PR already exists**:
 - Show error message
@@ -293,11 +318,11 @@ For any command that fails:
 
 ## Notes
 
-- If the branch hasn't been pushed yet, the first push will need to set upstream: `git push -u origin <branch-name>`
+- The workflow automatically handles pushing the branch if needed (Step 4.5)
 - Prefer clear, atomic commits over large batch commits
 - The PR description should help reviewers understand the context quickly
 - If pre-commit hooks modify files, they'll need to be staged and committed again
-- After rebase, if the branch was already pushed, force push is required: `git push --force-with-lease` (safer than `--force`)
+- After rebase, force push with `--force-with-lease` is safer than `--force` (protects against overwriting others' work)
 
 ## Usage Examples
 
