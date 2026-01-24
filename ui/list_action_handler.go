@@ -97,6 +97,19 @@ func NewListActionHandler(
 	}
 }
 
+// getFreshSessionInfo loads fresh session info from the database to avoid stale state issues.
+// Returns the SessionInfo and true if found, or zero value and false if not found.
+func (lah *ListActionHandler) getFreshSessionInfo(sessionName string) (storage.SessionInfo, bool) {
+	freshState, err := lah.store.Load(context.Background(), false)
+	if err != nil {
+		logging.Logger.Error("Failed to load fresh state", "error", err)
+		// Fall back to cached state
+		freshState = lah.sessionState
+	}
+	sessionInfo, ok := freshState.Sessions[sessionName]
+	return sessionInfo, ok
+}
+
 // ProcessActions checks SessionList for action requests and returns what Model should do
 func (lah *ListActionHandler) ProcessActions() ActionResult {
 	// Check for attach session
@@ -128,8 +141,8 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		session := lah.sessionList.SessionToKill
 		lah.sessionList.SessionToKill = nil
 
-		// Check if session has worktree
-		if sessionInfo, ok := lah.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
+		// Use fresh state to avoid race condition with polling
+		if sessionInfo, ok := lah.getFreshSessionInfo(session.Name); ok && sessionInfo.WorktreePath != "" {
 			return ActionResult{
 				ActionType:    ActionShowKillWorktreeDialog,
 				SessionToKill: session,
@@ -282,8 +295,8 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		session := lah.sessionList.SessionToArchive
 		lah.sessionList.SessionToArchive = nil
 
-		// Check if session has worktree
-		if sessionInfo, ok := lah.sessionState.Sessions[session.Name]; ok && sessionInfo.WorktreePath != "" {
+		// Use fresh state to avoid race condition with polling
+		if sessionInfo, ok := lah.getFreshSessionInfo(session.Name); ok && sessionInfo.WorktreePath != "" {
 			return ActionResult{
 				ActionType:       ActionShowArchiveWorktreeDialog,
 				SessionToArchive: session,
