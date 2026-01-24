@@ -108,9 +108,9 @@ type RunCmd struct {
 	TimestampStaleColor        string `help:"ANSI color code for stale timestamps (matches waiting state ◐)" default:"1"`
 	TimestampWarningColor      string `help:"ANSI color code for warning timestamps (matches idle state ○)" default:"3"`
 	TimestampWarningMinutes    int    `help:"Minutes threshold for warning timestamps (yellow color)" default:"20"`
-	TipsDisplayDurationSeconds int    `help:"Seconds to display each tip" default:"30"`
+	TipsDisplayDurationSeconds int    `help:"Seconds to display each tip" default:"90"`
 	TipsEnabled                bool   `help:"Enable rotating tips display" default:"true"`
-	TipsShowIntervalSeconds    int    `help:"Seconds between tips" default:"90"`
+	TipsShowIntervalSeconds    int    `help:"Seconds between tips" default:"2"`
 	TmuxStatusPosition         string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
 }
 
@@ -176,12 +176,12 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 				r.TipsEnabled = false
 			}
 		}
-		if r.TipsDisplayDurationSeconds == 30 {
+		if r.TipsDisplayDurationSeconds == 90 {
 			if cli.settings.TipsDisplayDurationSeconds != nil {
 				r.TipsDisplayDurationSeconds = *cli.settings.TipsDisplayDurationSeconds
 			}
 		}
-		if r.TipsShowIntervalSeconds == 90 {
+		if r.TipsShowIntervalSeconds == 2 {
 			if cli.settings.TipsShowIntervalSeconds != nil {
 				r.TipsShowIntervalSeconds = *cli.settings.TipsShowIntervalSeconds
 			}

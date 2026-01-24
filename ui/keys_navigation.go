@@ -20,7 +20,7 @@ func newNavigationKeys() NavigationKeys {
 				key.WithKeys("esc"),
 				key.WithHelp("esc", "clear filter (press twice within 500ms)"),
 			),
-			Tip: newTip("press 'esc' twice to clear the filter"),
+			Tip: newTip("press %s twice to clear the filter", "esc"),
 		},
 		Down: KeyWithTip{
 			Binding: key.NewBinding(
@@ -33,7 +33,7 @@ func newNavigationKeys() NavigationKeys {
 				key.WithKeys("/"),
 				key.WithHelp("/", "filter"),
 			),
-			Tip: newTip("press '/' to filter sessions by name or branch"),
+			Tip: newTip("press %s to filter sessions by name or branch", "/"),
 		},
 		MoveDown: KeyWithTip{
 			Binding: key.NewBinding(
@@ -46,7 +46,7 @@ func newNavigationKeys() NavigationKeys {
 				key.WithKeys("K", "shift+up"),
 				key.WithHelp("shift+↑/k", "move session up"),
 			),
-			Tip: newTip("press 'shift+↑' to reorder sessions in the list"),
+			Tip: newTip("press %s to reorder sessions in the list", "shift+↑"),
 		},
 		Up: KeyWithTip{
 			Binding: key.NewBinding(

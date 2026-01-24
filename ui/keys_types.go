@@ -1,19 +1,58 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Tip holds a tip format string and the keys to highlight
+type Tip struct {
+	Format string
+	Keys   []string
+}
 
 // tips is the private collection of all tips, populated by newTip()
-var tips []string
+var tips []Tip
 
-// newTip registers a tip and returns it for inline assignment
-func newTip(tip string) string {
-	tips = append(tips, tip)
-	return tip
+// Styles for tip rendering
+var (
+	tipKeyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
+	tipTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+)
+
+// newTip registers a tip with format string and keys to highlight
+// Format uses %s placeholders for keys, e.g. newTip("press %s to filter", "/")
+func newTip(format string, keys ...string) string {
+	tips = append(tips, Tip{Format: format, Keys: keys})
+	// Return plain text for Tip field (used for filtering, etc.)
+	args := make([]any, len(keys))
+	for i, k := range keys {
+		args[i] = k
+	}
+	return fmt.Sprintf(format, args...)
 }
 
 // GetTips returns all registered tips
-func GetTips() []string {
+func GetTips() []Tip {
 	return tips
+}
+
+// RenderTip formats a tip with highlighted keys and gray text
+func RenderTip(tip Tip) string {
+	// Split format by %s to get text segments
+	parts := strings.Split(tip.Format, "%s")
+	var result string
+	result += tipTextStyle.Render("ℹ  tip: ")
+	for i, part := range parts {
+		result += tipTextStyle.Render(part)
+		if i < len(tip.Keys) {
+			result += tipKeyStyle.Render(tip.Keys[i])
+		}
+	}
+	return result
 }
 
 // KeyWithTip wraps a key.Binding with an optional tip for rotating tips display.

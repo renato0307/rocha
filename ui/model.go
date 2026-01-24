@@ -1045,8 +1045,7 @@ func (m *Model) View() string {
 			// Clear tip when error is shown
 			m.sessionList.ClearCurrentTip()
 		} else if tip := m.sessionList.GetCurrentTip(); tip != "" {
-			tipStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-			view += tipStyle.Render("ℹ  tip: " + tip) + "\n "
+			view += tip + "\n "
 		} else {
 			// Empty lines to maintain fixed 2-line spacing
 			view += " \n "

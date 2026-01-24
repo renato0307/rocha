@@ -37,35 +37,35 @@ func newSessionManagementKeys() SessionManagementKeys {
 				key.WithKeys("a"),
 				key.WithHelp("a", "archive"),
 			),
-			Tip: newTip("press 'a' to archive a session (hidden from list)"),
+			Tip: newTip("press %s to archive a session (hidden from list)", "a"),
 		},
 		Kill: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("x"),
 				key.WithHelp("x", "kill"),
 			),
-			Tip: newTip("press 'x' to kill a session and optionally remove its worktree"),
+			Tip: newTip("press %s to kill a session and optionally remove its worktree", "x"),
 		},
 		New: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("n"),
 				key.WithHelp("n", "new"),
 			),
-			Tip: newTip("press 'n' to create a new session"),
+			Tip: newTip("press %s to create a new session", "n"),
 		},
 		NewFromRepo: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("N"),
 				key.WithHelp("shift+n", "new from same repo"),
 			),
-			Tip: newTip("press 'shift+N' to create a new session based on the selected session"),
+			Tip: newTip("press %s to create a new session based on the selected session", "shift+n"),
 		},
 		Rename: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("r"),
 				key.WithHelp("r", "rename"),
 			),
-			Tip: newTip("press 'r' to rename a session"),
+			Tip: newTip("press %s to rename a session", "r"),
 		},
 	}
 }
@@ -78,35 +78,35 @@ func newSessionMetadataKeys() SessionMetadataKeys {
 				key.WithKeys("c"),
 				key.WithHelp("c", "comment (⌨)"),
 			),
-			Tip: newTip("press 'c' to add a comment to a session"),
+			Tip: newTip("press %s to add a comment to a session", "c"),
 		},
 		Flag: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("f"),
 				key.WithHelp("f", "flag (⚑)"),
 			),
-			Tip: newTip("press 'f' to flag a session for attention"),
+			Tip: newTip("press %s to flag a session for attention", "f"),
 		},
 		SendText: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("p"),
 				key.WithHelp("p", "send text (prompt)"),
 			),
-			Tip: newTip("press 'p' to send text to a session (experimental)"),
+			Tip: newTip("press %s to send text to a session (experimental)", "p"),
 		},
 		StatusCycle: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("s"),
 				key.WithHelp("s", "cycle status"),
 			),
-			Tip: newTip("press 's' to cycle through implementation statuses"),
+			Tip: newTip("press %s to cycle through implementation statuses", "s"),
 		},
 		StatusSetForm: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("S"),
 				key.WithHelp("shift+s", "set status"),
 			),
-			Tip: newTip("press 'shift+S' to pick a specific status"),
+			Tip: newTip("press %s to pick a specific status", "shift+s"),
 		},
 	}
 }
@@ -119,7 +119,7 @@ func newSessionActionsKeys() SessionActionsKeys {
 				key.WithKeys("ctrl+q"),
 				key.WithHelp("ctrl+q", "detach from session (return to list)"),
 			),
-			Tip: newTip("press 'ctrl+q' inside a session to return to the list"),
+			Tip: newTip("press %s inside a session to return to the list", "ctrl+q"),
 		},
 		Open: KeyWithTip{
 			Binding: key.NewBinding(
@@ -132,21 +132,21 @@ func newSessionActionsKeys() SessionActionsKeys {
 				key.WithKeys("o"),
 				key.WithHelp("o", "editor"),
 			),
-			Tip: newTip("press 'o' to open the session's folder in your editor"),
+			Tip: newTip("press %s to open the session's folder in your editor", "o"),
 		},
 		OpenShell: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("alt+enter"),
 				key.WithHelp("alt+enter", "shell (>_)"),
 			),
-			Tip: newTip("press 'alt+enter' to open a shell session alongside claude"),
+			Tip: newTip("press %s to open a shell session alongside claude", "alt+enter"),
 		},
 		QuickOpen: KeyWithTip{
 			Binding: key.NewBinding(
 				key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7"),
 				key.WithHelp("alt+1-7", "quick open"),
 			),
-			Tip: newTip("press 'alt+1-7' to quickly open sessions by their number"),
+			Tip: newTip("press %s to quickly open sessions by their number", "alt+1-7"),
 		},
 	}
 }

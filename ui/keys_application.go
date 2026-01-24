@@ -24,7 +24,7 @@ func newApplicationKeys() ApplicationKeys {
 				key.WithKeys("h", "?"),
 				key.WithHelp("h/?", "help"),
 			),
-			Tip: newTip("press '?' to see all shortcuts"),
+			Tip: newTip("press %s to see all shortcuts", "?"),
 		},
 		Quit: KeyWithTip{
 			Binding: key.NewBinding(
@@ -37,7 +37,7 @@ func newApplicationKeys() ApplicationKeys {
 				key.WithKeys("t"),
 				key.WithHelp("t", "toggle timestamps"),
 			),
-			Tip: newTip("press 't' to toggle timestamp display"),
+			Tip: newTip("press %s to toggle timestamp display", "t"),
 		},
 	}
 }

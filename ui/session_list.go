@@ -233,7 +233,7 @@ type SessionList struct {
 	tmuxStatusPosition string
 
 	// Tips feature
-	currentTip string     // Currently displayed tip (empty = hidden)
+	currentTip *Tip       // Currently displayed tip (nil = hidden)
 	tipsConfig TipsConfig // Tips display configuration
 
 	// Escape handling for filter clearing
@@ -291,10 +291,10 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 	l.SetShowHelp(false) // We'll render our own help
 
 	// Show a tip immediately at startup if tips are enabled
-	var initialTip string
+	var initialTip *Tip
 	allTips := GetTips()
 	if tipsConfig.Enabled && len(allTips) > 0 {
-		initialTip = allTips[rand.Intn(len(allTips))]
+		initialTip = &allTips[rand.Intn(len(allTips))]
 	}
 
 	return &SessionList{
@@ -320,7 +320,7 @@ func (sl *SessionList) Init() tea.Cmd {
 	cmds := []tea.Cmd{pollStateCmd()}
 
 	// Schedule hide for the initial tip (already shown at startup)
-	if sl.tipsConfig.Enabled && sl.currentTip != "" {
+	if sl.tipsConfig.Enabled && sl.currentTip != nil {
 		cmds = append(cmds, tea.Tick(time.Duration(sl.tipsConfig.DisplayDurationSeconds)*time.Second, func(time.Time) tea.Msg {
 			return hideTipMsg{}
 		}))
@@ -416,7 +416,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Time to show a new random tip
 		allTips := GetTips()
 		if len(allTips) > 0 {
-			sl.currentTip = allTips[rand.Intn(len(allTips))]
+			sl.currentTip = &allTips[rand.Intn(len(allTips))]
 			return sl, tea.Tick(time.Duration(sl.tipsConfig.DisplayDurationSeconds)*time.Second, func(time.Time) tea.Msg {
 				return hideTipMsg{}
 			})
@@ -425,7 +425,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case hideTipMsg:
 		// Hide the current tip and schedule the next one
-		sl.currentTip = ""
+		sl.currentTip = nil
 		if sl.tipsConfig.Enabled {
 			return sl, tea.Tick(time.Duration(sl.tipsConfig.ShowIntervalSeconds)*time.Second, func(time.Time) tea.Msg {
 				return showTipMsg{}
@@ -682,21 +682,24 @@ func (sl *SessionList) View() string {
 	if sl.err != nil {
 		errorText := formatErrorForDisplay(sl.err, sl.width)
 		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(errorText)
-		sl.currentTip = "" // Clear tip when error is shown
+		sl.currentTip = nil // Clear tip when error is shown
 		sl.err = nil
 	}
 
 	return s
 }
 
-// GetCurrentTip returns the current tip text (empty if no tip to show)
+// GetCurrentTip returns the current tip text with highlighted keys (empty if no tip to show)
 func (sl *SessionList) GetCurrentTip() string {
-	return sl.currentTip
+	if sl.currentTip == nil {
+		return ""
+	}
+	return RenderTip(*sl.currentTip)
 }
 
 // ClearCurrentTip clears the current tip (called when error is shown)
 func (sl *SessionList) ClearCurrentTip() {
-	sl.currentTip = ""
+	sl.currentTip = nil
 }
 
 // SetSize sets the available size for the session list
