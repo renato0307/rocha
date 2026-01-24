@@ -295,7 +295,7 @@ func (sf *SessionForm) createSession() error {
 		"repo_source", repoSource)
 
 	// Generate tmux-compatible name (remove colons, replace spaces/special chars with underscores)
-	tmuxName := sanitizeTmuxName(sessionName)
+	tmuxName := tmux.SanitizeSessionName(sessionName)
 
 	var claudeDir string
 	var repoInfo string

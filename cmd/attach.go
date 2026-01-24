@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
 	"rocha/git"
 	"rocha/logging"
 	"rocha/paths"
@@ -90,7 +90,7 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	}
 
 	// Step 3: Sanitize ONLY session name for tmux (NOT repo/branch/worktree)
-	sessionName = sanitizeSessionName(sessionName)
+	sessionName = tmux.SanitizeSessionName(sessionName)
 
 	if sessionName == "" {
 		return fmt.Errorf("could not determine session name (no branch, no directory name)")
@@ -205,21 +205,3 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	return nil
 }
 
-// sanitizeSessionName cleans a string to be tmux-safe
-func sanitizeSessionName(name string) string {
-	// Replace spaces and special characters
-	name = strings.ReplaceAll(name, " ", "-")
-	name = strings.ToLower(name)
-
-	// Remove any other problematic characters
-	// Tmux doesn't like: . : (in some contexts)
-	// Keep: a-z 0-9 - _
-	var result strings.Builder
-	for _, ch := range name {
-		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
-			result.WriteRune(ch)
-		}
-	}
-
-	return result.String()
-}

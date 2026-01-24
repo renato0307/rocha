@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -235,15 +234,6 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 			}
 		}
 
-		// Detect sessions where Claude has exited
-		for _, sessionName := range runningNames {
-			if !isClaudeRunningInSession(sessionName) {
-				logging.Logger.Info("Claude has exited from session", "name", sessionName)
-				if err := store.UpdateSession(context.Background(), sessionName, state.StateExited, executionID); err != nil {
-					logging.Logger.Error("Failed to update exited state", "error", err, "session", sessionName)
-				}
-			}
-		}
 	}
 
 	// Extract allow dangerously skip permissions default from settings
@@ -284,11 +274,4 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 
 	logging.Logger.Info("TUI program exited normally")
 	return nil
-}
-
-// isClaudeRunningInSession checks if Claude Code is running in the given tmux session
-func isClaudeRunningInSession(sessionName string) bool {
-	cmd := exec.Command("pgrep", "-f", fmt.Sprintf("claude.*notify %s", sessionName))
-	err := cmd.Run()
-	return err == nil // Exit code 0 means process found
 }
