@@ -37,7 +37,7 @@
 - [ ] Move state.json to ~/.rocha directory
 - [ ] Auto-enable debug mode when --debug-file is set
 - [ ] Add settings.json to rocha so we can configure stuff permanently
-- [ ] Use sounds less annoying and allow configuration in rocha settings.json
+- [x] Use sounds less annoying and allow configuration in rocha settings.json
 
 ## Code Organization
 

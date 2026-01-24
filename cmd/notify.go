@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -15,9 +14,27 @@ import (
 
 // NotifyCmd handles notification events from Claude hooks
 type NotifyCmd struct {
-	SessionName string `arg:"" help:"Name of the session triggering the notification"`
+	EnableSound bool   `help:"Enable notification sounds" env:"ROCHA_ENABLE_SOUND"`
 	EventType   string `arg:"" help:"Type of event: stop, prompt, start" default:"stop"`
 	ExecutionID string `help:"Execution ID from parent rocha TUI" optional:""`
+	SessionName string `arg:"" help:"Name of the session triggering the notification"`
+}
+
+// resolveSoundEnabled determines if sound should be enabled based on precedence:
+// CLI flag > environment variable > settings.json > default (false)
+func (n *NotifyCmd) resolveSoundEnabled(cli *CLI) bool {
+	// Check if flag was explicitly set (non-default value)
+	if n.EnableSound {
+		return true
+	}
+
+	// Check settings.json (Kong's env tag handles ROCHA_ENABLE_SOUND automatically)
+	if cli.settings != nil && cli.settings.SoundEnabled != nil {
+		return *cli.settings.SoundEnabled
+	}
+
+	// Default: sound OFF
+	return false
 }
 
 // Run executes the notification handler
@@ -66,16 +83,18 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		"pid", os.Getpid(),
 		"ppid", os.Getppid())
 
-	// Play sound for stop, start, notification, and end events (not for prompt - user already knows they submitted)
-	if n.EventType == "stop" || n.EventType == "start" || n.EventType == "notification" || n.EventType == "end" {
-		logging.Logger.Debug("Playing notification sound", "event", n.EventType)
+	// Play sound for stop, start, notification, and end events if enabled
+	shouldPlaySound := n.resolveSoundEnabled(cli)
+	if shouldPlaySound && (n.EventType == "stop" || n.EventType == "start" ||
+		n.EventType == "notification" || n.EventType == "end") {
+		logging.Logger.Debug("Playing notification sound", "event", n.EventType, "enabled", true)
 		if err := sound.PlaySoundForEvent(n.EventType); err != nil {
 			logging.Logger.Error("Failed to play sound", "error", err)
-			return fmt.Errorf("failed to play notification sound: %w", err)
+			// Don't fail notification on sound error
 		}
 		logging.Logger.Debug("Sound played successfully")
 	} else {
-		logging.Logger.Debug("Skipping sound for event type", "event", n.EventType)
+		logging.Logger.Debug("Skipping sound", "event", n.EventType, "enabled", shouldPlaySound)
 	}
 
 	// Map event type to session state
