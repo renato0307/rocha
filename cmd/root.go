@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type CLI struct {
 	Debug       bool             `help:"Enable debug logging to file" short:"d"`
 	DebugFile   string           `help:"Custom path for debug log file (disables automatic cleanup)"`
 	MaxLogFiles int              `help:"Maximum number of log files to keep (0 = unlimited)" default:"1000"`
+	Profile     string           `help:"Profile name (uses ~/.rocha_<profile> and ~/.claude_<profile>)" short:"p"`
 
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
@@ -47,8 +49,40 @@ func (c *CLI) SetSettings(settings *config.Settings) {
 	c.settings = settings
 }
 
+// resolveProfile determines active profile with precedence: CLI flag > env > settings
+func (c *CLI) resolveProfile() string {
+	if c.Profile != "" {
+		return c.Profile
+	}
+	if envProfile := os.Getenv("ROCHA_PROFILE"); envProfile != "" {
+		return envProfile
+	}
+	if c.settings != nil && c.settings.Profile != "" {
+		return c.settings.Profile
+	}
+	return ""
+}
+
 // AfterApply initializes logging after CLI parsing and applies settings
 func (c *CLI) AfterApply() error {
+	// Step 1: Resolve active profile with precedence
+	activeProfile := c.resolveProfile()
+
+	// Step 2: Set ROCHA_PROFILE env var for child processes
+	if activeProfile != "" {
+		os.Setenv("ROCHA_PROFILE", activeProfile)
+	}
+
+	// Step 3: Set ROCHA_HOME if profile is active (not default/empty)
+	var profileRochaHome string
+	if activeProfile != "" && activeProfile != "default" {
+		if _, hasEnv := os.LookupEnv("ROCHA_HOME"); !hasEnv {
+			homeDir, _ := os.UserHomeDir()
+			profileRochaHome = filepath.Join(homeDir, fmt.Sprintf(".rocha_%s", activeProfile))
+			os.Setenv("ROCHA_HOME", profileRochaHome)
+		}
+	}
+
 	// Apply settings with proper precedence: CLI flags > env vars > settings.json > defaults
 	// Only apply if flag is at default value and env var is not set
 
@@ -76,6 +110,14 @@ func (c *CLI) AfterApply() error {
 	logFilePath, err := logging.Initialize(c.Debug, c.DebugFile, c.MaxLogFiles)
 	if err != nil {
 		return err
+	}
+
+	// Log profile activation and computed paths after logging is initialized
+	if activeProfile != "" {
+		logging.Logger.Info("Profile configuration",
+			"profile", activeProfile,
+			"rocha_home", paths.GetRochaHome(),
+			"default_claude_dir", config.DefaultClaudeDir())
 	}
 
 	// Set environment variables AFTER initialization so child processes inherit debug settings

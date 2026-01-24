@@ -141,10 +141,31 @@ func (c *DefaultClient) Create(name string, worktreePath string, claudeDir strin
 	// Set session name in environment and start claude with hooks
 	envVars := fmt.Sprintf("ROCHA_SESSION_NAME=%s", name)
 
-	// Add CLAUDE_CONFIG_DIR if specified
-	if claudeDir != "" {
-		envVars += fmt.Sprintf(" CLAUDE_CONFIG_DIR=%q", claudeDir)
-		logging.Logger.Info("Setting CLAUDE_CONFIG_DIR for session", "claude_dir", claudeDir)
+	// Add profile environment variables if set
+	if profile := os.Getenv("ROCHA_PROFILE"); profile != "" {
+		envVars += fmt.Sprintf(" ROCHA_PROFILE=%s", profile)
+	}
+	if rochaHome := os.Getenv("ROCHA_HOME"); rochaHome != "" {
+		envVars += fmt.Sprintf(" ROCHA_HOME=%q", rochaHome)
+	}
+
+	// Set CLAUDE_CONFIG_DIR: use provided claudeDir or compute from profile
+	claudeDirToUse := claudeDir
+	if claudeDirToUse == "" {
+		// Compute profile-specific Claude directory if profile is active
+		if profile := os.Getenv("ROCHA_PROFILE"); profile != "" && profile != "default" {
+			homeDir, err := os.UserHomeDir()
+			if err == nil {
+				claudeDirToUse = fmt.Sprintf("%s/.claude_%s", homeDir, profile)
+			}
+		} else if envClaudeDir := os.Getenv("CLAUDE_CONFIG_DIR"); envClaudeDir != "" {
+			// Fall back to environment variable if set
+			claudeDirToUse = envClaudeDir
+		}
+	}
+	if claudeDirToUse != "" {
+		envVars += fmt.Sprintf(" CLAUDE_CONFIG_DIR=%q", claudeDirToUse)
+		logging.Logger.Info("Setting CLAUDE_CONFIG_DIR for session", "claude_dir", claudeDirToUse)
 	}
 
 	// Add debug environment variables if set
