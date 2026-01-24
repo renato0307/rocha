@@ -650,6 +650,15 @@ func (sl *SessionList) View() string {
 	// Legend + Shortcuts (moved to top, below header)
 	shortcutStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
 	helpText := sl.renderStatusLegend() + "  " + shortcutStyle.Render("?") + helpLabelStyle.Render(" shortcuts")
+
+	// Add first-session hint when there's exactly 1 session (highlighted for first-timers)
+	if len(sl.list.Items()) == 1 {
+		hintKeyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
+		hintLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("178"))
+		helpText += "  " + hintKeyStyle.Render("enter") + hintLabelStyle.Render(" open Claude ") +
+			hintKeyStyle.Render("ctrl+q") + hintLabelStyle.Render(" return here")
+	}
+
 	s += helpStyle.Render(helpText) + "\n"
 
 	// Session List
