@@ -26,15 +26,15 @@ func NewKeyMap() KeyMap {
 // Note: ctrl+q is intentionally excluded as it only works when attached to a session
 func (k KeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		k.SessionActions.Open,
-		k.SessionManagement.New,
-		k.SessionManagement.Rename,
-		k.SessionManagement.Archive,
-		k.SessionManagement.Kill,
-		k.SessionMetadata.Comment,
-		k.SessionMetadata.Flag,
-		k.Navigation.Filter,
-		k.Application.Help,
-		k.Application.Quit,
+		k.SessionActions.Open.Binding,
+		k.SessionManagement.New.Binding,
+		k.SessionManagement.Rename.Binding,
+		k.SessionManagement.Archive.Binding,
+		k.SessionManagement.Kill.Binding,
+		k.SessionMetadata.Comment.Binding,
+		k.SessionMetadata.Flag.Binding,
+		k.Navigation.Filter.Binding,
+		k.Application.Help.Binding,
+		k.Application.Quit.Binding,
 	}
 }

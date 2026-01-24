@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"sort"
 	"strings"
@@ -25,7 +26,9 @@ const escTimeout = 500 * time.Millisecond
 
 // Internal messages for SessionList
 type checkStateMsg struct{}          // Triggers state file check
+type hideTipMsg struct{}             // Time to hide the current tip
 type sessionListDetachedMsg struct{} // Session list returned from attached state
+type showTipMsg struct{}             // Time to show a new random tip
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
@@ -229,13 +232,18 @@ type SessionList struct {
 	tmuxClient         tmux.Client
 	tmuxStatusPosition string
 
+	// Tips feature
+	currentTip string     // Currently displayed tip (empty = hidden)
+	tipsConfig TipsConfig // Tips display configuration
+
 	// Escape handling for filter clearing
 	escPressCount int
 	escPressTime  time.Time
 
 	// Window dimensions
-	height int
-	width  int
+	height     int
+	listHeight int // Height available for the list component
+	width      int
 
 	// Timestamp configuration
 	timestampConfig *TimestampColorConfig
@@ -260,7 +268,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string) *SessionList {
+func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := store.Load(context.Background(), false)
 	if err != nil {
@@ -282,7 +290,15 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false) // We'll render our own help
 
+	// Show a tip immediately at startup if tips are enabled
+	var initialTip string
+	allTips := GetTips()
+	if tipsConfig.Enabled && len(allTips) > 0 {
+		initialTip = allTips[rand.Intn(len(allTips))]
+	}
+
 	return &SessionList{
+		currentTip:         initialTip,
 		devMode:            devMode,
 		editor:             editor,
 		err:                err,
@@ -293,6 +309,7 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 		store:              store,
 		timestampConfig:    timestampConfig,
 		timestampMode:      timestampMode,
+		tipsConfig:         tipsConfig,
 		tmuxClient:         tmuxClient,
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
@@ -300,7 +317,16 @@ func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string,
 
 // Init starts the session list component, including auto-refresh polling
 func (sl *SessionList) Init() tea.Cmd {
-	return pollStateCmd() // Start auto-refresh polling
+	cmds := []tea.Cmd{pollStateCmd()}
+
+	// Schedule hide for the initial tip (already shown at startup)
+	if sl.tipsConfig.Enabled && sl.currentTip != "" {
+		cmds = append(cmds, tea.Tick(time.Duration(sl.tipsConfig.DisplayDurationSeconds)*time.Second, func(time.Time) tea.Msg {
+			return hideTipMsg{}
+		}))
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // Update handles messages for the session list component
@@ -380,6 +406,33 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Schedule next poll to maintain the 2-second loop (exactly one poll)
 		return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
 
+	case showTipMsg:
+		// Don't show tip if there's an error - reschedule for later
+		if sl.err != nil {
+			return sl, tea.Tick(time.Duration(sl.tipsConfig.ShowIntervalSeconds)*time.Second, func(time.Time) tea.Msg {
+				return showTipMsg{}
+			})
+		}
+		// Time to show a new random tip
+		allTips := GetTips()
+		if len(allTips) > 0 {
+			sl.currentTip = allTips[rand.Intn(len(allTips))]
+			return sl, tea.Tick(time.Duration(sl.tipsConfig.DisplayDurationSeconds)*time.Second, func(time.Time) tea.Msg {
+				return hideTipMsg{}
+			})
+		}
+		return sl, nil
+
+	case hideTipMsg:
+		// Hide the current tip and schedule the next one
+		sl.currentTip = ""
+		if sl.tipsConfig.Enabled {
+			return sl, tea.Tick(time.Duration(sl.tipsConfig.ShowIntervalSeconds)*time.Second, func(time.Time) tea.Msg {
+				return showTipMsg{}
+			})
+		}
+		return sl, nil
+
 	case error:
 		sl.err = msg
 		// Don't schedule new poll - one is already running
@@ -413,26 +466,26 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Normal shortcut processing when NOT filtering
 		switch {
-		case key.Matches(msg, sl.keys.Application.Quit, sl.keys.Application.ForceQuit):
+		case key.Matches(msg, sl.keys.Application.Quit.Binding, sl.keys.Application.ForceQuit.Binding):
 			sl.ShouldQuit = true
 			return sl, nil
 
-		case key.Matches(msg, sl.keys.Application.Help):
+		case key.Matches(msg, sl.keys.Application.Help.Binding):
 			sl.RequestHelp = true
 			return sl, nil
 
-		case key.Matches(msg, sl.keys.SessionManagement.New):
+		case key.Matches(msg, sl.keys.SessionManagement.New.Binding):
 			sl.RequestNewSession = true
 			return sl, nil
 
-		case key.Matches(msg, sl.keys.SessionManagement.NewFromRepo):
+		case key.Matches(msg, sl.keys.SessionManagement.NewFromRepo.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.RequestNewSessionFrom = true
 				sl.SessionForTemplate = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionActions.Open):
+		case key.Matches(msg, sl.keys.SessionActions.Open.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				// Ensure session exists
 				if !sl.ensureSessionExists(item.Session) {
@@ -443,68 +496,68 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionManagement.Kill):
+		case key.Matches(msg, sl.keys.SessionManagement.Kill.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToKill = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionManagement.Rename):
+		case key.Matches(msg, sl.keys.SessionManagement.Rename.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToRename = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionMetadata.Comment):
+		case key.Matches(msg, sl.keys.SessionMetadata.Comment.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToComment = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionMetadata.SendText):
+		case key.Matches(msg, sl.keys.SessionMetadata.SendText.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToSendText = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionActions.OpenEditor):
+		case key.Matches(msg, sl.keys.SessionActions.OpenEditor.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToOpenEditor = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionMetadata.Flag):
+		case key.Matches(msg, sl.keys.SessionMetadata.Flag.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToToggleFlag = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionManagement.Archive):
+		case key.Matches(msg, sl.keys.SessionManagement.Archive.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToArchive = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionMetadata.StatusCycle):
+		case key.Matches(msg, sl.keys.SessionMetadata.StatusCycle.Binding):
 			// s: Cycle through statuses (default/quick action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				return sl, sl.cycleSessionStatus(item.Session.Name)
 			}
 
-		case key.Matches(msg, sl.keys.SessionMetadata.StatusSetForm):
+		case key.Matches(msg, sl.keys.SessionMetadata.StatusSetForm.Binding):
 			// Shift+S: Open status form (edit action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToSetStatus = item.Session
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.Navigation.MoveUp):
+		case key.Matches(msg, sl.keys.Navigation.MoveUp.Binding):
 			return sl, sl.moveSelectedUp()
 
-		case key.Matches(msg, sl.keys.Navigation.MoveDown):
+		case key.Matches(msg, sl.keys.Navigation.MoveDown.Binding):
 			return sl, sl.moveSelectedDown()
 
-		case key.Matches(msg, sl.keys.SessionActions.QuickOpen):
+		case key.Matches(msg, sl.keys.SessionActions.QuickOpen.Binding):
 			// Quick attach to session by number
 			numStr := msg.String()[4:] // Skip "alt+"
 			num := int(numStr[0] - '0')
@@ -525,7 +578,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case key.Matches(msg, sl.keys.SessionActions.OpenShell):
+		case key.Matches(msg, sl.keys.SessionActions.OpenShell.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				// Ensure session exists
 				if !sl.ensureSessionExists(item.Session) {
@@ -541,7 +594,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sl.RequestTestError = true
 			return sl, nil
 
-		case key.Matches(msg, sl.keys.Navigation.ClearFilter):
+		case key.Matches(msg, sl.keys.Navigation.ClearFilter.Binding):
 			// Handle double-ESC for filter clearing (only when filtering)
 			if sl.list.FilterState() != list.Unfiltered {
 				now := time.Now()
@@ -572,18 +625,9 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		// Store dimensions
+		// Store dimensions - actual sizing is done by Model via SetSize()
 		sl.width = msg.Width
 		sl.height = msg.Height
-
-		// Calculate list size - reserve space for:
-		// - Header: 2 lines (title + tagline)
-		// - Spacing after header: 2 lines
-		// - Help text: 6 lines (legend + keys)
-		// - Spacing before help: 2 lines
-		// - Error space: 2 lines (always reserved)
-		// Total reserved: 14 lines
-		sl.list.SetSize(msg.Width, msg.Height-14)
 	}
 
 	// Delegate to list for normal handling
@@ -600,65 +644,60 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (sl *SessionList) View() string {
 	var s string
 
-	// Add custom header (reuses renderHeader for consistency)
-	s += renderHeader(sl.devMode, "") + "\n"
+	// Title + Tagline
+	s += renderHeader(sl.devMode, "", "")
 
-	// Render list
-	s += sl.list.View()
+	// Legend + Shortcuts (moved to top, below header)
+	shortcutStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
+	helpText := sl.renderStatusLegend() + "  " + shortcutStyle.Render("?") + helpLabelStyle.Render(" shortcuts")
+	s += helpStyle.Render(helpText) + "\n"
+
+	// Session List
+	if len(sl.list.Items()) == 0 {
+		emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+		shortcutStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
+		s += emptyStyle.Render("No sessions. Press ") + shortcutStyle.Render("n") + emptyStyle.Render(" to create a session.") + "\n"
+
+		// Add padding to push tip/error to bottom
+		// The list area should fill listHeight lines
+		// Empty message = 1 line + \n, padding fills the rest
+		paddingLines := sl.listHeight - 2
+		if paddingLines > 0 {
+			s += strings.Repeat("\n", paddingLines)
+		}
+	} else {
+		s += sl.list.View()
+	}
 
 	// Show SessionList error if any (transient, limited to 2 lines)
 	if sl.err != nil {
 		errorText := formatErrorForDisplay(sl.err, sl.width)
 		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(errorText)
+		sl.currentTip = "" // Clear tip when error is shown
 		sl.err = nil
 	}
 
-	// Add custom help (status legend first, then keys)
-	s += "\n\n"
-	helpText := sl.renderStatusLegend() + "\n\n"
-
-	// Helper to format a key binding
-	formatBinding := func(b key.Binding) string {
-		h := b.Help()
-		return h.Key + ": " + h.Desc
-	}
-
-	// Line 1: Movement
-	line1Parts := []string{
-		formatBinding(sl.keys.Navigation.Up),
-		formatBinding(sl.keys.Navigation.Down),
-		formatBinding(sl.keys.Navigation.MoveUp),
-		formatBinding(sl.keys.Navigation.MoveDown),
-		formatBinding(sl.keys.Navigation.Filter),
-		formatBinding(sl.keys.Application.Timestamps),
-	}
-	helpText += formatHelpLine(strings.Join(line1Parts, " • ")) + "\n"
-
-	// Line 2: Actions (NewFromRepo, Archive, SendText only in full help screen)
-	line2Parts := []string{
-		formatBinding(sl.keys.SessionManagement.New),
-		formatBinding(sl.keys.SessionManagement.Rename),
-		formatBinding(sl.keys.SessionMetadata.Comment),
-		formatBinding(sl.keys.SessionMetadata.Flag),
-		formatBinding(sl.keys.SessionMetadata.StatusCycle),
-		formatBinding(sl.keys.SessionMetadata.StatusSetForm),
-		formatBinding(sl.keys.SessionManagement.Kill),
-	}
-	helpText += formatHelpLine(strings.Join(line2Parts, " • ")) + "\n"
-
-	// Line 3: Other (Note: ctrl+q is intentionally excluded - Issue #55 - only works when attached)
-	line3Parts := []string{
-		formatBinding(sl.keys.SessionActions.Open) + "/alt+1-7", // Combine enter with alt+1-7
-		formatBinding(sl.keys.SessionActions.OpenShell),
-		formatBinding(sl.keys.SessionActions.OpenEditor),
-		formatBinding(sl.keys.Application.Help),
-		formatBinding(sl.keys.Application.Quit),
-	}
-	helpText += formatHelpLine(strings.Join(line3Parts, " • "))
-
-	s += helpStyle.Render(helpText)
-
 	return s
+}
+
+// GetCurrentTip returns the current tip text (empty if no tip to show)
+func (sl *SessionList) GetCurrentTip() string {
+	return sl.currentTip
+}
+
+// ClearCurrentTip clears the current tip (called when error is shown)
+func (sl *SessionList) ClearCurrentTip() {
+	sl.currentTip = ""
+}
+
+// SetSize sets the available size for the session list
+// width/height are the full terminal dimensions
+// listHeight is the calculated height available for the list component
+func (sl *SessionList) SetSize(width, height, listHeight int) {
+	sl.width = width
+	sl.height = height
+	sl.listHeight = listHeight
+	sl.list.SetSize(width, listHeight)
 }
 
 // RefreshFromState reloads the session list from state
