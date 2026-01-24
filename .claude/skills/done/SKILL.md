@@ -202,20 +202,22 @@ git diff origin/main...HEAD --stat
 ### 4.2 Analyze Commits
 
 Review ALL commits in the branch to understand the overall change:
-- If **single commit**: PR title = commit message
-- If **multiple commits**: Summarize the overall feature/fix
+- If **single commit**: PR title = commit message (which already includes the type prefix)
+- If **multiple commits**: Summarize the overall feature/fix with appropriate type prefix (feat, fix, refactor, etc.)
 
 ### 4.3 Generate PR Title
 
-- Use clear, concise language
-- Start with conventional commit type if appropriate
-- Keep under 72 characters
+- **MUST** start with conventional commit type prefix: `feat:`, `fix:`, `refactor:`, `docs:`, `style:`, `test:`, or `chore:`
+- Use clear, concise language after the prefix
+- Keep under 72 characters total
 - No AI attribution
 
 Example titles:
-- "Add user authentication middleware"
-- "Fix null pointer dereference in login handler"
-- "Refactor session management for improved performance"
+- "feat: add user authentication middleware"
+- "fix: null pointer dereference in login handler"
+- "refactor: session management for improved performance"
+- "docs: add API documentation for auth endpoints"
+- "chore: update dependencies to latest versions"
 
 ### 4.4 Generate PR Body
 
