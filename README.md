@@ -237,6 +237,15 @@ Check your installation:
 rocha --version
 ```
 
+## Testing
+
+```bash
+make test                              # Run all tests
+make test-integration                  # Run integration tests
+make test-integration-verbose          # Run with no cache
+make test-integration-run TEST=TestName  # Run specific test
+```
+
 ## Troubleshooting
 
 ```bash

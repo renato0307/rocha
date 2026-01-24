@@ -17,6 +17,7 @@ Tmux-based session manager for Claude Code CLI written in Go. Enables developers
 - **version/** - Build metadata (version, commit, date)
 - **paths/** - Centralized path computation (uses ROCHA_HOME)
 - **config/** - Settings and Claude directory management
+- **test/integration/** - CLI integration tests (harness for environment isolation, binary compilation)
 
 ## Detailed Documentation
 

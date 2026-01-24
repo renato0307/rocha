@@ -432,5 +432,15 @@ graph LR
 - `claude` - Claude Code CLI (bootstrapped automatically, dotted line indicates it's spawned not directly called)
 - `code` - VS Code or other editor (optional, dotted line indicates it's spawned via 'o' key, falls back to shell)
 
+## Testing
+
+```
+test/integration/
+├── harness/           # Test utilities
+│   ├── binary.go      # Binary compilation & execution
+│   ├── environment.go # ROCHA_HOME isolation
+│   └── assertions.go  # Custom assertions
+└── *_test.go          # Table-driven CLI tests
+```
 
 <!-- Keep this document more visual than textual, an image is better than 1000 words -->
