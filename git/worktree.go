@@ -66,7 +66,8 @@ func GetMainRepoPath(path string) (string, error) {
 }
 
 // CreateWorktree creates a new git worktree at the specified path with a new branch
-// It first runs git pull --rebase to sync with remote
+// It ensures the worktree is created from the latest origin/main by fetching,
+// checking out main, and resetting to origin/main before creating the worktree
 func CreateWorktree(repoPath, worktreePath, branchName string) error {
 	logging.Logger.Info("Creating worktree", "repo_path", repoPath, "worktree_path", worktreePath, "branch_name", branchName)
 
@@ -77,17 +78,38 @@ func CreateWorktree(repoPath, worktreePath, branchName string) error {
 		return fmt.Errorf("failed to create worktree base directory: %w", err)
 	}
 
-	// Run git pull --rebase to sync with remote
-	logging.Logger.Info("Running git pull --rebase", "repo_path", repoPath)
-	pullCmd := exec.Command("git", "pull", "--rebase")
-	pullCmd.Dir = repoPath
+	// Fetch from origin to get latest remote state
+	logging.Logger.Info("Fetching from origin", "repo_path", repoPath)
+	fetchCmd := exec.Command("git", "fetch", "origin")
+	fetchCmd.Dir = repoPath
 
-	if output, err := pullCmd.CombinedOutput(); err != nil {
-		logging.Logger.Warn("Git pull --rebase failed (continuing anyway)", "error", err, "output", string(output))
-		// Don't fail the entire operation if rebase fails - user might be offline or have uncommitted changes
-		// We'll log the warning and continue with worktree creation
+	if output, err := fetchCmd.CombinedOutput(); err != nil {
+		logging.Logger.Warn("Git fetch origin failed (continuing anyway)", "error", err, "output", string(output))
+		// Don't fail - user might be offline
 	} else {
-		logging.Logger.Debug("Git pull --rebase succeeded")
+		logging.Logger.Debug("Git fetch origin succeeded")
+	}
+
+	// Checkout main branch to ensure worktree is created from main
+	logging.Logger.Info("Checking out main branch", "repo_path", repoPath)
+	checkoutCmd := exec.Command("git", "checkout", "main")
+	checkoutCmd.Dir = repoPath
+
+	if output, err := checkoutCmd.CombinedOutput(); err != nil {
+		logging.Logger.Warn("Git checkout main failed (continuing anyway)", "error", err, "output", string(output))
+	} else {
+		logging.Logger.Debug("Git checkout main succeeded")
+	}
+
+	// Reset to origin/main to get latest state
+	logging.Logger.Info("Resetting to origin/main", "repo_path", repoPath)
+	resetCmd := exec.Command("git", "reset", "--hard", "origin/main")
+	resetCmd.Dir = repoPath
+
+	if output, err := resetCmd.CombinedOutput(); err != nil {
+		logging.Logger.Warn("Git reset to origin/main failed (continuing anyway)", "error", err, "output", string(output))
+	} else {
+		logging.Logger.Debug("Git reset to origin/main succeeded")
 	}
 
 	// Validate branch name before creating worktree
