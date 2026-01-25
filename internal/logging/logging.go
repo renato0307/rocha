@@ -17,6 +17,12 @@ import (
 // Logger is the public logger instance accessible from all packages
 var Logger *slog.Logger
 
+func init() {
+	// Initialize with discard handler so Logger is never nil
+	// This prevents panics if code logs before Initialize() is called
+	Logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
 // Initialize sets up the logger based on the debug flag and configuration
 // Returns the log file path that subprocesses should use, or empty string if logging is disabled
 func Initialize(debug bool, debugFile string, maxLogFiles int) (string, error) {
