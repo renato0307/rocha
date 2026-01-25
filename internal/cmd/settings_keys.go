@@ -7,8 +7,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"rocha/internal/config"
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ui"
 )
 
 // SettingsKeysCmd manages keyboard shortcuts
@@ -30,11 +31,11 @@ type SettingsKeysSetCmd struct {
 
 // Run executes the list command
 func (s *SettingsKeysListCmd) Run(cli *CLI) error {
-	defaults := config.GetDefaultKeyBindings()
-	names := config.GetSortedKeyBindingNames()
+	defaults := ui.GetDefaultKeyBindings()
+	names := ui.GetValidKeyNames()
 
 	// Get custom bindings from settings
-	var customKeys *config.KeyBindingsConfig
+	var customKeys config.KeyBindingsConfig
 	if cli.settings != nil && cli.settings.Keys != nil {
 		customKeys = cli.settings.Keys
 	}
@@ -46,18 +47,15 @@ func (s *SettingsKeysListCmd) Run(cli *CLI) error {
 	return s.outputTable(names, defaults, customKeys)
 }
 
-func (s *SettingsKeysListCmd) outputJSON(names []string, defaults map[string][]string, customKeys *config.KeyBindingsConfig) error {
+func (s *SettingsKeysListCmd) outputJSON(names []string, defaults map[string][]string, customKeys config.KeyBindingsConfig) error {
 	result := make(map[string]map[string]any)
 
 	for _, name := range names {
 		entry := make(map[string]any)
 		entry["default"] = defaults[name]
 
-		if customKeys != nil {
-			custom := customKeys.GetBindingByName(name)
-			if len(custom) > 0 {
-				entry["custom"] = custom
-			}
+		if custom, ok := customKeys[name]; ok && len(custom) > 0 {
+			entry["custom"] = custom
 		}
 
 		result[name] = entry
@@ -71,7 +69,7 @@ func (s *SettingsKeysListCmd) outputJSON(names []string, defaults map[string][]s
 	return nil
 }
 
-func (s *SettingsKeysListCmd) outputTable(names []string, defaults map[string][]string, customKeys *config.KeyBindingsConfig) error {
+func (s *SettingsKeysListCmd) outputTable(names []string, defaults map[string][]string, customKeys config.KeyBindingsConfig) error {
 	settingsFile := config.GetSettingsPath()
 	fmt.Printf("Key Bindings (settings file: %s)\n\n", settingsFile)
 
@@ -83,11 +81,8 @@ func (s *SettingsKeysListCmd) outputTable(names []string, defaults map[string][]
 		defaultKeys := strings.Join(defaults[name], ", ")
 		customStr := "-"
 
-		if customKeys != nil {
-			custom := customKeys.GetBindingByName(name)
-			if len(custom) > 0 {
-				customStr = strings.Join(custom, ", ")
-			}
+		if custom, ok := customKeys[name]; ok && len(custom) > 0 {
+			customStr = strings.Join(custom, ", ")
 		}
 
 		fmt.Fprintf(w, "%s\t%s\t%s\n", name, defaultKeys, customStr)
@@ -103,9 +98,9 @@ func (s *SettingsKeysListCmd) outputTable(names []string, defaults map[string][]
 // Run executes the set command
 func (s *SettingsKeysSetCmd) Run(cli *CLI) error {
 	// Validate key name
-	if !config.IsValidKeyBindingName(s.Key) {
+	if !ui.IsValidKeyName(s.Key) {
 		return fmt.Errorf("unknown key '%s'. Valid keys: %s",
-			s.Key, strings.Join(config.GetSortedKeyBindingNames(), ", "))
+			s.Key, strings.Join(ui.GetValidKeyNames(), ", "))
 	}
 
 	// Parse value (comma-separated for multiple keys)
@@ -124,14 +119,14 @@ func (s *SettingsKeysSetCmd) Run(cli *CLI) error {
 
 	// Initialize Keys if needed
 	if settings.Keys == nil {
-		settings.Keys = &config.KeyBindingsConfig{}
+		settings.Keys = make(config.KeyBindingsConfig)
 	}
 
 	// Set the new binding
-	settings.Keys.SetBindingByName(s.Key, values)
+	settings.Keys[s.Key] = values
 
 	// Validate for conflicts
-	if err := settings.Keys.Validate(); err != nil {
+	if err := settings.Keys.Validate(ui.GetValidKeyNames()); err != nil {
 		return fmt.Errorf("conflict: %w", err)
 	}
 

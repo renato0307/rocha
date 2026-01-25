@@ -4,19 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 )
-
-// ValidKeyBindingNames contains all valid key binding names that can be customized.
-// These names correspond to the JSON field names in KeyBindingsConfig and are used
-// for validation in CLI commands. Must be kept in alphabetical order.
-var ValidKeyBindingNames = []string{
-	"archive", "clear_filter", "comment", "cycle_status", "detach", "down",
-	"filter", "flag", "force_quit", "help", "kill", "move_down", "move_up",
-	"new", "new_from_repo", "open", "open_editor", "open_shell", "quick_open",
-	"quit", "rename", "send_text", "set_status", "timestamps", "up",
-}
 
 // KeyBindingValue supports "a" or ["up", "k"] in JSON
 type KeyBindingValue []string
@@ -49,245 +38,50 @@ func (kv KeyBindingValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]string(kv))
 }
 
-// KeyBindingsConfig holds custom key binding overrides
-type KeyBindingsConfig struct {
-	Archive     KeyBindingValue `json:"archive,omitempty"`
-	ClearFilter KeyBindingValue `json:"clear_filter,omitempty"`
-	Comment     KeyBindingValue `json:"comment,omitempty"`
-	CycleStatus KeyBindingValue `json:"cycle_status,omitempty"`
-	Detach      KeyBindingValue `json:"detach,omitempty"`
-	Down        KeyBindingValue `json:"down,omitempty"`
-	Filter      KeyBindingValue `json:"filter,omitempty"`
-	Flag        KeyBindingValue `json:"flag,omitempty"`
-	ForceQuit   KeyBindingValue `json:"force_quit,omitempty"`
-	Help        KeyBindingValue `json:"help,omitempty"`
-	Kill        KeyBindingValue `json:"kill,omitempty"`
-	MoveDown    KeyBindingValue `json:"move_down,omitempty"`
-	MoveUp      KeyBindingValue `json:"move_up,omitempty"`
-	New         KeyBindingValue `json:"new,omitempty"`
-	NewFromRepo KeyBindingValue `json:"new_from_repo,omitempty"`
-	Open        KeyBindingValue `json:"open,omitempty"`
-	OpenEditor  KeyBindingValue `json:"open_editor,omitempty"`
-	OpenShell   KeyBindingValue `json:"open_shell,omitempty"`
-	QuickOpen   KeyBindingValue `json:"quick_open,omitempty"`
-	Quit        KeyBindingValue `json:"quit,omitempty"`
-	Rename      KeyBindingValue `json:"rename,omitempty"`
-	SendText    KeyBindingValue `json:"send_text,omitempty"`
-	SetStatus   KeyBindingValue `json:"set_status,omitempty"`
-	Timestamps  KeyBindingValue `json:"timestamps,omitempty"`
-	Up          KeyBindingValue `json:"up,omitempty"`
-}
+// KeyBindingsConfig holds custom key binding overrides as a map.
+// Keys are binding names (e.g., "archive", "help"), values are the key sequences.
+type KeyBindingsConfig map[string]KeyBindingValue
 
-// GetBindingByName returns the key binding value for a given name
-func (k *KeyBindingsConfig) GetBindingByName(name string) KeyBindingValue {
+// Validate checks for configuration errors in key bindings.
+// The validNames parameter should come from ui.GetValidKeyNames().
+func (k KeyBindingsConfig) Validate(validNames []string) error {
 	if k == nil {
 		return nil
 	}
-	switch name {
-	case "archive":
-		return k.Archive
-	case "clear_filter":
-		return k.ClearFilter
-	case "comment":
-		return k.Comment
-	case "cycle_status":
-		return k.CycleStatus
-	case "detach":
-		return k.Detach
-	case "down":
-		return k.Down
-	case "filter":
-		return k.Filter
-	case "flag":
-		return k.Flag
-	case "force_quit":
-		return k.ForceQuit
-	case "help":
-		return k.Help
-	case "kill":
-		return k.Kill
-	case "move_down":
-		return k.MoveDown
-	case "move_up":
-		return k.MoveUp
-	case "new":
-		return k.New
-	case "new_from_repo":
-		return k.NewFromRepo
-	case "open":
-		return k.Open
-	case "open_editor":
-		return k.OpenEditor
-	case "open_shell":
-		return k.OpenShell
-	case "quick_open":
-		return k.QuickOpen
-	case "quit":
-		return k.Quit
-	case "rename":
-		return k.Rename
-	case "send_text":
-		return k.SendText
-	case "set_status":
-		return k.SetStatus
-	case "timestamps":
-		return k.Timestamps
-	case "up":
-		return k.Up
-	default:
-		return nil
-	}
-}
 
-// SetBindingByName sets a key binding value by name
-func (k *KeyBindingsConfig) SetBindingByName(name string, value KeyBindingValue) bool {
-	if k == nil {
-		return false
-	}
-	switch name {
-	case "archive":
-		k.Archive = value
-	case "clear_filter":
-		k.ClearFilter = value
-	case "comment":
-		k.Comment = value
-	case "cycle_status":
-		k.CycleStatus = value
-	case "detach":
-		k.Detach = value
-	case "down":
-		k.Down = value
-	case "filter":
-		k.Filter = value
-	case "flag":
-		k.Flag = value
-	case "force_quit":
-		k.ForceQuit = value
-	case "help":
-		k.Help = value
-	case "kill":
-		k.Kill = value
-	case "move_down":
-		k.MoveDown = value
-	case "move_up":
-		k.MoveUp = value
-	case "new":
-		k.New = value
-	case "new_from_repo":
-		k.NewFromRepo = value
-	case "open":
-		k.Open = value
-	case "open_editor":
-		k.OpenEditor = value
-	case "open_shell":
-		k.OpenShell = value
-	case "quick_open":
-		k.QuickOpen = value
-	case "quit":
-		k.Quit = value
-	case "rename":
-		k.Rename = value
-	case "send_text":
-		k.SendText = value
-	case "set_status":
-		k.SetStatus = value
-	case "timestamps":
-		k.Timestamps = value
-	case "up":
-		k.Up = value
-	default:
-		return false
-	}
-	return true
-}
-
-// Validate checks for configuration errors in key bindings
-func (k *KeyBindingsConfig) Validate() error {
-	if k == nil {
-		return nil
+	// Build set of valid names for quick lookup
+	validSet := make(map[string]bool, len(validNames))
+	for _, name := range validNames {
+		validSet[name] = true
 	}
 
 	// Track all keys to detect duplicates
 	keyToAction := make(map[string]string)
 
 	// Validate each configured binding
-	for _, name := range ValidKeyBindingNames {
-		keys := k.GetBindingByName(name)
-		if err := validateBinding(name, keys, keyToAction); err != nil {
-			return err
+	for name, keys := range k {
+		// Check if the key name is valid
+		if !validSet[name] {
+			return fmt.Errorf("unknown key binding '%s'", name)
+		}
+
+		// Check for empty values and duplicates
+		if len(keys) == 0 {
+			continue // Not configured, will use default
+		}
+
+		for _, key := range keys {
+			if key == "" {
+				return fmt.Errorf("key binding for '%s' contains empty value", name)
+			}
+			if existing, found := keyToAction[key]; found {
+				return fmt.Errorf("key '%s' is assigned to both '%s' and '%s'", key, existing, name)
+			}
+			keyToAction[key] = name
 		}
 	}
 
 	return nil
-}
-
-// validateBinding checks a single binding for errors and tracks keys for duplicate detection
-func validateBinding(action string, keys KeyBindingValue, keyToAction map[string]string) error {
-	if len(keys) == 0 {
-		return nil // Not configured, will use default
-	}
-
-	for _, k := range keys {
-		if k == "" {
-			return fmt.Errorf("key binding for '%s' contains empty value", action)
-		}
-		if existing, found := keyToAction[k]; found {
-			return fmt.Errorf("key '%s' is assigned to both '%s' and '%s'", k, existing, action)
-		}
-		keyToAction[k] = action
-	}
-	return nil
-}
-
-// GetDefaultKeyBindings returns the default key bindings as a sorted map
-func GetDefaultKeyBindings() map[string][]string {
-	return map[string][]string{
-		"archive":      {"a"},
-		"clear_filter": {"esc"},
-		"comment":      {"c"},
-		"cycle_status": {"s"},
-		"detach":       {"ctrl+q"},
-		"down":         {"down", "j"},
-		"filter":       {"/"},
-		"flag":         {"f"},
-		"force_quit":   {"ctrl+c"},
-		"help":         {"h", "?"},
-		"kill":         {"x"},
-		"move_down":    {"J", "shift+down"},
-		"move_up":      {"K", "shift+up"},
-		"new":          {"n"},
-		"new_from_repo": {"N"},
-		"open":         {"enter"},
-		"open_editor":  {"o"},
-		"open_shell":   {"ctrl+s"},
-		"quick_open":   {"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"},
-		"quit":         {"q"},
-		"rename":       {"r"},
-		"send_text":    {"p"},
-		"set_status":   {"S"},
-		"timestamps":   {"t"},
-		"up":           {"up", "k"},
-	}
-}
-
-// GetSortedKeyBindingNames returns key binding names in sorted order.
-// Note: ValidKeyBindingNames is already sorted, but we sort defensively
-// to ensure correctness even if keys are added out of order in the future.
-func GetSortedKeyBindingNames() []string {
-	names := make([]string, len(ValidKeyBindingNames))
-	copy(names, ValidKeyBindingNames)
-	sort.Strings(names)
-	return names
-}
-
-// IsValidKeyBindingName checks if a name is a valid key binding name
-func IsValidKeyBindingName(name string) bool {
-	for _, valid := range ValidKeyBindingNames {
-		if name == valid {
-			return true
-		}
-	}
-	return false
 }
 
 // DefaultTmuxStatusPosition is the default tmux status bar position
@@ -299,7 +93,7 @@ type Settings struct {
 	Debug                           *bool              `json:"debug,omitempty"`
 	Editor                          string             `json:"editor,omitempty"`
 	ErrorClearDelay                 *int               `json:"error_clear_delay,omitempty"`
-	Keys                            *KeyBindingsConfig `json:"keys,omitempty"`
+	Keys                            KeyBindingsConfig  `json:"keys,omitempty"`
 	MaxLogFiles                     *int               `json:"max_log_files,omitempty"`
 	ShowTimestamps                  *bool              `json:"show_timestamps,omitempty"`
 	StatusColors                    StringArray        `json:"status_colors,omitempty"`

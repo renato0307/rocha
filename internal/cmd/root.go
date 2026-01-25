@@ -253,9 +253,9 @@ func (r *RunCmd) Run(cli *CLI) error {
 		"value", allowDangerouslySkipPermissionsDefault)
 
 	// Validate key bindings if configured
-	var keysConfig *config.KeyBindingsConfig
+	var keysConfig config.KeyBindingsConfig
 	if cli.settings != nil && cli.settings.Keys != nil {
-		if err := cli.settings.Keys.Validate(); err != nil {
+		if err := cli.settings.Keys.Validate(ui.GetValidKeyNames()); err != nil {
 			return fmt.Errorf("invalid key bindings in settings.json: %w", err)
 		}
 		keysConfig = cli.settings.Keys

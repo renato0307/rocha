@@ -75,7 +75,7 @@ func NewModel(
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
-	keysConfig *config.KeyBindingsConfig,
+	keysConfig config.KeyBindingsConfig,
 	gitService *services.GitService,
 	sessionService *services.SessionService,
 	shellService *services.ShellService,
