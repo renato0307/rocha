@@ -9,10 +9,11 @@ import (
 	adaptergit "rocha/internal/adapters/git"
 	adaptersound "rocha/internal/adapters/sound"
 	adapterstorage "rocha/internal/adapters/storage"
-	"rocha/internal/services"
+	adaptertmux "rocha/internal/adapters/tmux"
 	"rocha/internal/config"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // Container holds all dependencies for the application
@@ -35,6 +36,11 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 	sessionRepo, err := adapterstorage.NewSQLiteRepository(config.GetDBPath())
 	if err != nil {
 		return nil, err
+	}
+
+	// Create default tmux client if not provided
+	if tmuxClient == nil {
+		tmuxClient = adaptertmux.NewClient()
 	}
 
 	editorOpener := adaptereditor.NewOpener()

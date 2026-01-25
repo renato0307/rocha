@@ -4,6 +4,7 @@ package cmd
 type SessionsCmd struct {
 	Add       SessionsAddCmd       `cmd:"add" help:"Add a new session"`
 	Archive   SessionsArchiveCmd   `cmd:"archive" help:"Archive or unarchive a session"`
+	Capture   SessionsCaptureCmd   `cmd:"capture" help:"Capture session pane content"`
 	Comment   SessionsCommentCmd   `cmd:"comment" help:"Add, edit, or clear session comment"`
 	Del       SessionsDelCmd       `cmd:"del" help:"Delete a session"`
 	Duplicate SessionsDuplicateCmd `cmd:"duplicate" help:"Create session from existing repository"`
