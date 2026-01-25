@@ -39,6 +39,11 @@ func (r *CLIRepository) GetBranchName(path string) string {
 	return gitpkg.GetBranchName(path)
 }
 
+// GetRemoteURL implements RepoInspector.GetRemoteURL
+func (r *CLIRepository) GetRemoteURL(repoPath string) string {
+	return gitpkg.GetRemoteURL(repoPath)
+}
+
 // WorktreeManager methods
 
 // CreateWorktree implements WorktreeManager.CreateWorktree

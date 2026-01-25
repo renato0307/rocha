@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"rocha/application"
 	"rocha/editor"
 	"rocha/git"
 	"rocha/logging"
@@ -62,6 +63,7 @@ type ListActionHandler struct {
 	errorManager                           *ErrorManager
 	sessionList                            *SessionList
 	sessionOps                             *SessionOperations
+	sessionService                         *application.SessionService
 	sessionState                           *storage.SessionState
 	statusConfig                           *StatusConfig
 	store                                  *storage.Store
@@ -82,6 +84,7 @@ func NewListActionHandler(
 	tmuxStatusPosition string,
 	devMode bool,
 	allowDangerouslySkipPermissionsDefault bool,
+	sessionService *application.SessionService,
 ) *ListActionHandler {
 	return &ListActionHandler{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
@@ -90,6 +93,7 @@ func NewListActionHandler(
 		errorManager:                           errorManager,
 		sessionList:                            sessionList,
 		sessionOps:                             sessionOps,
+		sessionService:                         sessionService,
 		sessionState:                           sessionState,
 		statusConfig:                           statusConfig,
 		store:                                  store,

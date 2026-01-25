@@ -245,6 +245,9 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	logging.Logger.Debug("Allow dangerously skip permissions default from settings",
 		"value", allowDangerouslySkipPermissionsDefault)
 
+	// Create container with all services
+	container := NewContainerFromStore(store, tmuxClient)
+
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
@@ -262,7 +265,21 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		ShowIntervalSeconds:    r.TipsShowIntervalSeconds,
 	}
 	p := tea.NewProgram(
-		ui.NewModel(tmuxClient, store, r.Editor, errorClearDelay, statusConfig, timestampConfig, r.Dev, r.ShowTimestamps, r.TmuxStatusPosition, allowDangerouslySkipPermissionsDefault, tipsConfig),
+		ui.NewModel(
+			tmuxClient,
+			store,
+			r.Editor,
+			errorClearDelay,
+			statusConfig,
+			timestampConfig,
+			r.Dev,
+			r.ShowTimestamps,
+			r.TmuxStatusPosition,
+			allowDangerouslySkipPermissionsDefault,
+			tipsConfig,
+			container.SessionService,
+			container.ShellService,
+		),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support
 	)

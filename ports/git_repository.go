@@ -6,6 +6,7 @@ import "rocha/domain"
 type RepoInspector interface {
 	GetBranchName(path string) string
 	GetMainRepoPath(path string) (string, error)
+	GetRemoteURL(repoPath string) string
 	GetRepoInfo(repoPath string) string
 	IsGitRepo(path string) (bool, string)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
+	"rocha/application"
 	"rocha/git"
 	"rocha/logging"
 	"rocha/ports"
@@ -73,38 +74,54 @@ const (
 )
 
 type Model struct {
-	allowDangerouslySkipPermissionsDefault bool                  // Default value from settings for new sessions
-	devMode                                bool                  // Development mode (shows version info in dialogs)
-	editor                                 string                // Editor to open sessions in
-	errorManager                           *ErrorManager         // Error display and auto-clearing
-	formRemoveWorktree                     *bool                 // Worktree removal decision (pointer to persist across updates)
-	formRemoveWorktreeArchive              *bool                 // Worktree removal decision for archive (pointer to persist across updates)
+	allowDangerouslySkipPermissionsDefault bool                         // Default value from settings for new sessions
+	devMode                                bool                         // Development mode (shows version info in dialogs)
+	editor                                 string                       // Editor to open sessions in
+	errorManager                           *ErrorManager                // Error display and auto-clearing
+	formRemoveWorktree                     *bool                        // Worktree removal decision (pointer to persist across updates)
+	formRemoveWorktreeArchive              *bool                        // Worktree removal decision for archive (pointer to persist across updates)
 	height                                 int
-	helpScreen                             *Dialog               // Help screen dialog
-	keys                                   KeyMap                // Keyboard shortcuts
-	listActionHandler                      *ListActionHandler    // Session list action processing
-	sendTextForm                           *Dialog               // Send text to tmux dialog
-	sessionCommentForm                     *Dialog               // Session comment dialog
-	sessionForm                            *Dialog               // Session creation dialog
-	sessionList                            *SessionList          // Session list component
-	sessionOps                             *SessionOperations    // Session lifecycle operations
-	sessionRenameForm                      *Dialog               // Session rename dialog
-	sessionState                           *storage.SessionState // State data for git metadata and status
-	sessionStatusForm                      *Dialog               // Session status dialog
-	sessionToArchive                       *ports.TmuxSession    // Session being archived (for worktree removal)
-	sessionToKill                          *ports.TmuxSession    // Session being killed (for worktree removal)
+	helpScreen                             *Dialog                      // Help screen dialog
+	keys                                   KeyMap                       // Keyboard shortcuts
+	listActionHandler                      *ListActionHandler           // Session list action processing
+	sendTextForm                           *Dialog                      // Send text to tmux dialog
+	sessionCommentForm                     *Dialog                      // Session comment dialog
+	sessionForm                            *Dialog                      // Session creation dialog
+	sessionList                            *SessionList                 // Session list component
+	sessionOps                             *SessionOperations           // Session lifecycle operations
+	sessionRenameForm                      *Dialog                      // Session rename dialog
+	sessionService                         *application.SessionService  // Session lifecycle service
+	sessionState                           *storage.SessionState        // State data for git metadata and status
+	sessionStatusForm                      *Dialog                      // Session status dialog
+	sessionToArchive                       *ports.TmuxSession           // Session being archived (for worktree removal)
+	sessionToKill                          *ports.TmuxSession           // Session being killed (for worktree removal)
+	shellService                           *application.ShellService    // Shell session service
 	state                                  uiState
-	statusConfig                           *StatusConfig         // Status configuration for implementation statuses
-	store                                  *storage.Store        // Storage for persistent state
-	timestampConfig                        *TimestampColorConfig // Timestamp color configuration
+	statusConfig                           *StatusConfig                // Status configuration for implementation statuses
+	store                                  *storage.Store               // Storage for persistent state
+	timestampConfig                        *TimestampColorConfig        // Timestamp color configuration
 	timestampMode                          TimestampMode
 	tmuxClient                             ports.TmuxClient
 	tmuxStatusPosition                     string
 	width                                  int
-	worktreeRemovalForm                    *Dialog // Worktree removal dialog
+	worktreeRemovalForm                    *Dialog                      // Worktree removal dialog
 }
 
-func NewModel(tmuxClient ports.TmuxClient, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, tipsConfig TipsConfig) *Model {
+func NewModel(
+	tmuxClient ports.TmuxClient,
+	store *storage.Store,
+	editor string,
+	errorClearDelay time.Duration,
+	statusConfig *StatusConfig,
+	timestampConfig *TimestampColorConfig,
+	devMode bool,
+	showTimestamps bool,
+	tmuxStatusPosition string,
+	allowDangerouslySkipPermissionsDefault bool,
+	tipsConfig TipsConfig,
+	sessionService *application.SessionService,
+	shellService *application.ShellService,
+) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
 	errorManager := NewErrorManager(errorClearDelay)
@@ -126,7 +143,7 @@ func NewModel(tmuxClient ports.TmuxClient, store *storage.Store, editor string, 
 	keys := NewKeyMap()
 
 	// Create session operations component
-	sessionOps := NewSessionOperations(errorManager, store, tmuxClient, tmuxStatusPosition)
+	sessionOps := NewSessionOperations(errorManager, store, tmuxClient, tmuxStatusPosition, sessionService, shellService)
 
 	// Create session list component
 	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
@@ -144,6 +161,7 @@ func NewModel(tmuxClient ports.TmuxClient, store *storage.Store, editor string, 
 		tmuxStatusPosition,
 		devMode,
 		allowDangerouslySkipPermissionsDefault,
+		sessionService,
 	)
 
 	return &Model{
@@ -155,7 +173,9 @@ func NewModel(tmuxClient ports.TmuxClient, store *storage.Store, editor string, 
 		listActionHandler:                      listActionHandler,
 		sessionList:                            sessionList,
 		sessionOps:                             sessionOps,
+		sessionService:                         sessionService,
 		sessionState:                           sessionState,
+		shellService:                           shellService,
 		state:                                  stateList,
 		statusConfig:                           statusConfig,
 		store:                                  store,
@@ -492,7 +512,7 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		logging.Logger.Debug("Creating new session dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.sessionService, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()
@@ -501,7 +521,7 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		logging.Logger.Debug("Creating new session from template dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.tmuxClient, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.sessionService, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()

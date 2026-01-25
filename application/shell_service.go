@@ -1,0 +1,91 @@
+package application
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"rocha/domain"
+	"rocha/logging"
+	"rocha/ports"
+)
+
+// ShellService handles shell session management
+type ShellService struct {
+	sessionReader ports.SessionReader
+	sessionWriter ports.SessionWriter
+	tmuxClient    ports.TmuxSessionLifecycle
+}
+
+// NewShellService creates a new ShellService
+func NewShellService(
+	sessionReader ports.SessionReader,
+	sessionWriter ports.SessionWriter,
+	tmuxClient ports.TmuxSessionLifecycle,
+) *ShellService {
+	return &ShellService{
+		sessionReader: sessionReader,
+		sessionWriter: sessionWriter,
+		tmuxClient:    tmuxClient,
+	}
+}
+
+// GetOrCreateShellSession returns shell session name, creating if needed
+// Returns empty string and error if operation fails
+func (s *ShellService) GetOrCreateShellSession(
+	ctx context.Context,
+	parentSessionName string,
+	tmuxStatusPosition string,
+) (string, error) {
+	// Get parent session info
+	session, err := s.sessionReader.Get(ctx, parentSessionName)
+	if err != nil {
+		return "", fmt.Errorf("session info not found: %s: %w", parentSessionName, err)
+	}
+
+	// Check if shell session already exists
+	if session.ShellSession != nil {
+		// Check if tmux session exists
+		if s.tmuxClient.SessionExists(session.ShellSession.Name) {
+			return session.ShellSession.Name, nil
+		}
+	}
+
+	// Create shell session name
+	shellSessionName := fmt.Sprintf("%s-shell", parentSessionName)
+
+	// Determine working directory
+	workingDir := session.WorktreePath
+	if workingDir == "" {
+		workingDir = session.RepoPath
+	}
+
+	// Create shell session in tmux
+	_, err = s.tmuxClient.CreateShellSession(shellSessionName, workingDir, tmuxStatusPosition)
+	if err != nil {
+		return "", fmt.Errorf("failed to create shell session: %w", err)
+	}
+
+	// Create domain session for shell
+	shellSession := domain.Session{
+		BranchName:   session.BranchName,
+		DisplayName:  "", // No display name for shell sessions
+		ExecutionID:  session.ExecutionID,
+		LastUpdated:  time.Now().UTC(),
+		Name:         shellSessionName,
+		RepoInfo:     session.RepoInfo,
+		RepoPath:     session.RepoPath,
+		ShellSession: nil, // Shell sessions don't have their own shells
+		State:        domain.StateIdle,
+		WorktreePath: session.WorktreePath,
+	}
+
+	// Add shell session to repository
+	if err := s.sessionWriter.Add(ctx, shellSession); err != nil {
+		logging.Logger.Warn("Failed to save shell session to state", "error", err)
+		// Don't return error - tmux session was created successfully
+	}
+
+	logging.Logger.Info("Shell session created", "name", shellSessionName, "parent", parentSessionName)
+	return shellSessionName, nil
+}

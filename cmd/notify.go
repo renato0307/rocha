@@ -3,18 +3,18 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
+	adapterstorage "rocha/adapters/storage"
+	"rocha/application"
 	"rocha/logging"
 	"rocha/paths"
 	"rocha/sound"
-	"rocha/state"
-	"rocha/storage"
 )
 
 // NotifyCmd handles notification events from Claude hooks
+// NOTE: Field order matters for Kong positional args - SessionName must come before EventType
 type NotifyCmd struct {
 	SessionName string `arg:"" help:"Name of the session triggering the notification"`
 	EventType   string `arg:"" help:"Type of event: stop, prompt, working, start, notification, end" default:"stop"`
@@ -31,30 +31,24 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		logging.Logger.Info("Hook logger initialized", "log_file", hookLogFile)
 	}
 
-	// Determine execution ID: flag > env var > database > "unknown"
-	executionID := n.ExecutionID
-	if executionID == "" {
-		executionID = os.Getenv("ROCHA_EXECUTION_ID")
-		if executionID == "" {
-			// Load from database to find execution ID for this session
-			store, err := storage.NewStore(paths.GetDBPath())
-			if err == nil {
-				defer store.Close()
-				session, err := store.GetSession(context.Background(), n.SessionName)
-				if err == nil {
-					executionID = session.ExecutionID
-					logging.Logger.Info("Using execution ID from session state", "execution_id", executionID)
-				} else {
-					// Session not found, use unknown
-					executionID = "unknown"
-					logging.Logger.Warn("Could not determine execution ID", "error", err)
-				}
-			} else {
-				executionID = "unknown"
-				logging.Logger.Warn("Could not open database", "error", err)
-			}
-		}
+	// Create repository for notification service
+	// Note: Notify command runs as separate process, so we create resources here
+	sessionRepo, err := adapterstorage.NewSQLiteRepository(paths.GetDBPath())
+	if err != nil {
+		logging.Logger.Error("Failed to open database", "error", err)
+		return nil // Don't fail notification on state errors
 	}
+	defer sessionRepo.Close()
+
+	// Create notification service
+	notificationService := application.NewNotificationService(sessionRepo, sessionRepo)
+
+	// Resolve execution ID using the service
+	executionID := notificationService.ResolveExecutionID(
+		context.Background(),
+		n.SessionName,
+		n.ExecutionID,
+	)
 
 	logging.Logger.Info("=== NOTIFY HOOK TRIGGERED ===",
 		"session", n.SessionName,
@@ -64,8 +58,8 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		"pid", os.Getpid(),
 		"ppid", os.Getppid())
 
-	// Play sound for stop, start, notification, and end events (not for prompt - user already knows they submitted)
-	if n.EventType == "stop" || n.EventType == "start" || n.EventType == "notification" || n.EventType == "end" {
+	// Play sound (presentation concern - stays in command)
+	if notificationService.ShouldPlaySound(n.EventType) {
 		logging.Logger.Debug("Playing notification sound", "event", n.EventType)
 		if err := sound.PlaySoundForEvent(n.EventType); err != nil {
 			logging.Logger.Error("Failed to play sound", "error", err)
@@ -76,50 +70,17 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		logging.Logger.Debug("Skipping sound for event type", "event", n.EventType)
 	}
 
-	// Map event type to session state
-	var sessionState string
-	switch n.EventType {
-	case "stop":
-		sessionState = state.StateIdle // Claude finished working
-	case "notification":
-		sessionState = state.StateWaitingUser // Claude is idle and waiting for user input (idle_prompt)
-	case "start":
-		sessionState = state.StateIdle // Session started and ready for input
-	case "prompt":
-		sessionState = state.StateWorking // User submitted prompt
-	case "working":
-		sessionState = state.StateWorking // Claude is actively working (after answering question)
-	case "end":
-		sessionState = state.StateExited // Claude has exited
-	default:
-		// Unknown event type, don't update state
-		logging.Logger.Warn("Unknown event type, skipping state update", "event", n.EventType)
-		return nil
-	}
-
-	logging.Logger.Debug("Mapped event to state",
-		"event", n.EventType,
-		"state", sessionState)
-
-	// Update session state directly in SQLite (NO MORE EVENT QUEUE!)
-	store, err := storage.NewStore(paths.GetDBPath())
+	// Handle event using the service
+	_, err = notificationService.HandleEvent(
+		context.Background(),
+		n.SessionName,
+		n.EventType,
+		executionID,
+	)
 	if err != nil {
-		log.Printf("Warning: failed to open database: %v", err)
-		logging.Logger.Error("Failed to open database", "error", err)
+		logging.Logger.Error("Failed to handle notification event", "error", err)
 		return nil // Don't fail notification on state errors
 	}
-	defer store.Close()
-
-	if err := store.UpdateSession(context.Background(), n.SessionName, sessionState, executionID); err != nil {
-		log.Printf("Warning: failed to update session state: %v", err)
-		logging.Logger.Error("Failed to update session state", "error", err)
-		return nil // Don't fail notification on state errors
-	}
-
-	logging.Logger.Info("Session state updated successfully (direct SQLite write)",
-		"session", n.SessionName,
-		"state", sessionState,
-		"execution_id", executionID)
 
 	// Future: Add OS native notifications here
 	// For example:
