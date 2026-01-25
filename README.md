@@ -50,6 +50,7 @@ This directory contains:
 - **Session states** - Track which sessions are working, idle, waiting, or exited
 - **Git worktree support** - Each session can have its own isolated branch and workspace
 - **Git stats** - See PR info, ahead/behind commits, and changes at a glance
+- **Token usage chart** - View hourly input/output token usage across all sessions
 - **Per-session Claude config** - Give each session its own Claude configuration directory
 - **Create sessions from any repo** - Clone and start sessions from GitHub/GitLab URLs with specific branches
 - **Initial prompts** - Start sessions with a predefined prompt that's automatically sent to Claude
