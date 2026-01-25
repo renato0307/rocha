@@ -350,6 +350,15 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			if sessionInfo, exists := lah.sessionState.Sessions[lah.sessionList.SessionForTemplate.Name]; exists {
 				repoSource = sessionInfo.RepoSource
 
+				// Sanitize: remove branch suffix from URL (e.g., #feature-branch)
+				// so the new session form shows only the base repository URL
+				if repoSource != "" {
+					if parsed, err := git.ParseRepoSource(repoSource); err == nil {
+						repoSource = parsed.Path
+						logging.Logger.Debug("Sanitized repo source for template", "original", sessionInfo.RepoSource, "sanitized", repoSource)
+					}
+				}
+
 				// If RepoSource is empty but RepoPath exists, fetch remote URL and update DB
 				if repoSource == "" && sessionInfo.RepoPath != "" {
 					logging.Logger.Info("RepoSource empty, fetching remote URL from RepoPath", "repo_path", sessionInfo.RepoPath)
