@@ -420,7 +420,7 @@ func (m *Model) reloadSessionStateAfterDialog() error {
 	if err != nil {
 		return fmt.Errorf("failed to refresh sessions: %w", err)
 	}
-	m.sessionState = newState
+	*m.sessionState = *newState
 	m.sessionList.RefreshFromState()
 	return nil
 }
