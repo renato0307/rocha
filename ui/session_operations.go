@@ -145,10 +145,9 @@ func (so *SessionOperations) KillSession(
 		}
 	}
 
-	// Kill main Claude session
+	// Kill main Claude session (continue with deletion even if kill fails - session may already be exited)
 	if err := so.tmuxClient.Kill(session.Name); err != nil {
-		so.errorManager.SetError(fmt.Errorf("failed to kill session '%s': %w", session.Name, err))
-		return tea.Batch(sessionList.Init(), so.errorManager.ClearAfterDelay())
+		logging.Logger.Warn("Failed to kill session (may already be exited)", "name", session.Name, "error", err)
 	}
 
 	// Check if session has worktree and remove it from state
