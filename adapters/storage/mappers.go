@@ -2,114 +2,45 @@ package storage
 
 import (
 	"rocha/domain"
-	existingstore "rocha/storage"
 )
 
-// sessionInfoToDomain converts a storage.SessionInfo to domain.Session
-func sessionInfoToDomain(info existingstore.SessionInfo) domain.Session {
-	var shellSession *domain.Session
-	if info.ShellSession != nil {
-		converted := sessionInfoToDomain(*info.ShellSession)
-		shellSession = &converted
-	}
-
-	// GitStats is not persisted - it's populated at runtime by the UI
-	// Type assertion to convert from interface{} to *domain.GitStats
-	var gitStats *domain.GitStats
-	if info.GitStats != nil {
-		if stats, ok := info.GitStats.(*domain.GitStats); ok {
-			gitStats = stats
-		}
-	}
-
+// sessionModelToDomain converts a SessionModel (GORM) to domain.Session
+func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, comment string, isArchived bool, allowSkipPerms bool) domain.Session {
 	return domain.Session{
-		AllowDangerouslySkipPermissions: info.AllowDangerouslySkipPermissions,
-		BranchName:                      info.BranchName,
-		ClaudeDir:                       info.ClaudeDir,
-		Comment:                         info.Comment,
-		DisplayName:                     info.DisplayName,
-		ExecutionID:                     info.ExecutionID,
-		GitStats:                        gitStats,
-		IsArchived:                      info.IsArchived,
-		IsFlagged:                       info.IsFlagged,
-		LastUpdated:                     info.LastUpdated,
-		Name:                            info.Name,
-		RepoInfo:                        info.RepoInfo,
-		RepoPath:                        info.RepoPath,
-		RepoSource:                      info.RepoSource,
-		ShellSession:                    shellSession,
-		State:                           domain.SessionState(info.State),
-		Status:                          info.Status,
-		WorktreePath:                    info.WorktreePath,
+		AllowDangerouslySkipPermissions: allowSkipPerms,
+		BranchName:                      m.BranchName,
+		ClaudeDir:                       m.ClaudeDir,
+		Comment:                         comment,
+		DisplayName:                     m.DisplayName,
+		ExecutionID:                     m.ExecutionID,
+		GitStats:                        nil, // Not persisted, populated at runtime
+		IsArchived:                      isArchived,
+		IsFlagged:                       isFlagged,
+		LastUpdated:                     m.LastUpdated,
+		Name:                            m.Name,
+		RepoInfo:                        m.RepoInfo,
+		RepoPath:                        m.RepoPath,
+		RepoSource:                      m.RepoSource,
+		ShellSession:                    nil, // Set separately if nested session exists
+		State:                           domain.SessionState(m.State),
+		Status:                          status,
+		WorktreePath:                    m.WorktreePath,
 	}
 }
 
-// domainToSessionInfo converts a domain.Session to storage.SessionInfo
-func domainToSessionInfo(session domain.Session) existingstore.SessionInfo {
-	var shellSession *existingstore.SessionInfo
-	if session.ShellSession != nil {
-		converted := domainToSessionInfo(*session.ShellSession)
-		shellSession = &converted
-	}
-
-	return existingstore.SessionInfo{
-		AllowDangerouslySkipPermissions: session.AllowDangerouslySkipPermissions,
-		BranchName:                      session.BranchName,
-		ClaudeDir:                       session.ClaudeDir,
-		Comment:                         session.Comment,
-		DisplayName:                     session.DisplayName,
-		ExecutionID:                     session.ExecutionID,
-		GitStats:                        session.GitStats,
-		IsArchived:                      session.IsArchived,
-		IsFlagged:                       session.IsFlagged,
-		LastUpdated:                     session.LastUpdated,
-		Name:                            session.Name,
-		RepoInfo:                        session.RepoInfo,
-		RepoPath:                        session.RepoPath,
-		RepoSource:                      session.RepoSource,
-		ShellSession:                    shellSession,
-		State:                           string(session.State),
-		Status:                          session.Status,
-		WorktreePath:                    session.WorktreePath,
-	}
-}
-
-// sessionStateToDomain converts storage.SessionState to domain.SessionCollection
-func sessionStateToDomain(state *existingstore.SessionState) *domain.SessionCollection {
-	if state == nil {
-		return &domain.SessionCollection{
-			OrderedNames: []string{},
-			Sessions:     make(map[string]domain.Session),
-		}
-	}
-
-	sessions := make(map[string]domain.Session)
-	for name, info := range state.Sessions {
-		sessions[name] = sessionInfoToDomain(info)
-	}
-
-	return &domain.SessionCollection{
-		OrderedNames: state.OrderedSessionNames,
-		Sessions:     sessions,
-	}
-}
-
-// domainToSessionState converts domain.SessionCollection to storage.SessionState
-func domainToSessionState(collection *domain.SessionCollection) *existingstore.SessionState {
-	if collection == nil {
-		return &existingstore.SessionState{
-			OrderedSessionNames: []string{},
-			Sessions:            make(map[string]existingstore.SessionInfo),
-		}
-	}
-
-	sessions := make(map[string]existingstore.SessionInfo)
-	for name, session := range collection.Sessions {
-		sessions[name] = domainToSessionInfo(session)
-	}
-
-	return &existingstore.SessionState{
-		OrderedSessionNames: collection.OrderedNames,
-		Sessions:            sessions,
+// domainToSessionModel converts a domain.Session to SessionModel (GORM)
+func domainToSessionModel(s domain.Session) SessionModel {
+	return SessionModel{
+		BranchName:   s.BranchName,
+		ClaudeDir:    s.ClaudeDir,
+		DisplayName:  s.DisplayName,
+		ExecutionID:  s.ExecutionID,
+		LastUpdated:  s.LastUpdated,
+		Name:         s.Name,
+		RepoInfo:     s.RepoInfo,
+		RepoPath:     s.RepoPath,
+		RepoSource:   s.RepoSource,
+		State:        string(s.State),
+		WorktreePath: s.WorktreePath,
 	}
 }
