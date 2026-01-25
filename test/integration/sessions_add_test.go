@@ -115,3 +115,96 @@ func TestSessionsAddAndVerify(t *testing.T) {
 	harness.AssertStdoutContains(t, viewResult, "Session: verify-session")
 	harness.AssertStdoutContains(t, viewResult, "Display Name: Verify Me")
 }
+
+func TestSessionsAddWithPrompt(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantExitCode int
+		validate     func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult)
+	}{
+		{
+			name:         "add session with initial prompt stores metadata",
+			args:         []string{"sessions", "add", "prompt-session", "--prompt", "implement feature X"},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Session 'prompt-session' added successfully")
+				harness.AssertStdoutContains(t, result, "Initial prompt stored")
+			},
+		},
+		{
+			name:         "add session with short prompt flag",
+			args:         []string{"sessions", "add", "short-flag-session", "-p", "do this task"},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Session 'short-flag-session' added successfully")
+			},
+		},
+		{
+			name:         "add session with multiline prompt",
+			args:         []string{"sessions", "add", "multiline-session", "--prompt", "Step 1: Do this\nStep 2: Do that\nStep 3: Done"},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Session 'multiline-session' added successfully")
+			},
+		},
+		{
+			name:         "add session with special characters in prompt",
+			args:         []string{"sessions", "add", "special-chars-session", "--prompt", "Use 'single quotes' and \"double quotes\""},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Session 'special-chars-session' added successfully")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := harness.NewTestEnvironment(t)
+
+			result := harness.RunCommand(t, env, tt.args...)
+
+			if tt.wantExitCode == 0 {
+				harness.AssertSuccess(t, result)
+			} else {
+				harness.AssertFailure(t, result)
+			}
+
+			if tt.validate != nil {
+				tt.validate(t, env, result)
+			}
+		})
+	}
+}
+
+func TestSessionsAddWithPromptAndVerifyView(t *testing.T) {
+	env := harness.NewTestEnvironment(t)
+
+	// Add a session with initial prompt
+	addResult := harness.RunCommand(t, env,
+		"sessions", "add", "prompt-view-session",
+		"--prompt", "implement the login feature",
+	)
+	harness.AssertSuccess(t, addResult)
+
+	// Verify prompt appears in sessions view output
+	viewResult := harness.RunCommand(t, env, "sessions", "view", "prompt-view-session")
+	harness.AssertSuccess(t, viewResult)
+	harness.AssertStdoutContains(t, viewResult, "Initial Prompt: implement the login feature")
+}
+
+func TestSessionsAddWithPromptAndVerifyJSON(t *testing.T) {
+	env := harness.NewTestEnvironment(t)
+
+	// Add a session with initial prompt
+	addResult := harness.RunCommand(t, env,
+		"sessions", "add", "json-prompt-session",
+		"--prompt", "build the API endpoint",
+	)
+	harness.AssertSuccess(t, addResult)
+
+	// Verify prompt appears in JSON output
+	viewResult := harness.RunCommand(t, env, "sessions", "view", "json-prompt-session", "--format", "json")
+	harness.AssertSuccess(t, viewResult)
+	harness.AssertStdoutContains(t, viewResult, "build the API endpoint")
+}

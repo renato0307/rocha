@@ -14,6 +14,7 @@ func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, commen
 		DisplayName:                     m.DisplayName,
 		ExecutionID:                     m.ExecutionID,
 		GitStats:                        nil, // Not persisted, populated at runtime
+		InitialPrompt:                   m.InitialPrompt,
 		IsArchived:                      isArchived,
 		IsFlagged:                       isFlagged,
 		LastUpdated:                     m.LastUpdated,
@@ -31,16 +32,17 @@ func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, commen
 // domainToSessionModel converts a domain.Session to SessionModel (GORM)
 func domainToSessionModel(s domain.Session) SessionModel {
 	return SessionModel{
-		BranchName:   s.BranchName,
-		ClaudeDir:    s.ClaudeDir,
-		DisplayName:  s.DisplayName,
-		ExecutionID:  s.ExecutionID,
-		LastUpdated:  s.LastUpdated,
-		Name:         s.Name,
-		RepoInfo:     s.RepoInfo,
-		RepoPath:     s.RepoPath,
-		RepoSource:   s.RepoSource,
-		State:        string(s.State),
-		WorktreePath: s.WorktreePath,
+		BranchName:    s.BranchName,
+		ClaudeDir:     s.ClaudeDir,
+		DisplayName:   s.DisplayName,
+		ExecutionID:   s.ExecutionID,
+		InitialPrompt: s.InitialPrompt,
+		LastUpdated:   s.LastUpdated,
+		Name:          s.Name,
+		RepoInfo:      s.RepoInfo,
+		RepoPath:      s.RepoPath,
+		RepoSource:    s.RepoSource,
+		State:         string(s.State),
+		WorktreePath:  s.WorktreePath,
 	}
 }

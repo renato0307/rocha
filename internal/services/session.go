@@ -140,7 +140,7 @@ func (s *SessionService) CreateSession(
 	}
 
 	// 4. Create tmux session
-	tmuxSession, err := s.tmuxClient.CreateSession(tmuxName, worktreePath, claudeDir, params.TmuxStatusPosition)
+	tmuxSession, err := s.tmuxClient.CreateSession(tmuxName, worktreePath, claudeDir, params.TmuxStatusPosition, params.InitialPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
@@ -154,6 +154,7 @@ func (s *SessionService) CreateSession(
 		ClaudeDir:                       claudeDir,
 		DisplayName:                     sessionName,
 		ExecutionID:                     executionID,
+		InitialPrompt:                   params.InitialPrompt,
 		LastUpdated:                     time.Now().UTC(),
 		Name:                            tmuxName,
 		RepoInfo:                        repoInfo,
@@ -452,9 +453,10 @@ func (s *SessionService) SessionExists(name string) bool {
 }
 
 // RecreateSession recreates a tmux session that was previously closed
+// Note: Initial prompt is not replayed on recreation - it's only used at first creation
 func (s *SessionService) RecreateSession(name, worktreePath, claudeDir, tmuxStatusPosition string) error {
 	logging.Logger.Info("Recreating tmux session", "name", name)
-	_, err := s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+	_, err := s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition, "")
 	return err
 }
 
@@ -481,8 +483,9 @@ func (s *SessionService) ListTmuxSessions() ([]*ports.TmuxSession, error) {
 }
 
 // CreateTmuxSession creates a new tmux session
+// Note: This is for direct tmux session creation without initial prompt
 func (s *SessionService) CreateTmuxSession(name, worktreePath, claudeDir, tmuxStatusPosition string) (*ports.TmuxSession, error) {
-	return s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+	return s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition, "")
 }
 
 // KillTmuxSession kills a tmux session without affecting the database

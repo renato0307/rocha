@@ -31,6 +31,7 @@ type SessionFormResult struct {
 	ClaudeDir                       string // User-provided CLAUDE_CONFIG_DIR override
 	CreateWorktree                  bool
 	Error                           error  // Error that occurred during session creation
+	InitialPrompt                   string // Initial prompt to send to Claude on session start
 	RepoSource                      string // User-provided repo path or URL
 	SessionName                     string
 }
@@ -180,6 +181,16 @@ func NewSessionForm(
 			}),
 	)
 
+	fields = append(fields,
+		huh.NewText().
+			Title("Initial prompt (optional)").
+			DescriptionFunc(func() string {
+				return fmt.Sprintf("Send this prompt to Claude when session starts. (%d/2000)", len(sf.result.InitialPrompt))
+			}, &sf.result.InitialPrompt).
+			CharLimit(2000).
+			Value(&sf.result.InitialPrompt),
+	)
+
 	logging.Logger.Debug("Creating skip permissions field",
 		"current_value", sf.result.AllowDangerouslySkipPermissions)
 	fields = append(fields,
@@ -268,6 +279,7 @@ func (sf *SessionForm) createSession() error {
 		AllowDangerouslySkipPermissions: sf.result.AllowDangerouslySkipPermissions,
 		BranchNameOverride:              sf.result.BranchName,
 		ClaudeDirOverride:               sf.result.ClaudeDir,
+		InitialPrompt:                   sf.result.InitialPrompt,
 		RepoSource:                      sf.result.RepoSource,
 		SessionName:                     sf.result.SessionName,
 		TmuxStatusPosition:              sf.tmuxStatusPosition,
