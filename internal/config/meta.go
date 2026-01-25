@@ -45,6 +45,15 @@ func generateExampleValue(t reflect.Type, fieldName string) any {
 	// Handle pointer types
 	if t.Kind() == reflect.Ptr {
 		elemType := t.Elem()
+
+		// Handle KeyBindingsConfig pointer
+		if elemType.Name() == "KeyBindingsConfig" {
+			return map[string]any{
+				"archive": "A",
+				"help":    []string{"H", "?"},
+			}
+		}
+
 		switch elemType.Kind() {
 		case reflect.Bool:
 			// Return boolean value directly (not pointer)

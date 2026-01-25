@@ -92,6 +92,34 @@ For example:
 - `n` - new session
 - `Ctrl+Q` - return to session list (when inside a session)
 
+### Custom Key Bindings
+
+Rocha allows customizing all keyboard shortcuts via `settings.json` or the CLI.
+
+**List all key bindings:**
+```bash
+rocha settings keys list              # Table format
+rocha settings keys list --format json  # JSON format
+```
+
+**Set a custom binding:**
+```bash
+rocha settings keys set archive A     # Single key
+rocha settings keys set up up,k,w     # Multiple keys
+```
+
+**In settings.json:**
+```json
+{
+  "keys": {
+    "archive": "A",
+    "up": ["up", "k", "w"]
+  }
+}
+```
+
+Conflicts are automatically detected and prevented.
+
 ## Git Worktree Support
 
 When running in a git repository, `rocha` offers to create isolated worktrees for each session:

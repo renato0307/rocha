@@ -252,6 +252,16 @@ func (r *RunCmd) Run(cli *CLI) error {
 	logging.Logger.Debug("Allow dangerously skip permissions default from settings",
 		"value", allowDangerouslySkipPermissionsDefault)
 
+	// Validate key bindings if configured
+	var keysConfig *config.KeyBindingsConfig
+	if cli.settings != nil && cli.settings.Keys != nil {
+		if err := cli.settings.Keys.Validate(); err != nil {
+			return fmt.Errorf("invalid key bindings in settings.json: %w", err)
+		}
+		keysConfig = cli.settings.Keys
+		logging.Logger.Debug("Custom key bindings loaded and validated")
+	}
+
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
@@ -279,6 +289,7 @@ func (r *RunCmd) Run(cli *CLI) error {
 			r.TmuxStatusPosition,
 			allowDangerouslySkipPermissionsDefault,
 			tipsConfig,
+			keysConfig,
 			cli.Container.GitService,
 			cli.Container.SessionService,
 			cli.Container.ShellService,

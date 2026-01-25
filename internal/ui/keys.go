@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"github.com/charmbracelet/bubbles/key"
+
+	"rocha/internal/config"
+)
 
 // KeyMap contains all keyboard shortcuts organized by context
 type KeyMap struct {
@@ -12,13 +16,14 @@ type KeyMap struct {
 }
 
 // NewKeyMap creates a new KeyMap with all key bindings initialized
-func NewKeyMap() KeyMap {
+// Pass nil for keysConfig to use default bindings
+func NewKeyMap(keysConfig *config.KeyBindingsConfig) KeyMap {
 	return KeyMap{
-		Application:       newApplicationKeys(),
-		Navigation:        newNavigationKeys(),
-		SessionActions:    newSessionActionsKeys(),
-		SessionManagement: newSessionManagementKeys(),
-		SessionMetadata:   newSessionMetadataKeys(),
+		Application:       newApplicationKeys(keysConfig),
+		Navigation:        newNavigationKeys(keysConfig),
+		SessionActions:    newSessionActionsKeys(keysConfig),
+		SessionManagement: newSessionManagementKeys(keysConfig),
+		SessionMetadata:   newSessionMetadataKeys(keysConfig),
 	}
 }
 

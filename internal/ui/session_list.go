@@ -659,8 +659,8 @@ func (sl *SessionList) View() string {
 
 	// Add first-session hint when there's exactly 1 session (highlighted for first-timers)
 	if len(sl.list.Items()) == 1 {
-		helpText += "  " + theme.HintKeyStyle.Render("enter") + theme.HintLabelStyle.Render(" open Claude ") +
-			theme.HintKeyStyle.Render("ctrl+q") + theme.HintLabelStyle.Render(" return here")
+		helpText += "  " + theme.HintKeyStyle.Render(sl.keys.SessionActions.Open.Binding.Help().Key) + theme.HintLabelStyle.Render(" open Claude ") +
+			theme.HintKeyStyle.Render(sl.keys.SessionActions.Detach.Binding.Help().Key) + theme.HintLabelStyle.Render(" return here")
 	}
 
 	s += theme.HelpStyle.Render(helpText) + "\n"

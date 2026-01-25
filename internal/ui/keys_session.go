@@ -1,6 +1,8 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"rocha/internal/config"
+)
 
 // SessionManagementKeys defines key bindings for managing sessions (create, rename, archive, kill)
 type SessionManagementKeys struct {
@@ -30,123 +32,40 @@ type SessionActionsKeys struct {
 }
 
 // newSessionManagementKeys creates session management key bindings
-func newSessionManagementKeys() SessionManagementKeys {
+func newSessionManagementKeys(keysConfig *config.KeyBindingsConfig) SessionManagementKeys {
+	defaults := config.GetDefaultKeyBindings()
+
 	return SessionManagementKeys{
-		Archive: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("a"),
-				key.WithHelp("a", "archive"),
-			),
-			Tip: newTip("press %s to archive a session (hidden from list)", "a"),
-		},
-		Kill: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("x"),
-				key.WithHelp("x", "kill"),
-			),
-			Tip: newTip("press %s to kill a session and optionally remove its worktree", "x"),
-		},
-		New: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("n"),
-				key.WithHelp("n", "new"),
-			),
-			Tip: newTip("press %s to create a new session", "n"),
-		},
-		NewFromRepo: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("N"),
-				key.WithHelp("shift+n", "new from same repo"),
-			),
-			Tip: newTip("press %s to create a new session based on the selected session", "shift+n"),
-		},
-		Rename: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("r"),
-				key.WithHelp("r", "rename"),
-			),
-			Tip: newTip("press %s to rename a session", "r"),
-		},
+		Archive:     buildBinding(defaults["archive"], keysConfig.GetBindingByName("archive"), "archive", "press %s to archive a session (hidden from list)"),
+		Kill:        buildBinding(defaults["kill"], keysConfig.GetBindingByName("kill"), "kill", "press %s to kill a session and optionally remove its worktree"),
+		New:         buildBinding(defaults["new"], keysConfig.GetBindingByName("new"), "new", "press %s to create a new session"),
+		NewFromRepo: buildBinding(defaults["new_from_repo"], keysConfig.GetBindingByName("new_from_repo"), "new from same repo", "press %s to create a new session based on the selected session"),
+		Rename:      buildBinding(defaults["rename"], keysConfig.GetBindingByName("rename"), "rename", "press %s to rename a session"),
 	}
 }
 
 // newSessionMetadataKeys creates session metadata key bindings
-func newSessionMetadataKeys() SessionMetadataKeys {
+func newSessionMetadataKeys(keysConfig *config.KeyBindingsConfig) SessionMetadataKeys {
+	defaults := config.GetDefaultKeyBindings()
+
 	return SessionMetadataKeys{
-		Comment: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("c"),
-				key.WithHelp("c", "comment (⌨)"),
-			),
-			Tip: newTip("press %s to add a comment to a session", "c"),
-		},
-		Flag: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("f"),
-				key.WithHelp("f", "flag (⚑)"),
-			),
-			Tip: newTip("press %s to flag a session for attention", "f"),
-		},
-		SendText: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("p"),
-				key.WithHelp("p", "send text (prompt)"),
-			),
-			Tip: newTip("press %s to send text to a session (experimental)", "p"),
-		},
-		StatusCycle: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("s"),
-				key.WithHelp("s", "cycle status"),
-			),
-			Tip: newTip("press %s to cycle through implementation statuses", "s"),
-		},
-		StatusSetForm: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("S"),
-				key.WithHelp("shift+s", "set status"),
-			),
-			Tip: newTip("press %s to pick a specific status", "shift+s"),
-		},
+		Comment:       buildBinding(defaults["comment"], keysConfig.GetBindingByName("comment"), "comment (⌨)", "press %s to add a comment to a session"),
+		Flag:          buildBinding(defaults["flag"], keysConfig.GetBindingByName("flag"), "flag (⚑)", "press %s to flag a session for attention"),
+		SendText:      buildBinding(defaults["send_text"], keysConfig.GetBindingByName("send_text"), "send text (prompt)", "press %s to send text to a session (experimental)"),
+		StatusCycle:   buildBinding(defaults["cycle_status"], keysConfig.GetBindingByName("cycle_status"), "cycle status", "press %s to cycle through implementation statuses"),
+		StatusSetForm: buildBinding(defaults["set_status"], keysConfig.GetBindingByName("set_status"), "set status", "press %s to pick a specific status"),
 	}
 }
 
 // newSessionActionsKeys creates session action key bindings
-func newSessionActionsKeys() SessionActionsKeys {
+func newSessionActionsKeys(keysConfig *config.KeyBindingsConfig) SessionActionsKeys {
+	defaults := config.GetDefaultKeyBindings()
+
 	return SessionActionsKeys{
-		Detach: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("ctrl+q"),
-				key.WithHelp("ctrl+q", "detach from session (return to list)"),
-			),
-			Tip: newTip("press %s inside a session to return to the list", "ctrl+q"),
-		},
-		Open: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("enter"),
-				key.WithHelp("enter", "open"),
-			),
-		},
-		OpenEditor: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("o"),
-				key.WithHelp("o", "editor"),
-			),
-			Tip: newTip("press %s to open the session's folder in your editor", "o"),
-		},
-		OpenShell: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("ctrl+s"),
-				key.WithHelp("ctrl+s", "shell (>_)"),
-			),
-			Tip: newTip("press %s to open a shell session alongside claude", "ctrl+s"),
-		},
-		QuickOpen: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-				key.WithHelp("1-9,0", "quick open (0=10th)"),
-			),
-			Tip: newTip("press %s to quickly open sessions by their number", "1-9,0"),
-		},
+		Detach:     buildBinding(defaults["detach"], keysConfig.GetBindingByName("detach"), "detach from session (return to list)", "press %s inside a session to return to the list"),
+		Open:       buildBinding(defaults["open"], keysConfig.GetBindingByName("open"), "open", ""),
+		OpenEditor: buildBinding(defaults["open_editor"], keysConfig.GetBindingByName("open_editor"), "editor", "press %s to open the session's folder in your editor"),
+		OpenShell:  buildBinding(defaults["open_shell"], keysConfig.GetBindingByName("open_shell"), "shell (>_)", "press %s to open a shell session alongside claude"),
+		QuickOpen:  buildBinding(defaults["quick_open"], keysConfig.GetBindingByName("quick_open"), "quick open (0=10th)", "press %s to quickly open sessions by their number"),
 	}
 }

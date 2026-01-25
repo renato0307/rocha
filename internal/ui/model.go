@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
@@ -74,6 +75,7 @@ func NewModel(
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
+	keysConfig *config.KeyBindingsConfig,
 	gitService *services.GitService,
 	sessionService *services.SessionService,
 	shellService *services.ShellService,
@@ -96,7 +98,7 @@ func NewModel(
 	}
 
 	// Create shared key map
-	keys := NewKeyMap()
+	keys := NewKeyMap(keysConfig)
 
 	// Create session operations component
 	sessionOps := NewSessionOperations(errorManager, tmuxStatusPosition, sessionService, shellService)
@@ -212,9 +214,9 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 
-	// Toggle timestamps display mode with 't' key
+	// Toggle timestamps display mode
 	// Cycle: Relative -> Absolute -> Hidden -> Relative -> ...
-	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "t" {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && key.Matches(keyMsg, m.keys.Application.Timestamps.Binding) {
 		switch m.timestampMode {
 		case TimestampRelative:
 			m.timestampMode = TimestampAbsolute
