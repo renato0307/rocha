@@ -11,7 +11,7 @@ import (
 	"rocha/logging"
 	"rocha/paths"
 	"rocha/ports"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionService handles session lifecycle operations

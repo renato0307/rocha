@@ -11,7 +11,7 @@ import (
 	"rocha/domain"
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 

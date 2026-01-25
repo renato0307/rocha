@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"rocha/domain"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionsAddCmd adds a new session

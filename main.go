@@ -9,7 +9,7 @@ import (
 	"rocha/cmd"
 	"rocha/config"
 	"rocha/ports"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 	"rocha/version"
 )
 

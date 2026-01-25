@@ -6,7 +6,7 @@ import (
 
 	"rocha/domain"
 	"rocha/state"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // StatusCmd displays session state counts for tmux status bar

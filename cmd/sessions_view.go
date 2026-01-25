@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"rocha/domain"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionsViewCmd views a specific session

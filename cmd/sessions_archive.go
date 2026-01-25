@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"rocha/domain"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionsArchiveCmd archives or unarchives a session

@@ -12,7 +12,7 @@ import (
 	"rocha/domain"
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // AttachCmd attaches to a tmux session, creating it if needed

@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 
 	"rocha/domain"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionsListCmd lists all sessions

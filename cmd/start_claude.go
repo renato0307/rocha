@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"rocha/logging"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // StartClaudeCmd starts Claude Code with hooks configured

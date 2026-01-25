@@ -7,7 +7,7 @@ import (
 
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionSetCmd sets configuration for a session

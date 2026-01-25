@@ -7,7 +7,7 @@ import (
 	"rocha/application"
 	"rocha/domain"
 	"rocha/logging"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionsDelCmd deletes a session

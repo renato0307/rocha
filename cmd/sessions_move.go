@@ -12,7 +12,7 @@ import (
 	"rocha/logging"
 	"rocha/paths"
 	"rocha/ports"
-	"rocha/tmux"
+	"rocha/adapters/tmux"
 )
 
 // SessionsMoveCmd moves sessions between ROCHA_HOME directories
