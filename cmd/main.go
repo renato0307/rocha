@@ -6,7 +6,6 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/renato0307/rocha/internal/adapters/tmux"
 	"github.com/renato0307/rocha/internal/cmd"
 	"github.com/renato0307/rocha/internal/config"
 	"github.com/renato0307/rocha/internal/ui"
@@ -47,16 +46,8 @@ func main() {
 		settings = &config.Settings{} // Use empty settings
 	}
 
-	// Create tmux client and container for dependency injection
-	tmuxClient := tmux.NewClient()
-	container, err := cmd.NewContainer(tmuxClient)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing: %v\n", err)
-		os.Exit(1)
-	}
-	defer container.Close()
-
 	// Parse CLI arguments with Kong
+	// Container is created in CLI.AfterApply() after logging is initialized
 	var cli cmd.CLI
 	cli.SetSettings(settings) // Set settings before parsing
 	ctx := kong.Parse(&cli,
@@ -66,9 +57,9 @@ func main() {
 			"version": versionInfo(),
 		},
 		kong.UsageOnError(),
-		kong.Bind(container),
 		kong.Bind(&cli),
 	)
+	defer cli.Close()
 
 	// Execute the selected command
 	if err := ctx.Run(); err != nil {

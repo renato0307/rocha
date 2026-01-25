@@ -35,8 +35,9 @@ type CLI struct {
 	Sessions    SessionsCmd    `cmd:"sessions" help:"Manage sessions (list, view, add, del)"`
 	Settings    SettingsCmd    `cmd:"settings" help:"Manage settings (meta)"`
 
-	// Internal field for settings (not a flag)
-	settings *config.Settings `kong:"-"`
+	// Internal fields (not flags)
+	Container *Container       `kong:"-"`
+	settings  *config.Settings `kong:"-"`
 }
 
 // SetSettings sets the settings on the CLI struct
@@ -88,6 +89,22 @@ func (c *CLI) AfterApply() error {
 		os.Setenv("ROCHA_MAX_LOG_FILES", fmt.Sprintf("%d", c.MaxLogFiles))
 	}
 
+	// Create container AFTER logging is initialized
+	// This fixes the nil pointer panic when GORM's logger calls logging.Logger.Debug()
+	container, err := NewContainer(nil)
+	if err != nil {
+		return fmt.Errorf("failed to initialize container: %w", err)
+	}
+	c.Container = container
+
+	return nil
+}
+
+// Close closes all resources held by the CLI
+func (c *CLI) Close() error {
+	if c.Container != nil {
+		return c.Container.Close()
+	}
 	return nil
 }
 
@@ -112,7 +129,7 @@ type RunCmd struct {
 }
 
 // Run executes the TUI
-func (r *RunCmd) Run(container *Container, cli *CLI) error {
+func (r *RunCmd) Run(cli *CLI) error {
 	// Apply RunCmd-specific settings with proper precedence
 	// Only apply if flag is at default value and env var is not set
 
@@ -195,7 +212,7 @@ func (r *RunCmd) Run(container *Container, cli *CLI) error {
 	logging.Logger.Info("Generated new execution ID", "execution_id", executionID)
 
 	// Load state for initial session info
-	st, err := container.SessionService.LoadState(context.Background(), false)
+	st, err := cli.Container.SessionService.LoadState(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load session state: %v", err)
 		logging.Logger.Warn("Failed to load session state", "error", err)
@@ -204,7 +221,7 @@ func (r *RunCmd) Run(container *Container, cli *CLI) error {
 	logging.Logger.Debug("State loaded", "existing_sessions", len(st.Sessions))
 
 	// Sync with running tmux sessions
-	runningSessions, err := container.SessionService.ListTmuxSessions()
+	runningSessions, err := cli.Container.SessionService.ListTmuxSessions()
 	if err != nil {
 		logging.Logger.Warn("Failed to list tmux sessions", "error", err)
 	} else {
@@ -217,7 +234,7 @@ func (r *RunCmd) Run(container *Container, cli *CLI) error {
 		// Update execution ID for running sessions without changing last_updated timestamp
 		for _, sessionName := range runningNames {
 			if _, exists := st.Sessions[sessionName]; exists {
-				if err := container.SessionService.UpdateState(context.Background(), sessionName, domain.StateIdle, executionID); err != nil {
+				if err := cli.Container.SessionService.UpdateState(context.Background(), sessionName, domain.StateIdle, executionID); err != nil {
 					logging.Logger.Error("Failed to update execution ID", "error", err, "session", sessionName)
 				} else {
 					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
@@ -262,9 +279,9 @@ func (r *RunCmd) Run(container *Container, cli *CLI) error {
 			r.TmuxStatusPosition,
 			allowDangerouslySkipPermissionsDefault,
 			tipsConfig,
-			container.GitService,
-			container.SessionService,
-			container.ShellService,
+			cli.Container.GitService,
+			cli.Container.SessionService,
+			cli.Container.ShellService,
 		),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support

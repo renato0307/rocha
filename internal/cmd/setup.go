@@ -24,7 +24,7 @@ set -g mouse on  # Enable mouse support (scrolling, pane selection, resizing)
 )
 
 // Run executes the setup command
-func (s *SetupCmd) Run(container *Container) error {
+func (s *SetupCmd) Run(cli *CLI) error {
 	// Verify required dependencies
 	if err := s.verifyDependencies(); err != nil {
 		return err
@@ -48,7 +48,7 @@ func (s *SetupCmd) Run(container *Container) error {
 	}
 
 	// Setup tmux configuration
-	if err := s.setupTmux(container, homeDir); err != nil {
+	if err := s.setupTmux(cli, homeDir); err != nil {
 		return err
 	}
 
@@ -110,7 +110,7 @@ func (s *SetupCmd) setupPath(homeDir, rochaDir string) error {
 }
 
 // setupTmux configures tmux status bar (idempotent)
-func (s *SetupCmd) setupTmux(container *Container, homeDir string) error {
+func (s *SetupCmd) setupTmux(cli *CLI, homeDir string) error {
 	tmuxConfPath := filepath.Join(homeDir, ".tmux.conf")
 
 	// Read existing config
@@ -177,7 +177,7 @@ func (s *SetupCmd) setupTmux(container *Container, homeDir string) error {
 	fmt.Printf("✓ Added %d missing setting(s) to ~/.tmux.conf\n", len(missingSettings))
 
 	// Reload tmux configuration if tmux is running
-	if err := container.ShellService.SourceFile(tmuxConfPath); err != nil {
+	if err := cli.Container.ShellService.SourceFile(tmuxConfPath); err != nil {
 		// It's OK if this fails (tmux might not be running)
 		fmt.Println("  Note: tmux is not currently running. Configuration will be loaded when you start tmux.")
 	} else {

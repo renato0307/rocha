@@ -17,13 +17,7 @@ type SessionsArchiveCmd struct {
 
 // Run executes the archive command
 func (s *SessionsArchiveCmd) Run(cli *CLI) error {
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
-	session, err := container.SessionService.GetSession(context.Background(), s.Name)
+	session, err := cli.Container.SessionService.GetSession(context.Background(), s.Name)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
@@ -31,12 +25,12 @@ func (s *SessionsArchiveCmd) Run(cli *CLI) error {
 	isArchiving := !session.IsArchived
 
 	if isArchiving {
-		return s.archiveSession(container, session)
+		return s.archiveSession(cli, session)
 	}
-	return s.unarchiveSession(container)
+	return s.unarchiveSession(cli)
 }
 
-func (s *SessionsArchiveCmd) archiveSession(container *Container, session *domain.Session) error {
+func (s *SessionsArchiveCmd) archiveSession(cli *CLI, session *domain.Session) error {
 	if !s.Force {
 		fmt.Printf("Are you sure you want to archive session '%s'? (y/N): ", s.Name)
 		var response string
@@ -56,7 +50,7 @@ func (s *SessionsArchiveCmd) archiveSession(container *Container, session *domai
 	}
 
 	ctx := context.Background()
-	if err := container.SessionService.ArchiveSession(ctx, s.Name, removeWorktree); err != nil {
+	if err := cli.Container.SessionService.ArchiveSession(ctx, s.Name, removeWorktree); err != nil {
 		return fmt.Errorf("failed to archive session: %w", err)
 	}
 
@@ -68,8 +62,8 @@ func (s *SessionsArchiveCmd) archiveSession(container *Container, session *domai
 	return nil
 }
 
-func (s *SessionsArchiveCmd) unarchiveSession(container *Container) error {
-	if err := container.SessionService.ToggleArchive(context.Background(), s.Name); err != nil {
+func (s *SessionsArchiveCmd) unarchiveSession(cli *CLI) error {
+	if err := cli.Container.SessionService.ToggleArchive(context.Background(), s.Name); err != nil {
 		return fmt.Errorf("failed to unarchive session: %w", err)
 	}
 

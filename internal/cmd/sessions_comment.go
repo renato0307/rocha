@@ -17,20 +17,14 @@ type SessionsCommentCmd struct {
 func (s *SessionsCommentCmd) Run(cli *CLI) error {
 	logging.Logger.Debug("Executing sessions comment command", "name", s.Name, "comment", s.Comment)
 
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
 	ctx := context.Background()
 
 	// Validate session exists
-	if _, err := container.SessionService.GetSession(ctx, s.Name); err != nil {
+	if _, err := cli.Container.SessionService.GetSession(ctx, s.Name); err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	if err := container.SessionService.UpdateComment(ctx, s.Name, s.Comment); err != nil {
+	if err := cli.Container.SessionService.UpdateComment(ctx, s.Name, s.Comment); err != nil {
 		return fmt.Errorf("failed to update comment: %w", err)
 	}
 

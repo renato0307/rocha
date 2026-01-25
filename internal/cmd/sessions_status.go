@@ -27,19 +27,13 @@ func (s *SessionsStatusCmd) Run(cli *CLI) error {
 	logging.Logger.Debug("Executing sessions status command", "name", s.Name, "status", s.Status, "list", s.List)
 
 	if s.List {
-		return s.listStatuses()
+		return s.listStatuses(cli)
 	}
-	return s.setStatus()
+	return s.setStatus(cli)
 }
 
-func (s *SessionsStatusCmd) listStatuses() error {
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
-	statuses, err := container.SettingsService.GetAvailableStatuses()
+func (s *SessionsStatusCmd) listStatuses(cli *CLI) error {
+	statuses, err := cli.Container.SettingsService.GetAvailableStatuses()
 	if err != nil {
 		return fmt.Errorf("failed to get available statuses: %w", err)
 	}
@@ -51,17 +45,11 @@ func (s *SessionsStatusCmd) listStatuses() error {
 	return nil
 }
 
-func (s *SessionsStatusCmd) setStatus() error {
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
+func (s *SessionsStatusCmd) setStatus(cli *CLI) error {
 	ctx := context.Background()
 
 	// Validate session exists
-	if _, err := container.SessionService.GetSession(ctx, s.Name); err != nil {
+	if _, err := cli.Container.SessionService.GetSession(ctx, s.Name); err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
@@ -71,7 +59,7 @@ func (s *SessionsStatusCmd) setStatus() error {
 		statusPtr = &s.Status
 	}
 
-	if err := container.SessionService.UpdateStatus(ctx, s.Name, statusPtr); err != nil {
+	if err := cli.Container.SessionService.UpdateStatus(ctx, s.Name, statusPtr); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
