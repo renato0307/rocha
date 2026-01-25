@@ -4,22 +4,23 @@ import "time"
 
 // SessionModel is the GORM model for sessions table
 type SessionModel struct {
-	BranchName   string    `gorm:"default:''"`
-	ClaudeDir    string    `gorm:"default:''"`
-	CreatedAt    time.Time
-	DisplayName  string    `gorm:"not null;default:''"`
-	ExecutionID  string    `gorm:"not null;index:idx_execution_id"`
-	GitStats     any       `gorm:"-" json:"-"`
-	LastUpdated  time.Time `gorm:"not null;index:idx_last_updated"`
-	Name         string    `gorm:"primaryKey"`
-	ParentName   *string   `gorm:"index:idx_parent;default:null"`
-	Position     int       `gorm:"not null;default:0;index:idx_position"`
-	RepoInfo     string    `gorm:"default:''"`
-	RepoPath     string    `gorm:"default:''"`
-	RepoSource   string    `gorm:"default:''"`
-	State        string    `gorm:"not null;default:'idle';check:state IN ('waiting','working','idle','exited')"`
-	UpdatedAt    time.Time
-	WorktreePath string    `gorm:"default:''"`
+	BranchName    string    `gorm:"default:''"`
+	ClaudeDir     string    `gorm:"default:''"`
+	CreatedAt     time.Time
+	DisplayName   string    `gorm:"not null;default:''"`
+	ExecutionID   string    `gorm:"not null;index:idx_execution_id"`
+	GitStats      any       `gorm:"-" json:"-"`
+	InitialPrompt string    `gorm:"default:''"`
+	LastUpdated   time.Time `gorm:"not null;index:idx_last_updated"`
+	Name          string    `gorm:"primaryKey"`
+	ParentName    *string   `gorm:"index:idx_parent;default:null"`
+	Position      int       `gorm:"not null;default:0;index:idx_position"`
+	RepoInfo      string    `gorm:"default:''"`
+	RepoPath      string    `gorm:"default:''"`
+	RepoSource    string    `gorm:"default:''"`
+	State         string    `gorm:"not null;default:'idle';check:state IN ('waiting','working','idle','exited')"`
+	UpdatedAt     time.Time
+	WorktreePath  string    `gorm:"default:''"`
 }
 
 // TableName specifies the table name for GORM

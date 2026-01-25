@@ -52,6 +52,7 @@ This directory contains:
 - **Git stats** - See PR info, ahead/behind commits, and changes at a glance
 - **Per-session Claude config** - Give each session its own Claude configuration directory
 - **Create sessions from any repo** - Clone and start sessions from GitHub/GitLab URLs with specific branches
+- **Initial prompts** - Start sessions with a predefined prompt that's automatically sent to Claude
 
 ## Session States
 

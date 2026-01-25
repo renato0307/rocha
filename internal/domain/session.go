@@ -33,6 +33,7 @@ type Session struct {
 	DisplayName                     string
 	ExecutionID                     string
 	GitStats                        *GitStats
+	InitialPrompt                   string
 	IsArchived                      bool
 	IsFlagged                       bool
 	LastUpdated                     time.Time

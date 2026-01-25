@@ -25,7 +25,7 @@ type TmuxSession struct {
 
 // TmuxSessionLifecycle handles tmux session lifecycle operations
 type TmuxSessionLifecycle interface {
-	CreateSession(name, worktreePath, claudeDir, statusPosition string) (*TmuxSession, error)
+	CreateSession(name, worktreePath, claudeDir, statusPosition, initialPrompt string) (*TmuxSession, error)
 	CreateShellSession(name, worktreePath, statusPosition string) (*TmuxSession, error)
 	KillSession(name string) error
 	ListSessions() ([]*TmuxSession, error)

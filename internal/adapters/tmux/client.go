@@ -133,8 +133,9 @@ fi
 // CreateSession creates a new tmux session with the given name
 // If worktreePath is provided (non-empty), the session will start in that directory
 // If claudeDir is provided (non-empty), CLAUDE_CONFIG_DIR environment variable will be set
-func (c *DefaultClient) CreateSession(name string, worktreePath string, claudeDir string, statusPosition string) (*ports.TmuxSession, error) {
-	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath, "claude_dir", claudeDir, "status_position", statusPosition)
+// If initialPrompt is provided (non-empty), it will be sent to Claude as the first prompt
+func (c *DefaultClient) CreateSession(name string, worktreePath string, claudeDir string, statusPosition string, initialPrompt string) (*ports.TmuxSession, error) {
+	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath, "claude_dir", claudeDir, "status_position", statusPosition, "has_initial_prompt", initialPrompt != "")
 
 	if err := c.createBaseSession(name, worktreePath, statusPosition); err != nil {
 		return nil, err
@@ -173,12 +174,23 @@ func (c *DefaultClient) CreateSession(name string, worktreePath string, claudeDi
 		envVars += fmt.Sprintf(" ROCHA_EXECUTION_ID=%s", execID)
 	}
 
+	// Build start-claude command, optionally with initial prompt as positional argument
+	var promptArg string
+	if initialPrompt != "" {
+		// Shell escape the prompt using $'...' syntax for proper escaping of special chars
+		escapedPrompt := strings.ReplaceAll(initialPrompt, "\\", "\\\\")
+		escapedPrompt = strings.ReplaceAll(escapedPrompt, "'", "\\'")
+		escapedPrompt = strings.ReplaceAll(escapedPrompt, "\n", "\\n")
+		promptArg = fmt.Sprintf(" $'%s'", escapedPrompt)
+		logging.Logger.Debug("Initial prompt will be sent to Claude", "prompt_length", len(initialPrompt))
+	}
+
 	var startCmd string
 	if worktreePath != "" {
 		logging.Logger.Info("Starting Claude in worktree directory", "path", worktreePath)
-		startCmd = fmt.Sprintf("cd %q && clear && %s %s start-claude", worktreePath, envVars, rochaBin)
+		startCmd = fmt.Sprintf("cd %q && clear && %s %s start-claude%s", worktreePath, envVars, rochaBin, promptArg)
 	} else {
-		startCmd = fmt.Sprintf("clear && %s %s start-claude", envVars, rochaBin)
+		startCmd = fmt.Sprintf("clear && %s %s start-claude%s", envVars, rochaBin, promptArg)
 	}
 	logging.Logger.Debug("Sending start command to session", "command", startCmd)
 	if err := c.SendKeys(name, startCmd, "Enter"); err != nil {

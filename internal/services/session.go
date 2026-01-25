@@ -140,7 +140,7 @@ func (s *SessionService) CreateSession(
 	}
 
 	// 4. Create tmux session
-	tmuxSession, err := s.tmuxClient.CreateSession(tmuxName, worktreePath, claudeDir, params.TmuxStatusPosition)
+	tmuxSession, err := s.tmuxClient.CreateSession(tmuxName, worktreePath, claudeDir, params.TmuxStatusPosition, params.InitialPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
@@ -154,6 +154,7 @@ func (s *SessionService) CreateSession(
 		ClaudeDir:                       claudeDir,
 		DisplayName:                     sessionName,
 		ExecutionID:                     executionID,
+		InitialPrompt:                   params.InitialPrompt,
 		LastUpdated:                     time.Now().UTC(),
 		Name:                            tmuxName,
 		RepoInfo:                        repoInfo,
@@ -439,7 +440,10 @@ func (s *SessionService) RenameSession(ctx context.Context, oldName, newName, ne
 	// Rename in database (preserves position)
 	if err := s.sessionRepo.Rename(ctx, oldName, newName, newDisplayName); err != nil {
 		// Try to rollback tmux rename
-		s.tmuxClient.RenameSession(newName, oldName)
+		if rollbackErr := s.tmuxClient.RenameSession(newName, oldName); rollbackErr != nil {
+			logging.Logger.Error("Failed to rollback tmux rename after database error",
+				"oldName", oldName, "newName", newName, "rollbackError", rollbackErr)
+		}
 		return fmt.Errorf("failed to rename in database: %w", err)
 	}
 
@@ -451,10 +455,13 @@ func (s *SessionService) SessionExists(name string) bool {
 	return s.tmuxClient.SessionExists(name)
 }
 
-// RecreateSession recreates a tmux session that was previously closed
+// RecreateSession recreates a tmux session that was previously closed.
+// Note: Initial prompt is intentionally not replayed on recreation to avoid
+// sending duplicate prompts when a user reconnects to an exited session.
+// The initial prompt is only used during the first creation of a session.
 func (s *SessionService) RecreateSession(name, worktreePath, claudeDir, tmuxStatusPosition string) error {
 	logging.Logger.Info("Recreating tmux session", "name", name)
-	_, err := s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+	_, err := s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition, "")
 	return err
 }
 
@@ -481,8 +488,9 @@ func (s *SessionService) ListTmuxSessions() ([]*ports.TmuxSession, error) {
 }
 
 // CreateTmuxSession creates a new tmux session
+// Note: This is for direct tmux session creation without initial prompt
 func (s *SessionService) CreateTmuxSession(name, worktreePath, claudeDir, tmuxStatusPosition string) (*ports.TmuxSession, error) {
-	return s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+	return s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition, "")
 }
 
 // KillTmuxSession kills a tmux session without affecting the database

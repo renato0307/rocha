@@ -7,6 +7,7 @@ type CreateSessionParams struct {
 	AllowDangerouslySkipPermissions bool
 	BranchNameOverride              string
 	ClaudeDirOverride               string
+	InitialPrompt                   string
 	RepoSource                      string
 	SessionName                     string
 	TmuxStatusPosition              string
