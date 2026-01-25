@@ -391,6 +391,12 @@ func (s *SessionService) UpdateComment(ctx context.Context, name, comment string
 	return s.sessionRepo.UpdateComment(ctx, name, comment)
 }
 
+// UpdateDisplayName updates the display name for a session
+func (s *SessionService) UpdateDisplayName(ctx context.Context, name, displayName string) error {
+	logging.Logger.Debug("Updating session display name", "name", name, "displayName", displayName)
+	return s.sessionRepo.UpdateDisplayName(ctx, name, displayName)
+}
+
 // UpdateStatus updates the status for a session
 func (s *SessionService) UpdateStatus(ctx context.Context, name string, status *string) error {
 	logging.Logger.Debug("Updating session status", "name", name)
