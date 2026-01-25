@@ -8,25 +8,17 @@ In practical terms, I'm a tmux-based session manager for Claude Code CLI.
 - tmux
 - Claude Code CLI (`claude`)
 - git (optional, for worktree support)
-- Go 1.23+ (only if building from source)
 
 ## Quick Start
 
-```bash
-# Build and install
-make install
+1. Download the latest binary from the [Releases page](https://github.com/renato0307/rocha/releases)
+2. Run `rocha setup` to configure PATH and tmux integration
+3. Source your shell config: `source ~/.zshrc` (or `~/.bashrc`)
+4. Launch with `rocha`
 
-# Set up PATH and tmux status bar
-rocha setup
-source ~/.zshrc  # or ~/.bashrc
+Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to the list. Press `?` for all key bindings.
 
-# Run it
-rocha
-```
-
-Press `n` to create your first session, `Enter` to attach, `Ctrl+Q` to return to the list.
-
-For all available commands and options, run `rocha --help`.
+Rocha is also a CLI tool with several commands. Run `rocha --help` to see all available options.
 
 ## Configuration
 
@@ -95,28 +87,9 @@ For example:
 
 ## Key Bindings
 
-**In the list:**
+- `?` - show all key bindings
 - `n` - new session
-- `enter` - attach to session
-- `alt+1` to `alt+7` - quick attach to sessions by number
-- `alt+enter` - open shell session (⌨) for the selected session
-- `r` - rename session
-- `c` - add/edit comment on session
-- `f` - toggle flag (mark session as important)
-- `s` - cycle through statuses quickly (working → idle → waiting → exited)
-- `shift+s` - set status (interactive form to choose status)
-- `o` - open session in your editor
-- `x` - kill session
-- `↑/↓` or `j/k` - navigate
-- `shift+↑/↓` or `shift+j/k` - move session up/down in list
-- `/` - filter/search sessions
-- `esc` (twice) - clear filter
-- `q` - quit
-
-**Inside a session:**
-- `ctrl+q` - quick return to list
-- `ctrl+]` - swap between claude and shell sessions
-- `ctrl+b then d` - standard tmux detach (also works)
+- `Ctrl+Q` - return to session list (when inside a session)
 
 ## Git Worktree Support
 
@@ -224,28 +197,6 @@ set -g status-right "Claude: #(rocha status) | %H:%M"
 set -g status-interval 1
 ```
 
-## Building from Source
-
-```bash
-make install        # Build and install to ~/.local/bin
-make build          # Build only
-go build -o rocha . # Build with Go directly
-```
-
-Check your installation:
-```bash
-rocha --version
-```
-
-## Testing
-
-```bash
-make test                              # Run all tests
-make test-integration                  # Run integration tests
-make test-integration-verbose          # Run with no cache
-make test-integration-run TEST=TestName  # Run specific test
-```
-
 ## Troubleshooting
 
 ```bash
@@ -258,11 +209,35 @@ Logs go to:
 - macOS: `~/Library/Logs/rocha/`
 - Windows: `%LOCALAPPDATA%\rocha\logs\`
 
-## License
+## Contributing
 
-GPL v3
+### Requirements
 
-## Release Process (Maintainers)
+- Go 1.23+
+
+### Building from Source
+
+```bash
+make install        # Build and install to ~/.local/bin
+make build          # Build only
+go build -o rocha . # Build with Go directly
+```
+
+Check your installation:
+```bash
+rocha --version
+```
+
+### Testing
+
+```bash
+make test                              # Run all tests
+make test-integration                  # Run integration tests
+make test-integration-verbose          # Run with no cache
+make test-integration-run TEST=TestName  # Run specific test
+```
+
+### Release Process (Maintainers)
 
 Create and push a version tag to trigger automated release:
 ```bash
@@ -275,3 +250,7 @@ Test locally first:
 make snapshot
 ./dist/rocha_linux_amd64_v1/rocha --version
 ```
+
+## License
+
+GPL v3
