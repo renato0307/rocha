@@ -38,8 +38,8 @@ type SessionFormResult struct {
 
 // SessionForm is a Bubble Tea component for creating sessions
 type SessionForm struct {
-	Completed          bool // Exported so Model can check completion
 	cancelled          bool
+	Completed          bool // Exported so Model can check completion
 	creating           bool // True when session creation is in progress
 	form               *huh.Form
 	gitService         *services.GitService
@@ -293,10 +293,10 @@ func (sf *SessionForm) createSession() error {
 	// Update sessionState with the new session (for UI refresh)
 	if result.Session != nil {
 		sf.sessionState.Sessions[result.Session.Name] = *result.Session
+		logging.Logger.Info("Session created",
+			"name", result.Session.Name,
+			"worktree_path", result.WorktreePath)
 	}
 
-	logging.Logger.Info("Session created",
-		"name", result.Session.Name,
-		"worktree_path", result.WorktreePath)
 	return nil
 }
