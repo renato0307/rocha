@@ -34,38 +34,38 @@ func (s *SessionSetCmd) AfterApply() error {
 }
 
 // Run executes the set command
-func (s *SessionSetCmd) Run(container *Container, cli *CLI) error {
+func (s *SessionSetCmd) Run(cli *CLI) error {
 	ctx := context.Background()
 	logging.Logger.Info("Executing session set command",
 		"name", s.Name, "variable", s.Variable, "value", s.Value, "all", s.All, "killTmux", s.KillTmux)
 
-	sessionNames, err := s.getSessionNames(ctx, container)
+	sessionNames, err := s.getSessionNames(ctx, cli)
 	if err != nil {
 		return err
 	}
 
-	updater, err := s.createUpdater(container)
+	updater, err := s.createUpdater(cli)
 	if err != nil {
 		return err
 	}
 
 	successCount, failedSessions := updateAllSessions(ctx, sessionNames, updater)
 
-	s.handleTmuxSessions(container.SessionService, sessionNames, failedSessions)
+	s.handleTmuxSessions(cli.Container.SessionService, sessionNames, failedSessions)
 
 	s.printSummary(successCount, len(sessionNames))
 
 	return nil
 }
 
-func (s *SessionSetCmd) getSessionNames(ctx context.Context, container *Container) ([]string, error) {
+func (s *SessionSetCmd) getSessionNames(ctx context.Context, cli *CLI) ([]string, error) {
 	if !s.All {
 		logging.Logger.Debug("Updating single session", "session", s.Name)
 		return []string{s.Name}, nil
 	}
 
 	logging.Logger.Info("Updating all sessions", "variable", s.Variable)
-	sessions, err := container.SessionService.ListSessions(ctx, false)
+	sessions, err := cli.Container.SessionService.ListSessions(ctx, false)
 	if err != nil {
 		logging.Logger.Error("Failed to list sessions", "error", err)
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
@@ -81,11 +81,11 @@ func (s *SessionSetCmd) getSessionNames(ctx context.Context, container *Containe
 	return names, nil
 }
 
-func (s *SessionSetCmd) createUpdater(container *Container) (sessionUpdater, error) {
+func (s *SessionSetCmd) createUpdater(cli *CLI) (sessionUpdater, error) {
 	switch s.Variable {
 	case "claudedir":
 		return func(ctx context.Context, name string) error {
-			return container.SettingsService.SetClaudeDir(ctx, name, s.Value)
+			return cli.Container.SettingsService.SetClaudeDir(ctx, name, s.Value)
 		}, nil
 
 	case "allow-dangerously-skip-permissions":
@@ -95,7 +95,7 @@ func (s *SessionSetCmd) createUpdater(container *Container) (sessionUpdater, err
 			return nil, fmt.Errorf("invalid value for allow-dangerously-skip-permissions: %w (use: true/false, yes/no, 1/0)", err)
 		}
 		return func(ctx context.Context, name string) error {
-			return container.SettingsService.SetSkipPermissions(ctx, name, skipPermissions)
+			return cli.Container.SettingsService.SetSkipPermissions(ctx, name, skipPermissions)
 		}, nil
 
 	default:

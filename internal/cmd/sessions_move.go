@@ -20,7 +20,7 @@ type SessionsMoveCmd struct {
 }
 
 // Run executes the move command
-func (s *SessionsMoveCmd) Run(container *Container, cli *CLI) error {
+func (s *SessionsMoveCmd) Run(cli *CLI) error {
 	logging.Logger.Info("Executing sessions move command", "repo", s.Repo, "from", s.From, "to", s.To, "force", s.Force)
 
 	if err := s.validateRepoFormat(); err != nil {
@@ -40,7 +40,7 @@ func (s *SessionsMoveCmd) Run(container *Container, cli *CLI) error {
 	ctx := context.Background()
 
 	// Get session count for confirmation
-	sourceSessions, err := container.MigrationService.GetSessionsForRepo(
+	sourceSessions, err := cli.Container.MigrationService.GetSessionsForRepo(
 		ctx,
 		sourceHome,
 		s.Repo,
@@ -63,7 +63,7 @@ func (s *SessionsMoveCmd) Run(container *Container, cli *CLI) error {
 	fmt.Printf("\nMoving repository: %s\n", s.Repo)
 	logging.Logger.Info("Starting repository move", "repo", s.Repo)
 
-	result, err := container.MigrationService.MoveRepositoryBetweenHomes(ctx, services.MoveRepositoryBetweenHomesParams{
+	result, err := cli.Container.MigrationService.MoveRepositoryBetweenHomes(ctx, services.MoveRepositoryBetweenHomesParams{
 		DestRochaHome:   destHome,
 		RepoInfo:        s.Repo,
 		SourceRochaHome: sourceHome,

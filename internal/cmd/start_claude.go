@@ -17,7 +17,7 @@ type StartClaudeCmd struct {
 }
 
 // Run executes Claude with hooks configuration
-func (s *StartClaudeCmd) Run(container *Container, cli *CLI) error {
+func (s *StartClaudeCmd) Run(cli *CLI) error {
 	// Get the path to the rocha binary
 	rochaBin, err := os.Executable()
 	if err != nil {
@@ -36,7 +36,7 @@ func (s *StartClaudeCmd) Run(container *Container, cli *CLI) error {
 	var allowDangerouslySkipPermissions bool
 
 	ctx := context.Background()
-	st, err := container.SessionService.LoadState(ctx, false)
+	st, err := cli.Container.SessionService.LoadState(ctx, false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state for execution ID", "error", err)
 		executionID = os.Getenv("ROCHA_EXECUTION_ID")

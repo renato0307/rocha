@@ -19,16 +19,10 @@ type SessionsDuplicateCmd struct {
 func (s *SessionsDuplicateCmd) Run(cli *CLI) error {
 	logging.Logger.Debug("Executing sessions duplicate command", "name", s.Name, "newName", s.NewName, "branch", s.Branch)
 
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
 	ctx := context.Background()
 
 	// Get source session
-	sourceSession, err := container.SessionService.GetSession(ctx, s.Name)
+	sourceSession, err := cli.Container.SessionService.GetSession(ctx, s.Name)
 	if err != nil {
 		return fmt.Errorf("source session not found: %w", err)
 	}
@@ -45,10 +39,10 @@ func (s *SessionsDuplicateCmd) Run(cli *CLI) error {
 		ClaudeDirOverride:               sourceSession.ClaudeDir,
 		RepoSource:                      sourceSession.RepoSource,
 		SessionName:                     s.NewName,
-		TmuxStatusPosition:              container.SettingsService.GetTmuxStatusPosition(),
+		TmuxStatusPosition:              cli.Container.SettingsService.GetTmuxStatusPosition(),
 	}
 
-	result, err := container.SessionService.CreateSession(ctx, params)
+	result, err := cli.Container.SessionService.CreateSession(ctx, params)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}

@@ -16,13 +16,7 @@ type SessionsViewCmd struct {
 
 // Run executes the view command
 func (s *SessionsViewCmd) Run(cli *CLI) error {
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
-	session, err := container.SessionService.GetSession(context.Background(), s.Name)
+	session, err := cli.Container.SessionService.GetSession(context.Background(), s.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}

@@ -17,20 +17,14 @@ type SessionsRenameCmd struct {
 func (s *SessionsRenameCmd) Run(cli *CLI) error {
 	logging.Logger.Debug("Executing sessions rename command", "name", s.Name, "displayName", s.DisplayName)
 
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
 	ctx := context.Background()
 
 	// Validate session exists
-	if _, err := container.SessionService.GetSession(ctx, s.Name); err != nil {
+	if _, err := cli.Container.SessionService.GetSession(ctx, s.Name); err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	if err := container.SessionService.UpdateDisplayName(ctx, s.Name, s.DisplayName); err != nil {
+	if err := cli.Container.SessionService.UpdateDisplayName(ctx, s.Name, s.DisplayName); err != nil {
 		return fmt.Errorf("failed to update display name: %w", err)
 	}
 

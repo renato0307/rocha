@@ -27,18 +27,8 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		logging.Logger.Info("Hook logger initialized", "log_file", hookLogFile)
 	}
 
-	// Create container for notification service
-	// Note: Notify command runs as separate process, so we create resources here
-	// Pass nil for tmuxClient since notifications don't need tmux
-	container, err := NewContainer(nil)
-	if err != nil {
-		logging.Logger.Error("Failed to initialize container", "error", err)
-		return nil // Don't fail notification on state errors
-	}
-	defer container.Close()
-
 	// Resolve execution ID using the service
-	executionID := container.NotificationService.ResolveExecutionID(
+	executionID := cli.Container.NotificationService.ResolveExecutionID(
 		context.Background(),
 		n.SessionName,
 		n.ExecutionID,
@@ -53,9 +43,9 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 		"ppid", os.Getppid())
 
 	// Play sound (presentation concern - stays in command)
-	if container.NotificationService.ShouldPlaySound(n.EventType) {
+	if cli.Container.NotificationService.ShouldPlaySound(n.EventType) {
 		logging.Logger.Debug("Playing notification sound", "event", n.EventType)
-		if err := container.NotificationService.PlaySoundForEvent(n.EventType); err != nil {
+		if err := cli.Container.NotificationService.PlaySoundForEvent(n.EventType); err != nil {
 			logging.Logger.Error("Failed to play sound", "error", err)
 			return fmt.Errorf("failed to play notification sound: %w", err)
 		}
@@ -65,7 +55,7 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 	}
 
 	// Handle event using the service
-	_, err = container.NotificationService.HandleEvent(
+	_, err = cli.Container.NotificationService.HandleEvent(
 		context.Background(),
 		n.SessionName,
 		n.EventType,

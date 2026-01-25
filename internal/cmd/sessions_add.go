@@ -24,12 +24,6 @@ type SessionsAddCmd struct {
 
 // Run executes the add command
 func (s *SessionsAddCmd) Run(cli *CLI) error {
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
 	displayName := s.DisplayName
 	if displayName == "" {
 		displayName = s.Name
@@ -48,7 +42,7 @@ func (s *SessionsAddCmd) Run(cli *CLI) error {
 		WorktreePath:                    s.WorktreePath,
 	}
 
-	if err := container.SessionService.AddSession(context.Background(), session); err != nil {
+	if err := cli.Container.SessionService.AddSession(context.Background(), session); err != nil {
 		return fmt.Errorf("failed to add session: %w", err)
 	}
 

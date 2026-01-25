@@ -12,16 +12,7 @@ type StatusCmd struct{}
 
 // Run executes the status command
 func (s *StatusCmd) Run(cli *CLI) error {
-	// Initialize container
-	container, err := NewContainer(nil)
-	if err != nil {
-		// Database doesn't exist or can't be opened
-		fmt.Printf("%s:? %s:? %s:?", domain.SymbolWaiting, domain.SymbolIdle, domain.SymbolWorking)
-		return nil
-	}
-	defer container.Close()
-
-	st, err := container.SessionService.LoadState(context.Background(), false)
+	st, err := cli.Container.SessionService.LoadState(context.Background(), false)
 	if err != nil {
 		// No state
 		fmt.Printf("%s:? %s:? %s:?", domain.SymbolWaiting, domain.SymbolIdle, domain.SymbolWorking)

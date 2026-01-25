@@ -18,13 +18,7 @@ type SessionsListCmd struct {
 
 // Run executes the list command
 func (s *SessionsListCmd) Run(cli *CLI) error {
-	container, err := NewContainer(nil)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
-	sessions, err := container.SessionService.ListSessions(context.Background(), s.ShowArchived)
+	sessions, err := cli.Container.SessionService.ListSessions(context.Background(), s.ShowArchived)
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}
