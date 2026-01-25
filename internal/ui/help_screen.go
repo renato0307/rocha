@@ -1,26 +1,11 @@
 package ui
 
 import (
+	"rocha/internal/theme"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-)
-
-var (
-	// Help screen styles
-	helpGroupStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("141")).
-			MarginTop(1)
-
-	helpKeyStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255")).
-			Bold(true).
-			Width(25)
-
-	helpDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
 )
 
 // HelpScreen displays keyboard shortcuts organized by category
@@ -36,7 +21,7 @@ type HelpScreen struct {
 
 // renderShortcut renders a single shortcut line with key and description
 func renderShortcut(key, description string) string {
-	return helpKeyStyle.Render(key) + helpDescStyle.Render(description) + "\n"
+	return theme.HelpKeyStyle.Render(key) + theme.HelpDescStyle.Render(description) + "\n"
 }
 
 // buildHelpContent builds the complete help text content using key bindings
@@ -44,7 +29,7 @@ func buildHelpContent(keys *KeyMap) string {
 	var content string
 
 	// Navigation
-	content += helpGroupStyle.Render("Navigation") + "\n"
+	content += theme.HelpGroupStyle.Render("Navigation") + "\n"
 	content += renderBinding(keys.Navigation.Up.Binding)
 	content += renderBinding(keys.Navigation.Down.Binding)
 	content += renderBinding(keys.Navigation.MoveUp.Binding)
@@ -53,7 +38,7 @@ func buildHelpContent(keys *KeyMap) string {
 	content += renderBinding(keys.Navigation.ClearFilter.Binding)
 
 	// Session Management
-	content += "\n" + helpGroupStyle.Render("Session Management") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("Session Management") + "\n"
 	content += renderBinding(keys.SessionManagement.New.Binding)
 	content += renderBinding(keys.SessionManagement.NewFromRepo.Binding)
 	content += renderBinding(keys.SessionManagement.Rename.Binding)
@@ -61,18 +46,18 @@ func buildHelpContent(keys *KeyMap) string {
 	content += renderBinding(keys.SessionManagement.Kill.Binding)
 
 	// Session Metadata
-	content += "\n" + helpGroupStyle.Render("Session Metadata") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("Session Metadata") + "\n"
 	content += renderBinding(keys.SessionMetadata.Comment.Binding)
 	content += renderBinding(keys.SessionMetadata.Flag.Binding)
 	content += renderBinding(keys.SessionMetadata.StatusCycle.Binding)
 	content += renderBinding(keys.SessionMetadata.StatusSetForm.Binding)
 
 	// Experimental Features
-	content += "\n" + helpGroupStyle.Render("Experimental Features") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("Experimental Features") + "\n"
 	content += renderShortcut(keys.SessionMetadata.SendText.Binding.Help().Key, keys.SessionMetadata.SendText.Binding.Help().Desc + " (experimental)")
 
 	// Session Actions
-	content += "\n" + helpGroupStyle.Render("Session Actions") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("Session Actions") + "\n"
 	content += renderBinding(keys.SessionActions.Open.Binding)
 	content += renderBinding(keys.SessionActions.Detach.Binding)
 	content += renderBinding(keys.SessionActions.QuickOpen.Binding)
@@ -80,20 +65,20 @@ func buildHelpContent(keys *KeyMap) string {
 	content += renderBinding(keys.SessionActions.OpenEditor.Binding)
 
 	// Inside Session Shortcuts (tmux-level)
-	content += "\n" + helpGroupStyle.Render("Inside Session Shortcuts") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("Inside Session Shortcuts") + "\n"
 	content += renderShortcut("ctrl+q", "quick return to list")
 	content += renderShortcut("ctrl+]", "swap between claude and shell sessions")
 	content += renderShortcut("ctrl+b then d", "standard tmux detach (also works)")
 
 	// Application
-	content += "\n" + helpGroupStyle.Render("Application") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("Application") + "\n"
 	content += renderBinding(keys.Application.Timestamps.Binding)
 	content += renderBinding(keys.Application.Help.Binding)
 	content += renderBinding(keys.Application.Quit.Binding)
 	content += renderBinding(keys.Application.ForceQuit.Binding)
 
 	// State Indicators
-	content += "\n" + helpGroupStyle.Render("State Indicators (read-only)") + "\n"
+	content += "\n" + theme.HelpGroupStyle.Render("State Indicators (read-only)") + "\n"
 	content += renderShortcut("●", "session is working")
 	content += renderShortcut("○", "session is idle")
 	content += renderShortcut("◐", "session is waiting")
@@ -163,7 +148,7 @@ func (h *HelpScreen) View() string {
 		return "Loading help..."
 	}
 
-	footer := helpStyle.Render("Press esc, q, h, or ? to close • ↑↓/jk/PgUp/PgDn to scroll")
+	footer := theme.HelpStyle.Render("Press esc, q, h, or ? to close • ↑↓/jk/PgUp/PgDn to scroll")
 	return h.viewport.View() + "\n\n" + footer
 }
 

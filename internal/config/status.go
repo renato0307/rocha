@@ -1,6 +1,10 @@
 package config
 
-import "strings"
+import (
+	"strings"
+
+	"rocha/internal/theme"
+)
 
 // StatusConfig holds the configuration for session implementation statuses
 type StatusConfig struct {
@@ -24,7 +28,7 @@ func NewStatusConfig(statuses, icons, colors string) *StatusConfig {
 
 	// If no colors provided, use default palette
 	if len(config.Colors) == 0 {
-		config.Colors = []string{"141", "33", "214", "226", "46"}
+		config.Colors = theme.DefaultStatusColors
 	}
 
 	return config

@@ -161,6 +161,7 @@ sequenceDiagram
 internal/
 ├── cmd/           # CLI commands (drivers)
 ├── ui/            # TUI components (drivers)
+├── theme/         # Centralized colors and lipgloss styles
 ├── services/      # Application services
 ├── domain/        # Domain entities
 ├── ports/         # Interface definitions

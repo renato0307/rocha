@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"rocha/internal/theme"
+
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Tip holds a tip format string and the keys to highlight
@@ -16,12 +17,6 @@ type Tip struct {
 
 // tips is the private collection of all tips, populated by newTip()
 var tips []Tip
-
-// Styles for tip rendering
-var (
-	tipKeyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
-	tipTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-)
 
 // newTip registers a tip with format string and keys to highlight
 // Format uses %s placeholders for keys, e.g. newTip("press %s to filter", "/")
@@ -45,11 +40,11 @@ func RenderTip(tip Tip) string {
 	// Split format by %s to get text segments
 	parts := strings.Split(tip.Format, "%s")
 	var result string
-	result += tipTextStyle.Render("ℹ  tip: ")
+	result += theme.TipTextStyle.Render("ℹ  tip: ")
 	for i, part := range parts {
-		result += tipTextStyle.Render(part)
+		result += theme.TipTextStyle.Render(part)
 		if i < len(tip.Keys) {
-			result += tipKeyStyle.Render(tip.Keys[i])
+			result += theme.TipKeyStyle.Render(tip.Keys[i])
 		}
 	}
 	return result
