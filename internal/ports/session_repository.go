@@ -34,6 +34,7 @@ type SessionMetadataUpdater interface {
 	ToggleArchive(ctx context.Context, name string) error
 	ToggleFlag(ctx context.Context, name string) error
 	UpdateComment(ctx context.Context, name, comment string) error
+	UpdateDisplayName(ctx context.Context, name, displayName string) error
 	UpdateStatus(ctx context.Context, name string, status *string) error
 }
 

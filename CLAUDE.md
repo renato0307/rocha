@@ -8,7 +8,7 @@ Tmux-based session manager for Claude Code CLI written in Go. Enables developers
 - **internal/cmd/** - Kong CLI commands (run, attach, status, setup, notify, etc.)
 - **internal/domain/** - Domain entities and session state constants
 - **internal/ports/** - Interface definitions (TmuxClient, SessionRepository, GitRepository, EditorOpener, SoundPlayer)
-- **internal/application/** - Application services (session, git, shell, settings)
+- **internal/services/** - Application services (session, git, shell, settings, notification, migration)
 - **internal/ui/** - Bubble Tea TUI components (SessionList, SessionForm, Model, KeyMaps)
 - **internal/config/** - Settings, paths, and Claude directory management
 - **internal/logging/** - Structured logging (slog)

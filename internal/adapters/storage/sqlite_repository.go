@@ -695,6 +695,27 @@ func (r *SQLiteRepository) UpdateStatus(ctx context.Context, name string, status
 	}, 3)
 }
 
+// UpdateDisplayName implements SessionMetadataUpdater.UpdateDisplayName
+func (r *SQLiteRepository) UpdateDisplayName(ctx context.Context, name, displayName string) error {
+	return withRetry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			result := tx.Model(&SessionModel{}).
+				Where("name = ?", name).
+				Updates(map[string]any{
+					"display_name": displayName,
+					"last_updated": time.Now().UTC(),
+				})
+			if result.Error != nil {
+				return fmt.Errorf("failed to update display name: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", name)
+			}
+			return nil
+		})
+	}, 3)
+}
+
 // UpdateComment implements SessionMetadataUpdater.UpdateComment
 func (r *SQLiteRepository) UpdateComment(ctx context.Context, name, comment string) error {
 	return withRetry(func() error {

@@ -144,3 +144,10 @@ func (s *ShellService) GetAttachCommand(sessionName string) *exec.Cmd {
 	logging.Logger.Debug("Getting attach command for session", "session", sessionName)
 	return s.tmuxClient.GetAttachCommand(sessionName)
 }
+
+// CapturePane captures the content of a tmux session pane
+// lines specifies how many lines to capture (negative means from end of scrollback)
+func (s *ShellService) CapturePane(sessionName string, lines int) (string, error) {
+	logging.Logger.Debug("Capturing pane content", "session", sessionName, "lines", lines)
+	return s.tmuxClient.CapturePane(sessionName, -lines)
+}

@@ -66,3 +66,50 @@ func (s *SettingsService) SetSkipPermissions(
 		"skipPermissions", skipPermissions)
 	return nil
 }
+
+// GetAvailableStatuses returns the list of configured session statuses
+func (s *SettingsService) GetAvailableStatuses() ([]string, error) {
+	logging.Logger.Debug("Getting available statuses")
+
+	settings, err := config.LoadSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
+
+	statusConfig := config.NewStatusConfig(
+		joinStrings(settings.Statuses),
+		"",
+		joinStrings(settings.StatusColors),
+	)
+
+	return statusConfig.Statuses, nil
+}
+
+// GetTmuxStatusPosition returns the configured tmux status bar position with default applied
+func (s *SettingsService) GetTmuxStatusPosition() string {
+	logging.Logger.Debug("Getting tmux status position")
+
+	settings, err := config.LoadSettings()
+	if err != nil {
+		logging.Logger.Warn("Failed to load settings, using default", "error", err)
+		return config.DefaultTmuxStatusPosition
+	}
+
+	if settings.TmuxStatusPosition == "" {
+		return config.DefaultTmuxStatusPosition
+	}
+
+	return settings.TmuxStatusPosition
+}
+
+// joinStrings joins a string slice with commas
+func joinStrings(s []string) string {
+	result := ""
+	for i, v := range s {
+		if i > 0 {
+			result += ","
+		}
+		result += v
+	}
+	return result
+}
