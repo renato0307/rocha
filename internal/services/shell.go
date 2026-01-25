@@ -88,6 +88,11 @@ func (s *ShellService) GetOrCreateShellSession(
 	if err := s.sessionWriter.Add(ctx, shellSession); err != nil {
 		logging.Logger.Warn("Failed to save shell session to state", "error", err)
 		// Don't return error - tmux session was created successfully
+	} else {
+		// Link shell session to parent
+		if err := s.sessionWriter.LinkShellSession(ctx, parentSessionName, shellSessionName); err != nil {
+			logging.Logger.Warn("Failed to link shell session to parent", "error", err)
+		}
 	}
 
 	logging.Logger.Info("Shell session created", "name", shellSessionName, "parent", parentSessionName)

@@ -16,72 +16,91 @@ You are an architecture review specialist for the Rocha project.
 3. **Analyze** each file against the documented architecture + the wisdom reference below
 4. **Output** findings in the required format, or "No issues found." if nothing to report
 
+## Hexagonal Architecture Overview
+
+```
+Drivers (outer) → Services (application) → Ports (interfaces) ← Adapters (infrastructure)
+     ↓                    ↓                      ↑                      ↑
+  cmd/, ui/           services/               ports/              adapters/
+```
+
+**Key Principle**: Dependencies point inward. Adapters implement Ports. Services use Ports.
+
 ## Architecture Review Wisdom
 
 ### Layering Violations (🔴 MUST if violated)
 
-**CLI layer containing business logic:**
-❌ Complex validation, data transformation, or domain rules in `cmd/` package
-✅ CLI should only parse flags, call operations/services, format output
+**CLI/UI layer containing business logic:**
+❌ Complex validation, data transformation, or domain rules in `cmd/` or `ui/`
+✅ Drivers should only parse input, call services, format output
 
-**UI layer with direct storage access:**
-❌ Bubble Tea components calling `storage.` functions directly
-✅ UI should receive data via dependency injection or through operations layer
+**UI/CLI with direct adapter access:**
+❌ Bubble Tea components importing `adapters/storage/` directly
+❌ CLI commands importing `adapters/` packages directly
+✅ Drivers should only depend on `services/` and `domain/`
 
-**Bypassing abstraction layers:**
-❌ `cmd/` importing `storage/` directly instead of going through `operations/`
-✅ Follow the documented layer hierarchy: cmd → operations → storage/git/tmux
+**Bypassing the service layer:**
+❌ `cmd/` or `ui/` importing `ports/` and calling repository methods directly
+✅ Follow: Drivers → Services → Ports
 
-**Wrong layer for functionality:**
-❌ HTTP handlers in domain package, business logic in presentation layer
-✅ Each layer has one responsibility per documented architecture
+**Services importing adapters:**
+❌ `services/` importing from `adapters/storage/` or `adapters/git/`
+✅ Services depend on ports (interfaces), not concrete adapters
 
 ### Dependency Direction (🔴 MUST if violated)
 
-**Lower layers importing higher layers:**
-❌ `storage/` importing from `cmd/` or `ui/`
-❌ `operations/` importing from `cmd/`
-✅ Dependencies flow downward: cmd → ui/operations → storage/git/tmux
+**Adapters importing services or drivers:**
+❌ `adapters/storage/` importing from `services/` or `cmd/`
+✅ Adapters only import `ports/` and `domain/`
+
+**Ports importing anything except domain:**
+❌ `ports/` importing from `services/`, `adapters/`, `cmd/`, or `ui/`
+✅ Ports only import `domain/`
+
+**Services importing drivers:**
+❌ `services/` importing from `cmd/` or `ui/`
+✅ Services are used by drivers, not the other way around
 
 **Circular dependencies:**
 ❌ Package A imports B, B imports A (directly or transitively)
-✅ Use interfaces at boundaries to break cycles; inject dependencies
+✅ Use interfaces (ports) to break cycles; inject dependencies
 
 **Cross-cutting concerns with wrong directionality:**
-❌ `logging/` importing business packages
-✅ Infrastructure packages (logging, paths, config) should be imported, not import others
+❌ `logging/` or `config/` importing business packages
+✅ Infrastructure packages should be imported, not import others
 
 ### Component Boundaries (🟡 SHOULD)
 
 **Code in wrong package per ARCHITECTURE.md:**
-❌ Tmux command building in `cmd/` instead of `tmux/`
-❌ Session state logic in `ui/` instead of `state/`
+❌ Tmux command building in `services/` instead of `adapters/tmux/`
+❌ Session business logic in `ui/` instead of `services/`
+❌ Domain entities in `adapters/` or `services/`
 ✅ Check ARCHITECTURE.md for where each type of code belongs
 
 **New functionality not following existing patterns:**
-❌ Adding new storage mechanism outside `storage/` package
-❌ Adding new commands without using established patterns in `cmd/`
+❌ Adding new storage mechanism outside `adapters/storage/`
+❌ Adding new external integration outside `adapters/`
 ✅ Follow existing patterns; extend, don't diverge
 
 **Missing or misplaced abstractions:**
-❌ Inline SQL in operations layer
-❌ Direct tmux command execution outside tmux package
-✅ Use existing abstractions (storage.Store, tmux.Client, git.Worktree)
+❌ Inline SQL in services layer
+❌ Direct tmux/git command execution outside adapters
+✅ Use existing ports: SessionRepository, GitRepository, TmuxClient
 
 ### Interface Design (🟡 SHOULD)
 
 **Concrete types where interfaces documented:**
-❌ Function accepting `*SqliteStore` when interface `Store` exists
-✅ Accept interface types at package boundaries for testability
+❌ Function accepting `*SQLiteRepository` when `SessionRepository` port exists
+✅ Accept port interfaces at service boundaries for testability
 
 **Breaking interface contracts:**
-❌ Changing interface method signatures without updating all implementations
-❌ Adding methods to published interfaces (breaks implementers)
-✅ Create new interface or use composition to extend
+❌ Changing port method signatures without updating all adapters
+❌ Adding methods to published ports (breaks implementers)
+✅ Create new port or use composition to extend
 
 **Missing documented interface implementations:**
-❌ New component that should implement documented interface but doesn't
-✅ Verify new types implement expected interfaces per architecture
+❌ New adapter that should implement documented port but doesn't
+✅ Verify new adapters implement expected ports per architecture
 
 ### Data Flow (🟡 SHOULD)
 

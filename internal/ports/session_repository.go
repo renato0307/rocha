@@ -16,6 +16,7 @@ type SessionReader interface {
 type SessionWriter interface {
 	Add(ctx context.Context, session domain.Session) error
 	Delete(ctx context.Context, name string) error
+	LinkShellSession(ctx context.Context, parentName, shellSessionName string) error
 	SwapPositions(ctx context.Context, name1, name2 string) error
 }
 
@@ -29,6 +30,7 @@ type SessionStateUpdater interface {
 
 // SessionMetadataUpdater updates session metadata
 type SessionMetadataUpdater interface {
+	Rename(ctx context.Context, oldName, newName, newDisplayName string) error
 	ToggleArchive(ctx context.Context, name string) error
 	ToggleFlag(ctx context.Context, name string) error
 	UpdateComment(ctx context.Context, name, comment string) error

@@ -66,8 +66,8 @@ func main() {
 			"version": versionInfo(),
 		},
 		kong.UsageOnError(),
-		kong.BindTo(container, (*cmd.Container)(nil)),
-		kong.BindTo(&cli, (*cmd.CLI)(nil)),
+		kong.Bind(container),
+		kong.Bind(&cli),
 	)
 
 	// Execute the selected command

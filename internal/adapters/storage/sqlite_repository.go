@@ -436,6 +436,22 @@ func (r *SQLiteRepository) Delete(ctx context.Context, name string) error {
 	}, 3)
 }
 
+// LinkShellSession implements SessionWriter.LinkShellSession
+func (r *SQLiteRepository) LinkShellSession(ctx context.Context, parentName, shellSessionName string) error {
+	return withRetry(func() error {
+		result := r.db.WithContext(ctx).Model(&SessionModel{}).
+			Where("name = ?", shellSessionName).
+			Update("parent_name", parentName)
+		if result.Error != nil {
+			return fmt.Errorf("failed to link shell session: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("shell session %s not found", shellSessionName)
+		}
+		return nil
+	}, 3)
+}
+
 // SwapPositions implements SessionWriter.SwapPositions
 func (r *SQLiteRepository) SwapPositions(ctx context.Context, name1, name2 string) error {
 	return withRetry(func() error {
@@ -576,6 +592,44 @@ func (r *SQLiteRepository) ToggleFlag(ctx context.Context, name string) error {
 			}
 
 			return tx.Save(&flag).Error
+		})
+	}, 3)
+}
+
+// Rename implements SessionMetadataUpdater.Rename
+func (r *SQLiteRepository) Rename(ctx context.Context, oldName, newName, newDisplayName string) error {
+	return withRetry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Update session name and display name, preserving position
+			result := tx.Model(&SessionModel{}).
+				Where("name = ?", oldName).
+				Updates(map[string]any{
+					"name":         newName,
+					"display_name": newDisplayName,
+					"last_updated": time.Now().UTC(),
+				})
+			if result.Error != nil {
+				return fmt.Errorf("failed to rename session: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", oldName)
+			}
+
+			// Update parent_name references for shell sessions
+			tx.Model(&SessionModel{}).
+				Where("parent_name = ?", oldName).
+				Update("parent_name", newName)
+
+			// Update related tables
+			tx.Model(&SessionAgentCLIFlagsModel{}).
+				Where("session_name = ?", oldName).
+				Update("session_name", newName)
+
+			tx.Model(&SessionArchiveModel{}).
+				Where("session_name = ?", oldName).
+				Update("session_name", newName)
+
+			return nil
 		})
 	}, 3)
 }

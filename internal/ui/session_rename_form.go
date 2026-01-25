@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -132,32 +131,9 @@ func (sf *SessionRenameForm) renameSession() error {
 		"new_tmux_name", newTmuxName,
 		"new_display_name", newDisplayName)
 
-	// Rename tmux session first
-	if err := sf.sessionService.RenameSession(sf.oldTmuxName, newTmuxName); err != nil {
-		return fmt.Errorf("failed to rename tmux session: %w", err)
-	}
-
-	// Update state (re-key the map)
-	if session, exists := sf.sessionState.Sessions[sf.oldTmuxName]; exists {
-		// Update the session with new names
-		session.Name = newTmuxName
-		session.DisplayName = newDisplayName
-		session.LastUpdated = time.Now().UTC()
-
-		// Re-key the map
-		delete(sf.sessionState.Sessions, sf.oldTmuxName)
-		sf.sessionState.Sessions[newTmuxName] = session
-
-		// Save to database (OrderedNames will be repopulated on next LoadState)
-		if err := sf.sessionService.SaveState(context.Background(), sf.sessionState); err != nil {
-			// Try to rename back in tmux if state update fails
-			sf.sessionService.RenameSession(newTmuxName, sf.oldTmuxName)
-			return fmt.Errorf("failed to update session state: %w", err)
-		}
-	} else {
-		// Session not found in state
-		sf.sessionService.RenameSession(newTmuxName, sf.oldTmuxName)
-		return fmt.Errorf("session %s not found in state", sf.oldTmuxName)
+	// Rename in both tmux and database (preserves position)
+	if err := sf.sessionService.RenameSession(context.Background(), sf.oldTmuxName, newTmuxName, newDisplayName); err != nil {
+		return err
 	}
 
 	logging.Logger.Info("Session renamed successfully", "new_name", newTmuxName)

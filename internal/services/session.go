@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"rocha/internal/config"
@@ -319,7 +320,30 @@ func (s *SessionService) ArchiveSession(
 // LoadState loads the session state from the repository
 func (s *SessionService) LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error) {
 	logging.Logger.Debug("Loading session state", "includeArchived", includeArchived)
-	return s.sessionRepo.LoadState(ctx, includeArchived)
+	state, err := s.sessionRepo.LoadState(ctx, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out shell sessions (names ending with "-shell") from the main list
+	// Shell sessions are nested under their parent session's ShellSession field
+	filteredSessions := make(map[string]domain.Session)
+	var filteredOrderedNames []string
+	for name, session := range state.Sessions {
+		if strings.HasSuffix(name, "-shell") {
+			continue
+		}
+		filteredSessions[name] = session
+	}
+	for _, name := range state.OrderedNames {
+		if !strings.HasSuffix(name, "-shell") {
+			filteredOrderedNames = append(filteredOrderedNames, name)
+		}
+	}
+	state.Sessions = filteredSessions
+	state.OrderedNames = filteredOrderedNames
+
+	return state, nil
 }
 
 // SaveState saves the session state to the repository
@@ -337,7 +361,22 @@ func (s *SessionService) GetSession(ctx context.Context, name string) (*domain.S
 // ListSessions retrieves all sessions
 func (s *SessionService) ListSessions(ctx context.Context, includeArchived bool) ([]domain.Session, error) {
 	logging.Logger.Debug("Listing sessions", "includeArchived", includeArchived)
-	return s.sessionRepo.List(ctx, includeArchived)
+
+	// Use LoadState to get filtered, ordered sessions
+	state, err := s.LoadState(ctx, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to slice preserving order
+	sessions := make([]domain.Session, 0, len(state.Sessions))
+	for _, name := range state.OrderedNames {
+		if session, exists := state.Sessions[name]; exists {
+			sessions = append(sessions, session)
+		}
+	}
+
+	return sessions, nil
 }
 
 // AddSession adds a new session to the repository
@@ -376,10 +415,29 @@ func (s *SessionService) UpdateRepoSource(ctx context.Context, name, repoSource 
 	return s.sessionRepo.UpdateRepoSource(ctx, name, repoSource)
 }
 
-// RenameSession renames a tmux session
-func (s *SessionService) RenameSession(oldName, newName string) error {
+// RenameTmuxSession renames only the tmux session (not the database entry)
+func (s *SessionService) RenameTmuxSession(oldName, newName string) error {
 	logging.Logger.Debug("Renaming tmux session", "oldName", oldName, "newName", newName)
 	return s.tmuxClient.RenameSession(oldName, newName)
+}
+
+// RenameSession renames a session in both tmux and database, preserving position
+func (s *SessionService) RenameSession(ctx context.Context, oldName, newName, newDisplayName string) error {
+	logging.Logger.Debug("Renaming session", "oldName", oldName, "newName", newName, "displayName", newDisplayName)
+
+	// Rename in tmux first
+	if err := s.tmuxClient.RenameSession(oldName, newName); err != nil {
+		return fmt.Errorf("failed to rename tmux session: %w", err)
+	}
+
+	// Rename in database (preserves position)
+	if err := s.sessionRepo.Rename(ctx, oldName, newName, newDisplayName); err != nil {
+		// Try to rollback tmux rename
+		s.tmuxClient.RenameSession(newName, oldName)
+		return fmt.Errorf("failed to rename in database: %w", err)
+	}
+
+	return nil
 }
 
 // SessionExists checks if a tmux session exists

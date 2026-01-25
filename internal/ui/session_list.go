@@ -762,7 +762,6 @@ func buildListItems(sessionState *domain.SessionCollection, sessionService *serv
 	var items []list.Item
 
 	// Build sessions from state
-	// No need to filter - shell sessions won't have top-level entries with nested structure!
 	sessionsMap := make(map[string]*ports.TmuxSession)
 	for name, info := range sessionState.Sessions {
 		sessionsMap[name] = &ports.TmuxSession{
