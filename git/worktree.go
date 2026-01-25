@@ -65,7 +65,33 @@ func GetMainRepoPath(path string) (string, error) {
 	return mainRepoPath, nil
 }
 
-// CreateWorktree creates a new git worktree at the specified path with a new branch
+// BranchExists checks if a branch exists locally or remotely
+func BranchExists(repoPath, branchName string) bool {
+	logging.Logger.Debug("Checking if branch exists", "repo_path", repoPath, "branch", branchName)
+
+	// First check if branch exists locally
+	cmd := exec.Command("git", "show-ref", "--verify", fmt.Sprintf("refs/heads/%s", branchName))
+	cmd.Dir = repoPath
+	if output, err := cmd.Output(); err == nil && len(output) > 0 {
+		logging.Logger.Debug("Branch exists locally", "branch", branchName)
+		return true
+	}
+
+	// Check if branch exists remotely
+	cmd = exec.Command("git", "ls-remote", "--heads", "origin", branchName)
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err == nil && len(strings.TrimSpace(string(output))) > 0 {
+		logging.Logger.Debug("Branch exists remotely", "branch", branchName)
+		return true
+	}
+
+	logging.Logger.Debug("Branch does not exist", "branch", branchName)
+	return false
+}
+
+// CreateWorktree creates a new git worktree at the specified path
+// If the branch exists, it checks it out; if not, it creates a new branch
 // It ensures the worktree is created from the latest origin/main by fetching,
 // checking out main, and resetting to origin/main before creating the worktree
 func CreateWorktree(repoPath, worktreePath, branchName string) error {
@@ -118,9 +144,21 @@ func CreateWorktree(repoPath, worktreePath, branchName string) error {
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
-	// Create the worktree with new branch
-	logging.Logger.Info("Running git worktree add", "path", worktreePath, "branch", branchName)
-	worktreeCmd := exec.Command("git", "worktree", "add", worktreePath, "-b", branchName)
+	// Check if branch exists (locally or remotely)
+	branchExists := BranchExists(repoPath, branchName)
+	logging.Logger.Debug("Branch existence check", "branch", branchName, "exists", branchExists)
+
+	// Create the worktree
+	var worktreeCmd *exec.Cmd
+	if branchExists {
+		// Branch exists - check it out in the worktree
+		logging.Logger.Info("Checking out existing branch in worktree", "path", worktreePath, "branch", branchName)
+		worktreeCmd = exec.Command("git", "worktree", "add", worktreePath, branchName)
+	} else {
+		// Branch doesn't exist - create new branch in worktree
+		logging.Logger.Info("Creating new branch in worktree", "path", worktreePath, "branch", branchName)
+		worktreeCmd = exec.Command("git", "worktree", "add", worktreePath, "-b", branchName)
+	}
 	worktreeCmd.Dir = repoPath
 
 	if output, err := worktreeCmd.CombinedOutput(); err != nil {
