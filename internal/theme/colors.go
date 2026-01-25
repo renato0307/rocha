@@ -43,5 +43,11 @@ const (
 	ColorDeletions Color = "1" // Red
 )
 
+// Token chart colors
+const (
+	ColorTokenInput  Color = "2"  // Green - input tokens
+	ColorTokenOutput Color = "33" // Blue - output tokens
+)
+
 // DefaultStatusColors is the default color palette for implementation statuses
 var DefaultStatusColors = []string{"141", "33", "214", "226", "46"}

@@ -18,6 +18,7 @@ graph TB
         STS[SettingsService]
         NS[NotificationService]
         MS[MigrationService]
+        TSS[TokenStatsService]
     end
 
     subgraph "Domain"
@@ -30,6 +31,7 @@ graph TB
         TC[TmuxClient]
         EO[EditorOpener]
         SP[SoundPlayer]
+        TUR[TokenUsageReader]
     end
 
     subgraph "Adapters Layer"
@@ -38,6 +40,7 @@ graph TB
         TMUXCLI[Tmux CLI Adapter<br/>tmux/]
         EDITOR[Editor Adapter<br/>editor/]
         SOUND[Sound Adapter<br/>sound/]
+        CLAUDE[Claude Session Parser<br/>claude/]
     end
 
     subgraph "External Systems"
@@ -46,6 +49,7 @@ graph TB
         TMUX[tmux CLI]
         VSCODE[VS Code/Editor]
         AUDIO[Audio System]
+        JSONL[(Claude Session JSONL)]
     end
 
     CLI --> SS
@@ -54,9 +58,11 @@ graph TB
     CLI --> STS
     CLI --> NS
     CLI --> MS
+    CLI --> TSS
     TUI --> SS
     TUI --> GS
     TUI --> SHS
+    TUI --> TSS
 
     SS --> SR
     SS --> GR
@@ -70,18 +76,21 @@ graph TB
     MS --> GR
     MS --> TC
     STS --> SR
+    TSS --> TUR
 
     SR -.-> SQLITE
     GR -.-> GITCLI
     TC -.-> TMUXCLI
     EO -.-> EDITOR
     SP -.-> SOUND
+    TUR -.-> CLAUDE
 
     SQLITE --> DB
     GITCLI --> GIT
     TMUXCLI --> TMUX
     EDITOR --> VSCODE
     SOUND --> AUDIO
+    CLAUDE --> JSONL
 ```
 
 ### Architecture Layers
@@ -170,7 +179,8 @@ internal/
 │   ├── git/       # Git CLI operations
 │   ├── tmux/      # Tmux CLI operations
 │   ├── editor/    # Editor integration
-│   └── sound/     # Sound playback
+│   ├── sound/     # Sound playback
+│   └── claude/    # Claude session file parsing
 ├── config/        # Configuration and paths
 └── logging/       # Structured logging
 ```
@@ -185,6 +195,7 @@ internal/
 | SettingsService | Session configuration (claudedir, permissions) |
 | NotificationService | Hook event handling, sounds |
 | MigrationService | Move sessions between ROCHA_HOME directories |
+| TokenStatsService | Parse Claude session files for token usage stats |
 
 ### Ports (Interfaces)
 
@@ -195,6 +206,7 @@ internal/
 | TmuxClient | CreateSession, KillSession, ListSessions, SendKeys |
 | EditorOpener | Open |
 | SoundPlayer | Play |
+| TokenUsageReader | GetTodayUsage |
 
 ## Dependencies
 

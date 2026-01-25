@@ -27,6 +27,7 @@ type CLI struct {
 
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
+	Stats       StatsCmd       `cmd:"stats" help:"Show token usage statistics"`
 	Status      StatusCmd      `cmd:"status" help:"Show session state counts for tmux status bar" hidden:""`
 	Attach      AttachCmd      `cmd:"attach" help:"Attach to tmux session (creates if needed)"`
 	StartClaude StartClaudeCmd `cmd:"start-claude" help:"Start Claude Code with hooks configured" hidden:""`
@@ -114,6 +115,7 @@ type RunCmd struct {
 	Editor                     string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 	ErrorClearDelay            int    `help:"Seconds before error messages auto-clear" default:"10"`
 	ShowTimestamps             bool   `help:"Show relative timestamps for last state changes" default:"false"`
+	ShowTokenChart             bool   `help:"Show token usage chart by default" default:"false"`
 	StatusColors               string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
 	StatusIcons                string `help:"Comma-separated status icons (optional, colors are used for display)" default:""`
 	Statuses                   string `help:"Comma-separated status names (e.g., 'spec,plan,implement,review,done')" default:"spec,plan,implement,review,done"`
@@ -198,6 +200,13 @@ func (r *RunCmd) Run(cli *CLI) error {
 		if r.TipsShowIntervalSeconds == 2 {
 			if cli.settings.TipsShowIntervalSeconds != nil {
 				r.TipsShowIntervalSeconds = *cli.settings.TipsShowIntervalSeconds
+			}
+		}
+
+		// Apply ShowTokenChart setting
+		if !r.ShowTokenChart {
+			if cli.settings.ShowTokenChart != nil && *cli.settings.ShowTokenChart {
+				r.ShowTokenChart = true
 			}
 		}
 	}
@@ -286,6 +295,7 @@ func (r *RunCmd) Run(cli *CLI) error {
 			timestampConfig,
 			r.Dev,
 			r.ShowTimestamps,
+			r.ShowTokenChart,
 			r.TmuxStatusPosition,
 			allowDangerouslySkipPermissionsDefault,
 			tipsConfig,
@@ -293,6 +303,7 @@ func (r *RunCmd) Run(cli *CLI) error {
 			cli.Container.GitService,
 			cli.Container.SessionService,
 			cli.Container.ShellService,
+			cli.Container.TokenStatsService,
 		),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/renato0307/rocha/internal/config"
 	"github.com/renato0307/rocha/internal/domain"
@@ -24,8 +25,8 @@ import (
 
 const escTimeout = 500 * time.Millisecond
 
-// Internal messages for SessionList
-type checkStateMsg struct{}          // Triggers state file check
+// Messages for SessionList (exported for Model integration)
+type checkStateMsg struct{} // Triggers state file check - used by Model for token chart refresh
 type hideTipMsg struct{}             // Time to hide the current tip
 type sessionListDetachedMsg struct{} // Session list returned from attached state
 type showTipMsg struct{}             // Time to show a new random tip
@@ -282,8 +283,9 @@ func NewSessionList(sessionService *services.SessionService, gitService *service
 	// Create list with reasonable default size (will be resized on WindowSizeMsg)
 	// Initial height: assume 40 line terminal - 12 lines for header/help = 28
 	l := list.New(items, delegate, 80, 28)
-	l.SetShowTitle(false) // We'll render our own title
-	l.SetShowStatusBar(false)
+	l.SetShowTitle(false)      // We'll render our own title
+	l.SetShowStatusBar(false)  // No status bar
+	l.SetShowPagination(false) // No pagination dots
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false) // We'll render our own help
 
@@ -668,14 +670,6 @@ func (sl *SessionList) View() string {
 	// Session List
 	if len(sl.list.Items()) == 0 {
 		s += theme.HelpLabelStyle.Render("No sessions. Press ") + theme.HelpShortcutStyle.Render("n") + theme.HelpLabelStyle.Render(" to create a session.") + "\n"
-
-		// Add padding to push tip/error to bottom
-		// The list area should fill listHeight lines
-		// Empty message = 1 line + \n, padding fills the rest
-		paddingLines := sl.listHeight - 2
-		if paddingLines > 0 {
-			s += strings.Repeat("\n", paddingLines)
-		}
 	} else {
 		s += sl.list.View()
 	}
@@ -686,6 +680,14 @@ func (sl *SessionList) View() string {
 		s += "\n" + theme.ErrorStyle.Render(errorText)
 		sl.currentTip = nil // Clear tip when error is shown
 		sl.err = nil
+	}
+
+	// Ensure output is exactly the expected height (4 lines header/legend/spacing + listHeight)
+	// This prevents layout shifts regardless of list content
+	expectedHeight := 4 + sl.listHeight
+	actualHeight := lipgloss.Height(s)
+	if actualHeight < expectedHeight {
+		s += strings.Repeat("\n", expectedHeight-actualHeight)
 	}
 
 	return s

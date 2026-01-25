@@ -122,3 +122,15 @@ func StatusStyle(color string) lipgloss.Style {
 func TimestampStyle(color string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(color))
 }
+
+// Token chart styles
+var (
+	TokenInputStyle = lipgloss.NewStyle().
+			Foreground(ColorTokenInput)
+
+	TokenOutputStyle = lipgloss.NewStyle().
+				Foreground(ColorTokenOutput)
+
+	TokenChartLegendStyle = lipgloss.NewStyle().
+				Foreground(ColorSubtle)
+)
