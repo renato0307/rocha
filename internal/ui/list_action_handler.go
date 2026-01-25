@@ -19,20 +19,21 @@ type ActionType int
 
 const (
 	ActionNone ActionType = iota
+	ActionArchiveSession
 	ActionAttachSession
 	ActionAttachShellSession
-	ActionShowRenameDialog
-	ActionShowStatusDialog
+	ActionKillSession
+	ActionOpenEditor
+	ActionShowArchiveWorktreeDialog
+	ActionShowCommandPalette
 	ActionShowCommentDialog
-	ActionShowSendTextDialog
 	ActionShowHelpDialog
+	ActionShowKillWorktreeDialog
 	ActionShowNewSessionDialog
 	ActionShowNewSessionFromDialog
-	ActionShowKillWorktreeDialog
-	ActionShowArchiveWorktreeDialog
-	ActionKillSession
-	ActionArchiveSession
-	ActionOpenEditor
+	ActionShowRenameDialog
+	ActionShowSendTextDialog
+	ActionShowStatusDialog
 	ActionToggleFlag
 )
 
@@ -310,6 +311,18 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		return ActionResult{
 			ActionType: ActionArchiveSession,
 			Cmd:        lah.sessionOps.ArchiveSession(session, false, lah.sessionState, lah.sessionList),
+		}
+	}
+
+	// Check for command palette request
+	if lah.sessionList.RequestCommandPalette {
+		session := lah.sessionList.SessionForCommandPalette
+		lah.sessionList.RequestCommandPalette = false
+		lah.sessionList.SessionForCommandPalette = nil
+		return ActionResult{
+			ActionType:  ActionShowCommandPalette,
+			SessionName: session.Name,
+			NewState:    stateCommandPalette,
 		}
 	}
 

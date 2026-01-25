@@ -22,18 +22,20 @@ type uiState int
 
 const (
 	stateList uiState = iota
-	stateCreatingSession
+	stateCommandPalette
+	stateCommentingSession
 	stateConfirmingArchive
 	stateConfirmingWorktreeRemoval
+	stateCreatingSession
 	stateHelp
 	stateRenamingSession
 	stateSendingText
 	stateSettingStatus
-	stateCommentingSession
 )
 
 type Model struct {
 	allowDangerouslySkipPermissionsDefault bool                         // Default value from settings for new sessions
+	commandPalette                         *CommandPalette              // Command palette component
 	devMode                                bool                         // Development mode (shows version info in dialogs)
 	editor                                 string                       // Editor to open sessions in
 	errorManager                           *ErrorManager                // Error display and auto-clearing
@@ -47,6 +49,7 @@ type Model struct {
 	sendTextForm                           *Dialog                      // Send text to tmux dialog
 	sessionCommentForm                     *Dialog                      // Session comment dialog
 	sessionForm                            *Dialog                      // Session creation dialog
+	sessionForPalette                      string                       // Session name for command palette actions
 	sessionList                            *SessionList                 // Session list component
 	sessionOps                             *SessionOperations           // Session lifecycle operations
 	sessionRenameForm                      *Dialog                      // Session rename dialog
@@ -162,12 +165,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateList:
 		return m.updateList(msg)
-	case stateCreatingSession:
-		return m.updateCreatingSession(msg)
+	case stateCommandPalette:
+		return m.updateCommandPalette(msg)
+	case stateCommentingSession:
+		return m.updateCommentingSession(msg)
 	case stateConfirmingArchive:
 		return m.updateConfirmingArchive(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
+	case stateCreatingSession:
+		return m.updateCreatingSession(msg)
 	case stateHelp:
 		return m.updateHelp(msg)
 	case stateRenamingSession:
@@ -176,8 +183,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSendingText(msg)
 	case stateSettingStatus:
 		return m.updateSettingStatus(msg)
-	case stateCommentingSession:
-		return m.updateCommentingSession(msg)
 	}
 	return m, nil
 }
@@ -489,6 +494,13 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		m.state = result.NewState
 		return m, m.sendTextForm.Init()
 
+	case ActionShowCommandPalette:
+		m.commandPalette = NewCommandPalette(result.SessionName)
+		m.sessionForPalette = result.SessionName
+		m.commandPalette.SetSize(m.width, m.height)
+		m.state = result.NewState
+		return m, m.commandPalette.Init()
+
 	case ActionShowHelpDialog:
 		contentForm := NewHelpScreen(&m.keys)
 		m.helpScreen = NewDialog("Help", contentForm, m.devMode)
@@ -520,6 +532,79 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 	default:
 		return m, fallbackCmd
 	}
+}
+
+func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle window resize
+	if wmsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wmsg.Width
+		m.height = wmsg.Height
+		m.commandPalette.SetSize(wmsg.Width, wmsg.Height)
+	}
+
+	// Delegate to command palette
+	updated, cmd := m.commandPalette.Update(msg)
+	m.commandPalette = updated.(*CommandPalette)
+
+	// Check if command palette completed
+	if m.commandPalette.Completed {
+		selectedAction := m.commandPalette.SelectedAction
+		sessionName := m.sessionForPalette
+
+		// Reset state
+		m.state = stateList
+		m.commandPalette = nil
+		m.sessionForPalette = ""
+
+		// If cancelled, just return to list
+		if m.commandPalette != nil && m.commandPalette.Cancelled {
+			return m, m.sessionList.Init()
+		}
+
+		// Handle the selected action
+		return m.handlePaletteAction(selectedAction, sessionName)
+	}
+
+	return m, cmd
+}
+
+func (m *Model) handlePaletteAction(action, sessionName string) (tea.Model, tea.Cmd) {
+	logging.Logger.Debug("Handling palette action", "action", action, "session", sessionName)
+
+	switch action {
+	case PaletteActionRebase:
+		// TODO: Implement rebase on main
+		logging.Logger.Info("Rebase action selected", "session", sessionName)
+		return m, m.sessionList.Init()
+
+	case PaletteActionOpenPR:
+		// TODO: Implement open PR
+		logging.Logger.Info("Open PR action selected", "session", sessionName)
+		return m, m.sessionList.Init()
+
+	case PaletteActionCopyInfo:
+		// TODO: Implement copy session info
+		logging.Logger.Info("Copy info action selected", "session", sessionName)
+		return m, m.sessionList.Init()
+
+	case PaletteActionArchive:
+		// Trigger archive flow through existing mechanism
+		if session, ok := m.findSessionByName(sessionName); ok {
+			m.sessionList.SessionToArchive = session
+			return m.updateList(nil)
+		}
+		return m, m.sessionList.Init()
+
+	default:
+		return m, m.sessionList.Init()
+	}
+}
+
+func (m *Model) findSessionByName(name string) (*ports.TmuxSession, bool) {
+	if _, exists := m.sessionState.Sessions[name]; exists {
+		return &ports.TmuxSession{Name: name}, true
+	}
+	return nil, false
 }
 
 func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -710,37 +795,60 @@ func (m *Model) View() string {
 		}
 
 		return view
-	case stateCreatingSession:
-		if m.sessionForm != nil {
-			return m.sessionForm.View()
+
+	case stateCommandPalette:
+		if m.commandPalette != nil {
+			// Get session list as background
+			background := m.sessionList.View()
+			// Add bottom section to background
+			background += "\n \n "
+
+			// Get command palette overlay
+			overlay := m.commandPalette.View()
+			overlayHeight := m.commandPalette.GetHeight()
+
+			// Render with bottom-anchored overlay
+			return bottomAnchoredOverlay(background, overlay, m.width, m.height, overlayHeight)
 		}
-	case stateConfirmingArchive:
-		if m.worktreeRemovalForm != nil {
-			return m.worktreeRemovalForm.View()
-		}
-	case stateConfirmingWorktreeRemoval:
-		if m.worktreeRemovalForm != nil {
-			return m.worktreeRemovalForm.View()
-		}
-	case stateHelp:
-		if m.helpScreen != nil {
-			return m.helpScreen.View()
-		}
-	case stateRenamingSession:
-		if m.sessionRenameForm != nil {
-			return m.sessionRenameForm.View()
-		}
-	case stateSettingStatus:
-		if m.sessionStatusForm != nil {
-			return m.sessionStatusForm.View()
-		}
+
 	case stateCommentingSession:
 		if m.sessionCommentForm != nil {
 			return m.sessionCommentForm.View()
 		}
+
+	case stateConfirmingArchive:
+		if m.worktreeRemovalForm != nil {
+			return m.worktreeRemovalForm.View()
+		}
+
+	case stateConfirmingWorktreeRemoval:
+		if m.worktreeRemovalForm != nil {
+			return m.worktreeRemovalForm.View()
+		}
+
+	case stateCreatingSession:
+		if m.sessionForm != nil {
+			return m.sessionForm.View()
+		}
+
+	case stateHelp:
+		if m.helpScreen != nil {
+			return m.helpScreen.View()
+		}
+
+	case stateRenamingSession:
+		if m.sessionRenameForm != nil {
+			return m.sessionRenameForm.View()
+		}
+
 	case stateSendingText:
 		if m.sendTextForm != nil {
 			return m.sendTextForm.View()
+		}
+
+	case stateSettingStatus:
+		if m.sessionStatusForm != nil {
+			return m.sessionStatusForm.View()
 		}
 	}
 	return ""

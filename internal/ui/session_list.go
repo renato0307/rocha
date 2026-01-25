@@ -247,22 +247,24 @@ type SessionList struct {
 	timestampConfig *config.TimestampColorConfig
 
 	// Result fields - set by component, read by Model
-	RequestHelp           bool               // User pressed 'h' or '?'
-	RequestNewSession     bool               // User pressed 'n'
-	RequestNewSessionFrom bool               // User pressed 'shift+n' (new from same repo)
-	RequestTestError      bool               // User pressed 'alt+e' (test command)
-	SelectedSession       *ports.TmuxSession // Session user wants to attach to
-	SessionForTemplate    *ports.TmuxSession // Session to use as template for new session
-	SelectedShellSession  *ports.TmuxSession // Session user wants shell session for
-	SessionToArchive      *ports.TmuxSession // Session user wants to archive
-	SessionToComment      *ports.TmuxSession // Session user wants to comment
-	SessionToKill         *ports.TmuxSession // Session user wants to kill
-	SessionToOpenEditor   *ports.TmuxSession // Session user wants to open in editor
-	SessionToRename       *ports.TmuxSession // Session user wants to rename
-	SessionToSendText     *ports.TmuxSession // Session user wants to send text to
-	SessionToSetStatus    *ports.TmuxSession // Session user wants to set status for
-	SessionToToggleFlag   *ports.TmuxSession // Session user wants to toggle flag
-	ShouldQuit            bool               // User pressed 'q' or Ctrl+C
+	RequestCommandPalette    bool               // User pressed 'shift+o'
+	RequestHelp              bool               // User pressed 'h' or '?'
+	RequestNewSession        bool               // User pressed 'n'
+	RequestNewSessionFrom    bool               // User pressed 'shift+n' (new from same repo)
+	RequestTestError         bool               // User pressed 'alt+e' (test command)
+	SelectedSession          *ports.TmuxSession // Session user wants to attach to
+	SessionForCommandPalette *ports.TmuxSession // Session for command palette
+	SessionForTemplate       *ports.TmuxSession // Session to use as template for new session
+	SelectedShellSession     *ports.TmuxSession // Session user wants shell session for
+	SessionToArchive         *ports.TmuxSession // Session user wants to archive
+	SessionToComment         *ports.TmuxSession // Session user wants to comment
+	SessionToKill            *ports.TmuxSession // Session user wants to kill
+	SessionToOpenEditor      *ports.TmuxSession // Session user wants to open in editor
+	SessionToRename          *ports.TmuxSession // Session user wants to rename
+	SessionToSendText        *ports.TmuxSession // Session user wants to send text to
+	SessionToSetStatus       *ports.TmuxSession // Session user wants to set status for
+	SessionToToggleFlag      *ports.TmuxSession // Session user wants to toggle flag
+	ShouldQuit               bool               // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
@@ -532,6 +534,13 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, sl.keys.SessionActions.OpenEditor.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.SessionToOpenEditor = item.Session
+				return sl, nil
+			}
+
+		case key.Matches(msg, sl.keys.SessionActions.OptionsMenu.Binding):
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				sl.RequestCommandPalette = true
+				sl.SessionForCommandPalette = item.Session
 				return sl, nil
 			}
 
