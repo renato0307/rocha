@@ -46,7 +46,7 @@ func BuildBinary() (string, error) {
 			return
 		}
 
-		cmd := exec.Command("go", "build", "-o", binaryPath, ".")
+		cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd")
 		cmd.Dir = projectRoot
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

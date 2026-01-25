@@ -4,20 +4,20 @@ Tmux-based session manager for Claude Code CLI written in Go. Enables developers
 
 ## Quick Component Location Guide
 
-- **cmd/** - CLI commands (run, attach, status, setup, notify, etc.)
-- **ui/** - Bubble Tea TUI components (SessionList, SessionForm, Model, KeyMaps)
-- **tmux/** - Tmux abstraction layer (Client interface, DefaultClient)
-- **storage/** - SQLite-based persistence (GORM, sessions/flags/statuses tables)
-- **git/** - Git worktree operations (create, remove, branch validation)
-- **editor/** - Platform-specific editor integration
-- **state/** - Session state enum (Idle, Working, Waiting, Exited)
-- **operations/** - High-level business logic operations
-- **sound/** - Notification sounds
-- **logging/** - Structured logging (slog)
-- **version/** - Build metadata (version, commit, date)
-- **paths/** - Centralized path computation (uses ROCHA_HOME)
-- **config/** - Settings and Claude directory management
-- **test/integration/** - CLI integration tests (harness for environment isolation, binary compilation)
+- **cmd/** - Entry point (main.go with version variables)
+- **internal/cmd/** - Kong CLI commands (run, attach, status, setup, notify, etc.)
+- **internal/domain/** - Domain entities and session state constants
+- **internal/ports/** - Interface definitions (TmuxClient, SessionRepository, GitRepository, EditorOpener, SoundPlayer)
+- **internal/application/** - Application services (session, git, shell, settings)
+- **internal/ui/** - Bubble Tea TUI components (SessionList, SessionForm, Model, KeyMaps)
+- **internal/config/** - Settings, paths, and Claude directory management
+- **internal/logging/** - Structured logging (slog)
+- **internal/adapters/tmux/** - Tmux abstraction layer (Client interface)
+- **internal/adapters/storage/** - SQLite-based persistence (GORM)
+- **internal/adapters/git/** - Git worktree operations
+- **internal/adapters/editor/** - Platform-specific editor integration
+- **internal/adapters/sound/** - Notification sounds
+- **test/integration/** - CLI integration tests
 
 ## Detailed Documentation
 
@@ -31,11 +31,11 @@ Tmux-based session manager for Claude Code CLI written in Go. Enables developers
 Build with version info injection based on branch name:
 
 ```bash
-go build -ldflags="-X rocha/version.Version=$(git branch --show-current)-v1 \
-  -X rocha/version.Commit=$(git rev-parse HEAD) \
-  -X rocha/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-  -X rocha/version.GoVersion=$(go version | awk '{print $3}')" \
-  -o ./bin/rocha-$(git branch --show-current)-v1
+go build -ldflags="-X main.Version=$(git branch --show-current)-v1 \
+  -X main.Commit=$(git rev-parse HEAD) \
+  -X main.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -X main.GoVersion=$(go version | awk '{print $3}')" \
+  -o ./bin/rocha-$(git branch --show-current)-v1 ./cmd
 ```
 
 ### Running with Debug

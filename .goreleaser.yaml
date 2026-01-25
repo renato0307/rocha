@@ -7,7 +7,7 @@ before:
 builds:
   - id: rocha
     binary: rocha
-    main: ./main.go
+    main: ./cmd
 
     goos:
       - linux
@@ -19,10 +19,10 @@ builds:
 
     ldflags:
       - -s -w
-      - -X rocha/version.Version={{.Version}}
-      - -X rocha/version.Commit={{.Commit}}
-      - -X rocha/version.Date={{.Date}}
-      - -X rocha/version.GoVersion={{.Env.GOVERSION}}
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
+      - -X main.GoVersion={{.Env.GOVERSION}}
 
     env:
       - CGO_ENABLED=0
