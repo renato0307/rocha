@@ -11,17 +11,17 @@ import (
 	"rocha/logging"
 )
 
-// RepoSource represents parsed repository source
-type RepoSource struct {
-	Branch   string // Branch name from URL fragment (e.g., #branch-name)
-	IsRemote bool
-	Owner    string // From github.com/owner/repo or similar
-	Path     string // URL or local path (without branch fragment)
-	Repo     string // From github.com/owner/repo or similar
+// repoSource represents parsed repository source (internal)
+type repoSource struct {
+	branch   string // Branch name from URL fragment (e.g., #branch-name)
+	isRemote bool
+	owner    string // From github.com/owner/repo or similar
+	path     string // URL or local path (without branch fragment)
+	repo     string // From github.com/owner/repo or similar
 }
 
-// IsGitURL checks if string is git URL (https://, git@, ssh://)
-func IsGitURL(source string) bool {
+// isGitURL checks if string is git URL (https://, git@, ssh://)
+func isGitURL(source string) bool {
 	if source == "" {
 		return false
 	}
@@ -47,10 +47,10 @@ func IsGitURL(source string) bool {
 	return false
 }
 
-// ParseRepoSource parses repository path or URL
-// Returns RepoSource with parsed information
+// parseRepoSource parses repository path or URL
+// Returns repoSource with parsed information
 // Supports branch specification via URL fragment: https://github.com/owner/repo#branch-name
-func ParseRepoSource(source string) (*RepoSource, error) {
+func parseRepoSource(source string) (*repoSource, error) {
 	logging.Logger.Debug("Parsing repo source", "source", source)
 
 	if source == "" {
@@ -65,14 +65,14 @@ func ParseRepoSource(source string) (*RepoSource, error) {
 		logging.Logger.Debug("Extracted branch from URL", "branch", branch)
 	}
 
-	rs := &RepoSource{
-		Branch:   branch,
-		IsRemote: IsGitURL(source),
-		Path:     source,
+	rs := &repoSource{
+		branch:   branch,
+		isRemote: isGitURL(source),
+		path:     source,
 	}
 
 	// Try to extract owner/repo from URL
-	if rs.IsRemote {
+	if rs.isRemote {
 		// Remove .git suffix if present
 		cleanURL := strings.TrimSuffix(source, ".git")
 
@@ -126,9 +126,9 @@ func ParseRepoSource(source string) (*RepoSource, error) {
 		if ownerRepo != "" {
 			parts := strings.Split(ownerRepo, "/")
 			if len(parts) == 2 {
-				rs.Owner = parts[0]
-				rs.Repo = parts[1]
-				logging.Logger.Debug("Parsed remote repo", "owner", rs.Owner, "repo", rs.Repo)
+				rs.owner = parts[0]
+				rs.repo = parts[1]
+				logging.Logger.Debug("Parsed remote repo", "owner", rs.owner, "repo", rs.repo)
 			}
 		} else {
 			logging.Logger.Warn("Could not extract owner/repo from URL", "url", source)
@@ -138,10 +138,10 @@ func ParseRepoSource(source string) (*RepoSource, error) {
 	return rs, nil
 }
 
-// CloneRepository clones git repo to target path
+// cloneRepository clones git repo to target path
 // If branch is specified, clones only that branch (--single-branch)
 // If branch is empty, clones all branches (for shared .main)
-func CloneRepository(url, targetPath, branch string) error {
+func cloneRepository(url, targetPath, branch string) error {
 	logging.Logger.Info("Cloning repository", "url", url, "target", targetPath, "branch", branch)
 
 	// Ensure parent directory exists
@@ -178,9 +178,9 @@ func CloneRepository(url, targetPath, branch string) error {
 	return nil
 }
 
-// CheckoutBranch ensures the specified branch is checked out in the repo
+// checkoutBranch ensures the specified branch is checked out in the repo
 // If branch doesn't exist locally, fetches from remote and creates it
-func CheckoutBranch(repoPath, branch string) error {
+func checkoutBranch(repoPath, branch string) error {
 	if branch == "" {
 		return nil // No branch specified, use current branch
 	}
@@ -215,8 +215,8 @@ func CheckoutBranch(repoPath, branch string) error {
 	return nil
 }
 
-// GetCurrentBranch returns the currently checked out branch
-func GetCurrentBranch(repoPath string) (string, error) {
+// getCurrentBranch returns the currently checked out branch
+func getCurrentBranch(repoPath string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = repoPath
 	output, err := cmd.Output()
@@ -226,20 +226,20 @@ func GetCurrentBranch(repoPath string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// GetOrCloneRepository ensures repo exists locally
+// getOrCloneRepository ensures repo exists locally
 // Local path: validate and return
 // Remote URL: clone to {worktreeBase}/{owner}/{repo}/.main
 // Returns: localPath, repoSource, error
-func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, error) {
+func getOrCloneRepository(source, worktreeBase string) (string, *repoSource, error) {
 	logging.Logger.Debug("Getting or cloning repository", "source", source, "worktree_base", worktreeBase)
 
 	// Parse the source
-	repoSource, err := ParseRepoSource(source)
+	repoSource, err := parseRepoSource(source)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse repo source: %w", err)
 	}
 
-	if !repoSource.IsRemote {
+	if !repoSource.isRemote {
 		// Local path - validate it exists and is a git repo
 		logging.Logger.Debug("Source is local path", "path", source)
 
@@ -258,18 +258,18 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 		}
 
 		// Check if it's a git repository
-		isGit, repoRoot := IsGitRepo(source)
+		isGit, repoRoot := isGitRepo(source)
 		if !isGit {
 			return "", nil, fmt.Errorf("local path is not a git repository: %s", source)
 		}
 
 		// Try to extract owner/repo from local git repo
-		repoInfo := GetRepoInfo(repoRoot)
+		repoInfo := getRepoInfo(repoRoot)
 		if repoInfo != "" && strings.Contains(repoInfo, "/") {
 			parts := strings.Split(repoInfo, "/")
 			if len(parts) == 2 {
-				repoSource.Owner = parts[0]
-				repoSource.Repo = parts[1]
+				repoSource.owner = parts[0]
+				repoSource.repo = parts[1]
 			}
 		}
 
@@ -281,11 +281,11 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 	logging.Logger.Debug("Source is remote URL", "url", source)
 
 	// Build target path: {worktreeBase}/{owner}/{repo}/.main
-	if repoSource.Owner == "" || repoSource.Repo == "" {
+	if repoSource.owner == "" || repoSource.repo == "" {
 		return "", nil, fmt.Errorf("could not extract owner/repo from URL: %s", source)
 	}
 
-	targetPath := filepath.Join(worktreeBase, repoSource.Owner, repoSource.Repo, ".main")
+	targetPath := filepath.Join(worktreeBase, repoSource.owner, repoSource.repo, ".main")
 	logging.Logger.Debug("Target clone path", "path", targetPath)
 
 	// Check if .main directory already exists
@@ -293,20 +293,20 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 		logging.Logger.Debug("Clone target already exists, verifying and checking out branch")
 
 		// Verify it's a git repo
-		isGit, repoRoot := IsGitRepo(targetPath)
+		isGit, repoRoot := isGitRepo(targetPath)
 		if !isGit {
 			return "", nil, fmt.Errorf(".main directory exists but is not a git repository: %s", targetPath)
 		}
 
 		// Verify remote URL matches
-		existingURL := GetRemoteURL(repoRoot)
-		if existingURL != "" && !isSameRepo(existingURL, repoSource.Path) {
-			return "", nil, fmt.Errorf(".main directory exists with different remote URL.\nExisting: %s\nRequested: %s", existingURL, repoSource.Path)
+		existingURL := getRemoteURL(repoRoot)
+		if existingURL != "" && !isSameRepo(existingURL, repoSource.path) {
+			return "", nil, fmt.Errorf(".main directory exists with different remote URL.\nExisting: %s\nRequested: %s", existingURL, repoSource.path)
 		}
 
 		// CRITICAL FIX: Checkout the requested branch before returning
-		if repoSource.Branch != "" {
-			if err := CheckoutBranch(repoRoot, repoSource.Branch); err != nil {
+		if repoSource.branch != "" {
+			if err := checkoutBranch(repoRoot, repoSource.branch); err != nil {
 				return "", nil, fmt.Errorf("failed to checkout branch: %w", err)
 			}
 		}
@@ -316,21 +316,21 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 		pullCmd.Dir = repoRoot
 		pullCmd.Run() // Ignore errors (might be detached HEAD)
 
-		logging.Logger.Info("Reusing .main with correct branch", "path", repoRoot, "branch", repoSource.Branch)
+		logging.Logger.Info("Reusing .main with correct branch", "path", repoRoot, "branch", repoSource.branch)
 		return repoRoot, repoSource, nil
 	}
 
 	// Clone repository (with all branches for shared .main)
 	// NOTE: Pass empty string for branch to clone all branches
-	if err := CloneRepository(repoSource.Path, targetPath, ""); err != nil {
+	if err := cloneRepository(repoSource.path, targetPath, ""); err != nil {
 		// Cleanup on failure
 		os.RemoveAll(targetPath)
 		return "", nil, err
 	}
 
 	// If branch was specified, checkout that branch after cloning
-	if repoSource.Branch != "" {
-		if err := CheckoutBranch(targetPath, repoSource.Branch); err != nil {
+	if repoSource.branch != "" {
+		if err := checkoutBranch(targetPath, repoSource.branch); err != nil {
 			os.RemoveAll(targetPath)
 			return "", nil, err
 		}
@@ -339,8 +339,8 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 	return targetPath, repoSource, nil
 }
 
-// GetRemoteURL gets the remote URL for origin
-func GetRemoteURL(repoPath string) string {
+// getRemoteURL gets the remote URL for origin
+func getRemoteURL(repoPath string) string {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	cmd.Dir = repoPath
 

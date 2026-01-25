@@ -14,9 +14,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// FetchGitStats fetches all git statistics for the given worktree path
+// fetchGitStats fetches all git statistics for the given worktree path
 // Uses errgroup for concurrent fetching with context cancellation
-func FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error) {
+func fetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error) {
 	logging.Logger.Debug("Fetching git stats", "path", worktreePath)
 
 	stats := &domain.GitStats{

@@ -22,7 +22,7 @@ var invalidBranchNameChars = regexp.MustCompile(`[\s~^:?*\[\]\\{}#@()&|;<>$` + "
 // consecutiveHyphens matches two or more consecutive hyphens
 var consecutiveHyphens = regexp.MustCompile(`-{2,}`)
 
-// ValidateBranchName checks if a branch name is valid according to git rules.
+// validateBranchName checks if a branch name is valid according to git rules.
 // Returns nil if valid, error with helpful message if invalid.
 // Use for user-provided branch names.
 //
@@ -36,7 +36,7 @@ var consecutiveHyphens = regexp.MustCompile(`-{2,}`)
 // - Cannot contain git-prohibited chars: ~, ^, :, ?, *, [, \, space, control chars
 // - Cannot contain shell metacharacters: &, |, ;, <, >, $, `, ', "
 // - Cannot start or end with '/'
-func ValidateBranchName(name string) error {
+func validateBranchName(name string) error {
 	if name == "" {
 		return fmt.Errorf("branch name cannot be empty")
 	}
@@ -97,7 +97,7 @@ func ValidateBranchName(name string) error {
 	return nil
 }
 
-// SanitizeBranchName transforms a string into a valid git branch name.
+// sanitizeBranchName transforms a string into a valid git branch name.
 // Returns error if result would be empty after sanitization.
 // Use for auto-generated branch names.
 //
@@ -110,7 +110,7 @@ func ValidateBranchName(name string) error {
 // 6. Remove leading '.', '/', '-' and trailing '.lock', '.', '/', '-'
 // 7. Collapse consecutive hyphens
 // 8. Return error if result is empty or '@'
-func SanitizeBranchName(name string) (string, error) {
+func sanitizeBranchName(name string) (string, error) {
 	logging.Logger.Debug("Sanitizing branch name", "input", name)
 
 	if name == "" {

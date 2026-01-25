@@ -11,11 +11,11 @@ import (
 	"rocha/logging"
 )
 
-// IsGitRepo checks if the given path is within a git repository
+// isGitRepo checks if the given path is within a git repository
 // Returns true and the repository root path if it is, false and empty string otherwise
 // NOTE: For worktrees, this returns the worktree path, not the main repo path
-// Use GetMainRepoPath to get the main repository path for worktrees
-func IsGitRepo(path string) (bool, string) {
+// Use getMainRepoPath to get the main repository path for worktrees
+func isGitRepo(path string) (bool, string) {
 	logging.Logger.Debug("Checking if directory is git repo", "path", path)
 
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -32,10 +32,10 @@ func IsGitRepo(path string) (bool, string) {
 	return true, repoRoot
 }
 
-// GetMainRepoPath gets the main repository path, even for worktrees
-// For regular repos, returns the same as IsGitRepo
+// getMainRepoPath gets the main repository path, even for worktrees
+// For regular repos, returns the same as isGitRepo
 // For worktrees, returns the path to the main repository
-func GetMainRepoPath(path string) (string, error) {
+func getMainRepoPath(path string) (string, error) {
 	logging.Logger.Debug("Getting main repo path", "path", path)
 
 	// Get the git common directory (points to main repo for worktrees)
@@ -65,8 +65,8 @@ func GetMainRepoPath(path string) (string, error) {
 	return mainRepoPath, nil
 }
 
-// BranchExists checks if a branch exists locally or remotely
-func BranchExists(repoPath, branchName string) bool {
+// branchExists checks if a branch exists locally or remotely
+func branchExists(repoPath, branchName string) bool {
 	logging.Logger.Debug("Checking if branch exists", "repo_path", repoPath, "branch", branchName)
 
 	// First check if branch exists locally
@@ -90,11 +90,11 @@ func BranchExists(repoPath, branchName string) bool {
 	return false
 }
 
-// CreateWorktree creates a new git worktree at the specified path
+// createWorktree creates a new git worktree at the specified path
 // If the branch exists, it checks it out; if not, it creates a new branch
 // It ensures the worktree is created from the latest origin/main by fetching,
 // checking out main, and resetting to origin/main before creating the worktree
-func CreateWorktree(repoPath, worktreePath, branchName string) error {
+func createWorktree(repoPath, worktreePath, branchName string) error {
 	logging.Logger.Info("Creating worktree", "repo_path", repoPath, "worktree_path", worktreePath, "branch_name", branchName)
 
 	// Ensure the base worktree directory exists
@@ -139,18 +139,18 @@ func CreateWorktree(repoPath, worktreePath, branchName string) error {
 	}
 
 	// Validate branch name before creating worktree
-	if err := ValidateBranchName(branchName); err != nil {
+	if err := validateBranchName(branchName); err != nil {
 		logging.Logger.Error("Invalid branch name", "branch", branchName, "error", err)
 		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
 	// Check if branch exists (locally or remotely)
-	branchExists := BranchExists(repoPath, branchName)
-	logging.Logger.Debug("Branch existence check", "branch", branchName, "exists", branchExists)
+	exists := branchExists(repoPath, branchName)
+	logging.Logger.Debug("Branch existence check", "branch", branchName, "exists", exists)
 
 	// Create the worktree
 	var worktreeCmd *exec.Cmd
-	if branchExists {
+	if exists {
 		// Branch exists - check it out in the worktree
 		logging.Logger.Info("Checking out existing branch in worktree", "path", worktreePath, "branch", branchName)
 		worktreeCmd = exec.Command("git", "worktree", "add", worktreePath, branchName)
@@ -170,9 +170,9 @@ func CreateWorktree(repoPath, worktreePath, branchName string) error {
 	return nil
 }
 
-// RemoveWorktree removes a git worktree at the specified path
+// removeWorktree removes a git worktree at the specified path
 // repoPath is the main repository path where the git command should be run from
-func RemoveWorktree(repoPath, worktreePath string) error {
+func removeWorktree(repoPath, worktreePath string) error {
 	logging.Logger.Info("Removing worktree", "repo_path", repoPath, "worktree_path", worktreePath)
 
 	// First check if the worktree path exists
@@ -195,8 +195,8 @@ func RemoveWorktree(repoPath, worktreePath string) error {
 	return nil
 }
 
-// ListWorktrees lists all worktrees for the given repository
-func ListWorktrees(repoPath string) ([]string, error) {
+// listWorktrees lists all worktrees for the given repository
+func listWorktrees(repoPath string) ([]string, error) {
 	logging.Logger.Debug("Listing worktrees", "repo_path", repoPath)
 
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
@@ -222,9 +222,9 @@ func ListWorktrees(repoPath string) ([]string, error) {
 	return worktrees, nil
 }
 
-// GetBranchName returns the current branch name for the given path
+// getBranchName returns the current branch name for the given path
 // Returns empty string if not in a git repository or cannot determine branch
-func GetBranchName(path string) string {
+func getBranchName(path string) string {
 	logging.Logger.Debug("Getting branch name", "path", path)
 
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
@@ -241,9 +241,9 @@ func GetBranchName(path string) string {
 	return branchName
 }
 
-// GetRepoInfo extracts owner/repo from git remote origin
+// getRepoInfo extracts owner/repo from git remote origin
 // Returns in format "owner/repo" or empty string if not found
-func GetRepoInfo(repoPath string) string {
+func getRepoInfo(repoPath string) string {
 	logging.Logger.Debug("Getting repo info", "repo_path", repoPath)
 
 	cmd := exec.Command("git", "remote", "get-url", "origin")
@@ -321,10 +321,10 @@ func sanitizePathComponent(component string) string {
 	return result
 }
 
-// BuildWorktreePath constructs a worktree path with repository organization
+// buildWorktreePath constructs a worktree path with repository organization
 // If repoInfo is available (format "owner/repo"), creates: base/owner/repo/sessionName
 // If repoInfo is empty or invalid, falls back to: base/sessionName
-func BuildWorktreePath(base, repoInfo, sessionName string) string {
+func buildWorktreePath(base, repoInfo, sessionName string) string {
 	logging.Logger.Debug("Building worktree path",
 		"base", base, "repo_info", repoInfo, "session_name", sessionName)
 
@@ -357,10 +357,10 @@ func BuildWorktreePath(base, repoInfo, sessionName string) string {
 	return filepath.Join(base, sanitizedSession)
 }
 
-// RepairWorktrees repairs git worktree references after moving
+// repairWorktrees repairs git worktree references after moving
 // Must be run from the .main directory with paths to all moved worktrees
 // This is necessary when both the main repository and worktrees have been moved
-func RepairWorktrees(mainRepoPath string, worktreePaths []string) error {
+func repairWorktrees(mainRepoPath string, worktreePaths []string) error {
 	logging.Logger.Info("Repairing worktree references",
 		"mainRepo", mainRepoPath,
 		"worktreeCount", len(worktreePaths))

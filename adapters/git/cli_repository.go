@@ -4,11 +4,10 @@ import (
 	"context"
 
 	"rocha/domain"
-	gitpkg "rocha/git"
 	"rocha/ports"
 )
 
-// CLIRepository implements ports.GitRepository by wrapping the existing git package
+// CLIRepository implements ports.GitRepository using local git commands
 type CLIRepository struct{}
 
 // Verify interface compliance at compile time
@@ -23,124 +22,112 @@ func NewCLIRepository() *CLIRepository {
 
 // IsGitRepo implements RepoInspector.IsGitRepo
 func (r *CLIRepository) IsGitRepo(path string) (bool, string) {
-	return gitpkg.IsGitRepo(path)
+	return isGitRepo(path)
 }
 
 // GetMainRepoPath implements RepoInspector.GetMainRepoPath
 func (r *CLIRepository) GetMainRepoPath(path string) (string, error) {
-	return gitpkg.GetMainRepoPath(path)
+	return getMainRepoPath(path)
 }
 
 // GetRepoInfo implements RepoInspector.GetRepoInfo
 func (r *CLIRepository) GetRepoInfo(repoPath string) string {
-	return gitpkg.GetRepoInfo(repoPath)
+	return getRepoInfo(repoPath)
 }
 
 // GetBranchName implements RepoInspector.GetBranchName
 func (r *CLIRepository) GetBranchName(path string) string {
-	return gitpkg.GetBranchName(path)
+	return getBranchName(path)
 }
 
 // GetRemoteURL implements RepoInspector.GetRemoteURL
 func (r *CLIRepository) GetRemoteURL(repoPath string) string {
-	return gitpkg.GetRemoteURL(repoPath)
+	return getRemoteURL(repoPath)
 }
 
 // WorktreeManager methods
 
 // CreateWorktree implements WorktreeManager.CreateWorktree
 func (r *CLIRepository) CreateWorktree(repoPath, worktreePath, branchName string) error {
-	return gitpkg.CreateWorktree(repoPath, worktreePath, branchName)
+	return createWorktree(repoPath, worktreePath, branchName)
 }
 
 // RemoveWorktree implements WorktreeManager.RemoveWorktree
 func (r *CLIRepository) RemoveWorktree(repoPath, worktreePath string) error {
-	return gitpkg.RemoveWorktree(repoPath, worktreePath)
+	return removeWorktree(repoPath, worktreePath)
 }
 
 // ListWorktrees implements WorktreeManager.ListWorktrees
 func (r *CLIRepository) ListWorktrees(repoPath string) ([]string, error) {
-	return gitpkg.ListWorktrees(repoPath)
+	return listWorktrees(repoPath)
 }
 
 // RepairWorktrees implements WorktreeManager.RepairWorktrees
 func (r *CLIRepository) RepairWorktrees(mainRepoPath string, worktreePaths []string) error {
-	return gitpkg.RepairWorktrees(mainRepoPath, worktreePaths)
+	return repairWorktrees(mainRepoPath, worktreePaths)
 }
 
 // BuildWorktreePath implements WorktreeManager.BuildWorktreePath
 func (r *CLIRepository) BuildWorktreePath(base, repoInfo, sessionName string) string {
-	return gitpkg.BuildWorktreePath(base, repoInfo, sessionName)
+	return buildWorktreePath(base, repoInfo, sessionName)
 }
 
 // RepoCloner methods
 
 // GetOrCloneRepository implements RepoCloner.GetOrCloneRepository
 func (r *CLIRepository) GetOrCloneRepository(source, worktreeBase string) (string, *domain.RepoSource, error) {
-	localPath, gitRepoSource, err := gitpkg.GetOrCloneRepository(source, worktreeBase)
+	localPath, rs, err := getOrCloneRepository(source, worktreeBase)
 	if err != nil {
 		return "", nil, err
 	}
-	// Convert git.RepoSource to domain.RepoSource
-	domainSource := &domain.RepoSource{
-		Branch:   gitRepoSource.Branch,
-		IsRemote: gitRepoSource.IsRemote,
-		Owner:    gitRepoSource.Owner,
-		Path:     gitRepoSource.Path,
-		Repo:     gitRepoSource.Repo,
-	}
-	return localPath, domainSource, nil
+	return localPath, repoSourceToDomain(rs), nil
 }
 
 // BranchValidator methods
 
 // ValidateBranchName implements BranchValidator.ValidateBranchName
 func (r *CLIRepository) ValidateBranchName(name string) error {
-	return gitpkg.ValidateBranchName(name)
+	return validateBranchName(name)
 }
 
 // SanitizeBranchName implements BranchValidator.SanitizeBranchName
 func (r *CLIRepository) SanitizeBranchName(name string) (string, error) {
-	return gitpkg.SanitizeBranchName(name)
+	return sanitizeBranchName(name)
 }
 
 // RepoSourceParser methods
 
 // IsGitURL implements RepoSourceParser.IsGitURL
 func (r *CLIRepository) IsGitURL(source string) bool {
-	return gitpkg.IsGitURL(source)
+	return isGitURL(source)
 }
 
 // ParseRepoSource implements RepoSourceParser.ParseRepoSource
 func (r *CLIRepository) ParseRepoSource(source string) (*domain.RepoSource, error) {
-	repoSource, err := gitpkg.ParseRepoSource(source)
+	rs, err := parseRepoSource(source)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.RepoSource{
-		Branch:   repoSource.Branch,
-		IsRemote: repoSource.IsRemote,
-		Owner:    repoSource.Owner,
-		Path:     repoSource.Path,
-		Repo:     repoSource.Repo,
-	}, nil
+	return repoSourceToDomain(rs), nil
 }
 
 // GitStatsProvider methods
 
 // FetchGitStats implements GitStatsProvider.FetchGitStats
 func (r *CLIRepository) FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error) {
-	stats, err := gitpkg.FetchGitStats(ctx, worktreePath)
-	if err != nil {
-		return nil, err
+	return fetchGitStats(ctx, worktreePath)
+}
+
+// repoSourceToDomain converts local repoSource to domain.RepoSource
+func repoSourceToDomain(rs *repoSource) *domain.RepoSource {
+	if rs == nil {
+		return nil
 	}
-	return &domain.GitStats{
-		Additions:    stats.Additions,
-		Ahead:        stats.Ahead,
-		Behind:       stats.Behind,
-		ChangedFiles: stats.ChangedFiles,
-		Deletions:    stats.Deletions,
-		Error:        stats.Error,
-		FetchedAt:    stats.FetchedAt,
-	}, nil
+	return &domain.RepoSource{
+		Branch:   rs.branch,
+		IsRemote: rs.isRemote,
+		Owner:    rs.owner,
+		Path:     rs.path,
+		Repo:     rs.repo,
+	}
 }
