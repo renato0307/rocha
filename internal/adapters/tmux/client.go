@@ -11,8 +11,8 @@ import (
 
 	"github.com/creack/pty"
 
-	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // attachmentState tracks the state of an attached session

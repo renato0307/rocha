@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/domain"
 )
 
 // SessionsArchiveCmd archives or unarchives a session

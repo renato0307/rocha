@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"rocha/internal/config"
-	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // SettingsService handles session settings updates

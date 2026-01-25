@@ -3,7 +3,7 @@ package git
 import (
 	"fmt"
 	"regexp"
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 	"strings"
 	"unicode"
 )

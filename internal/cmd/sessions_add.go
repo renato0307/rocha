@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/domain"
 )
 
 // SessionsAddCmd adds a new session

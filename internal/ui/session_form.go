@@ -11,11 +11,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
-	"rocha/internal/config"
-	"rocha/internal/domain"
-	"rocha/internal/logging"
-	"rocha/internal/services"
-	"rocha/internal/theme"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/services"
+	"github.com/renato0307/rocha/internal/theme"
 )
 
 // sessionCreatedMsg is sent when session creation completes

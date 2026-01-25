@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // StartClaudeCmd starts Claude Code with hooks configured

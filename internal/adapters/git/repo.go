@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // repoSource represents parsed repository source (internal)

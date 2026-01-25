@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"rocha/internal/domain"
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
 
 	"golang.org/x/sync/errgroup"
 )

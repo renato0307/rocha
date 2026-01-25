@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"rocha/internal/logging"
-	"rocha/internal/services"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/services"
 )
 
 // SessionSetCmd sets configuration for a session

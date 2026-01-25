@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"rocha/internal/config"
-	"rocha/internal/logging"
-	"rocha/internal/services"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/services"
 )
 
 // SessionsMoveCmd moves sessions between ROCHA_HOME directories

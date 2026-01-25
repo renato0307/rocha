@@ -5,15 +5,15 @@ import (
 	"os"
 	"path/filepath"
 
-	adaptereditor "rocha/internal/adapters/editor"
-	adaptergit "rocha/internal/adapters/git"
-	adaptersound "rocha/internal/adapters/sound"
-	adapterstorage "rocha/internal/adapters/storage"
-	adaptertmux "rocha/internal/adapters/tmux"
-	"rocha/internal/config"
-	"rocha/internal/logging"
-	"rocha/internal/ports"
-	"rocha/internal/services"
+	adaptereditor "github.com/renato0307/rocha/internal/adapters/editor"
+	adaptergit "github.com/renato0307/rocha/internal/adapters/git"
+	adaptersound "github.com/renato0307/rocha/internal/adapters/sound"
+	adapterstorage "github.com/renato0307/rocha/internal/adapters/storage"
+	adaptertmux "github.com/renato0307/rocha/internal/adapters/tmux"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/services"
 )
 
 // Container holds all dependencies for the application

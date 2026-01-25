@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rocha/internal/services"
-	"rocha/internal/domain"
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/services"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // GitStatsRequest represents a request to fetch git stats

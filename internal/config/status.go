@@ -3,7 +3,7 @@ package config
 import (
 	"strings"
 
-	"rocha/internal/theme"
+	"github.com/renato0307/rocha/internal/theme"
 )
 
 // StatusConfig holds the configuration for session implementation statuses

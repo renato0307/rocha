@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 
-	"rocha/internal/domain"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // GitService provides git operations for the UI layer
