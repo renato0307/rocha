@@ -26,7 +26,7 @@ rocha run --dev
    - Set commit hash using `git rev-parse HEAD`
    - Set build date using current timestamp
    - Set go version using `go version`
-   - Example: `-ldflags="-X rocha/version.Version=branch-name-v1 -X rocha/version.Commit=$(git rev-parse HEAD) -X rocha/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X rocha/version.GoVersion=$(go version | awk '{print $3}')"`
+   - Example: `-ldflags="-X main.Version=branch-name-v1 -X main.Commit=$(git rev-parse HEAD) -X main.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GoVersion=$(go version | awk '{print $3}')" -o ./bin/rocha-branch-name-v1 ./cmd`
    - Build output goes to `./bin/` directory (ignored by git)
 
 2. When running the built binary for testing, ALWAYS use the --dev flag to see version info in dialog headers and verify you're testing the correct binary.

@@ -6,10 +6,10 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GOVERSION := $(shell go version | awk '{print $$3}')
 
-LDFLAGS := -X rocha/version.Version=$(VERSION) \
-           -X rocha/version.Commit=$(COMMIT) \
-           -X rocha/version.Date=$(DATE) \
-           -X rocha/version.GoVersion=$(GOVERSION)
+LDFLAGS := -X main.Version=$(VERSION) \
+           -X main.Commit=$(COMMIT) \
+           -X main.Date=$(DATE) \
+           -X main.GoVersion=$(GOVERSION)
 
 help:
 	@echo "Available targets:"
@@ -24,7 +24,7 @@ help:
 
 build:
 	@echo "Building rocha..."
-	go build -ldflags "$(LDFLAGS)" -o rocha .
+	go build -ldflags "$(LDFLAGS)" -o rocha ./cmd
 	@echo "Build complete: ./rocha"
 
 install: build

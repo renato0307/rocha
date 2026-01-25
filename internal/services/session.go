@@ -1,0 +1,485 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"rocha/internal/config"
+	"rocha/internal/domain"
+	"rocha/internal/logging"
+	"rocha/internal/ports"
+)
+
+// SessionService handles session lifecycle operations
+type SessionService struct {
+	claudeDirResolver ClaudeDirResolver
+	gitRepo           ports.GitRepository
+	sessionRepo       ports.SessionRepository
+	tmuxClient        ports.TmuxSessionLifecycle
+}
+
+// NewSessionService creates a new SessionService
+func NewSessionService(
+	sessionRepo ports.SessionRepository,
+	gitRepo ports.GitRepository,
+	tmuxClient ports.TmuxSessionLifecycle,
+	claudeDirResolver ClaudeDirResolver,
+) *SessionService {
+	return &SessionService{
+		claudeDirResolver: claudeDirResolver,
+		gitRepo:           gitRepo,
+		sessionRepo:       sessionRepo,
+		tmuxClient:        tmuxClient,
+	}
+}
+
+// CreateSession orchestrates session creation with optional worktree
+func (s *SessionService) CreateSession(
+	ctx context.Context,
+	params CreateSessionParams,
+) (*CreateSessionResult, error) {
+	sessionName := params.SessionName
+	branchName := params.BranchNameOverride
+	repoSource := params.RepoSource
+
+	// Automatically create worktree if repo is provided
+	createWorktree := repoSource != ""
+
+	logging.Logger.Info("Creating session",
+		"name", sessionName,
+		"create_worktree", createWorktree,
+		"branch", branchName,
+		"repo_source", repoSource)
+
+	// Generate tmux-compatible name
+	tmuxName := domain.SanitizeSessionName(sessionName)
+
+	var claudeDir string
+	var repoInfo string
+	var repoPath string
+	var worktreePath string
+	var sourceBranch string
+
+	// 1. Determine repository source
+	if repoSource != "" {
+		logging.Logger.Info("Using user-provided repository source", "source", repoSource)
+
+		worktreeBase := config.GetWorktreePath()
+
+		localPath, src, err := s.gitRepo.GetOrCloneRepository(repoSource, worktreeBase)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get repository: %w", err)
+		}
+		repoPath = localPath
+		if src.Owner != "" && src.Repo != "" {
+			repoInfo = fmt.Sprintf("%s/%s", src.Owner, src.Repo)
+		}
+		sourceBranch = src.Branch
+		if sourceBranch != "" {
+			logging.Logger.Info("Branch specified in URL", "branch", sourceBranch)
+		}
+		logging.Logger.Info("Repository ready", "path", repoPath, "repo_info", repoInfo)
+	} else {
+		logging.Logger.Info("Using current directory as repository source")
+		cwd, _ := os.Getwd()
+		isGit, repo := s.gitRepo.IsGitRepo(cwd)
+		if isGit {
+			repoPath = repo
+			repoInfo = s.gitRepo.GetRepoInfo(repo)
+			logging.Logger.Info("Extracted repo info from current directory", "repo_info", repoInfo)
+
+			// Get remote URL from git repo
+			if remoteURL := s.gitRepo.GetRemoteURL(repo); remoteURL != "" {
+				repoSource = remoteURL
+				logging.Logger.Info("Fetched remote URL from git repo", "remote_url", remoteURL)
+			}
+		}
+	}
+
+	// 2. Resolve ClaudeDir
+	claudeDir = s.claudeDirResolver.Resolve(repoInfo, params.ClaudeDirOverride)
+	logging.Logger.Info("Resolved ClaudeDir", "path", claudeDir)
+
+	// If ClaudeDir is system default, don't set custom override
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		systemDefault := filepath.Join(homeDir, ".claude")
+		if claudeDir == systemDefault {
+			logging.Logger.Info("ClaudeDir is system default, not setting custom override", "default", systemDefault)
+			claudeDir = ""
+		}
+	}
+
+	// 3. Create worktree if requested
+	if createWorktree && repoPath != "" {
+		if branchName == "" {
+			var err error
+			branchName, err = s.gitRepo.SanitizeBranchName(sessionName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate branch name from session name: %w", err)
+			}
+			logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
+		}
+
+		worktreeBase := config.GetWorktreePath()
+		worktreePath = s.gitRepo.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)
+		logging.Logger.Info("Creating worktree", "path", worktreePath, "branch", branchName)
+
+		if err := s.gitRepo.CreateWorktree(repoPath, worktreePath, branchName); err != nil {
+			return nil, fmt.Errorf("failed to create worktree: %w", err)
+		}
+	} else if createWorktree && repoPath == "" {
+		logging.Logger.Warn("Cannot create worktree: not in a git repository")
+	} else if !createWorktree && sourceBranch != "" {
+		branchName = sourceBranch
+		logging.Logger.Info("Using branch from URL (no worktree)", "branch", branchName)
+	}
+
+	// 4. Create tmux session
+	tmuxSession, err := s.tmuxClient.CreateSession(tmuxName, worktreePath, claudeDir, params.TmuxStatusPosition)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// 5. Build domain session and save
+	executionID := os.Getenv("ROCHA_EXECUTION_ID")
+
+	session := domain.Session{
+		AllowDangerouslySkipPermissions: params.AllowDangerouslySkipPermissions,
+		BranchName:                      branchName,
+		ClaudeDir:                       claudeDir,
+		DisplayName:                     sessionName,
+		ExecutionID:                     executionID,
+		LastUpdated:                     time.Now().UTC(),
+		Name:                            tmuxName,
+		RepoInfo:                        repoInfo,
+		RepoPath:                        repoPath,
+		RepoSource:                      repoSource,
+		State:                           domain.StateWaiting,
+		WorktreePath:                    worktreePath,
+	}
+
+	if err := s.sessionRepo.Add(ctx, session); err != nil {
+		logging.Logger.Error("Failed to add session to database", "error", err)
+		return nil, err
+	}
+
+	logging.Logger.Info("Session created successfully",
+		"name", tmuxSession.Name,
+		"claude_dir", claudeDir,
+		"repo_source", repoSource)
+
+	return &CreateSessionResult{
+		Session:      &session,
+		WorktreePath: worktreePath,
+	}, nil
+}
+
+// KillSession kills a session and removes it from state
+func (s *SessionService) KillSession(
+	ctx context.Context,
+	sessionName string,
+) error {
+	logging.Logger.Info("Killing session", "name", sessionName)
+
+	// Get session info to check for shell session
+	session, err := s.sessionRepo.Get(ctx, sessionName)
+	if err != nil {
+		logging.Logger.Warn("Could not get session info", "name", sessionName, "error", err)
+	}
+
+	// Kill shell session if it exists
+	if session != nil && session.ShellSession != nil {
+		logging.Logger.Info("Killing shell session", "name", session.ShellSession.Name)
+		if err := s.tmuxClient.KillSession(session.ShellSession.Name); err != nil {
+			logging.Logger.Warn("Failed to kill shell session", "error", err)
+		}
+		// Delete shell session from DB
+		if err := s.sessionRepo.Delete(ctx, session.ShellSession.Name); err != nil {
+			logging.Logger.Warn("Failed to delete shell session from DB", "error", err)
+		}
+	}
+
+	// Kill main Claude session
+	if err := s.tmuxClient.KillSession(sessionName); err != nil {
+		logging.Logger.Warn("Failed to kill session (may already be exited)", "name", sessionName, "error", err)
+	}
+
+	// Remove session from database
+	if err := s.sessionRepo.Delete(ctx, sessionName); err != nil {
+		logging.Logger.Warn("Failed to delete session from DB", "error", err)
+	}
+
+	logging.Logger.Info("Session killed", "name", sessionName)
+	return nil
+}
+
+// DeleteSessionOptions configures session deletion behavior
+type DeleteSessionOptions struct {
+	KillTmux       bool // Kill tmux sessions before deleting
+	RemoveWorktree bool // Remove worktree from filesystem
+}
+
+// DeleteSession removes a session from database with optional tmux kill and worktree removal
+func (s *SessionService) DeleteSession(
+	ctx context.Context,
+	sessionName string,
+	opts DeleteSessionOptions,
+) error {
+	logging.Logger.Info("Deleting session",
+		"session", sessionName,
+		"killTmux", opts.KillTmux,
+		"removeWorktree", opts.RemoveWorktree)
+
+	// Get session info before deleting (to get worktree path and shell session)
+	session, err := s.sessionRepo.Get(ctx, sessionName)
+	if err != nil {
+		logging.Logger.Error("Failed to get session for deletion", "session", sessionName, "error", err)
+		return fmt.Errorf("failed to get session %s: %w", sessionName, err)
+	}
+
+	// Kill tmux sessions if requested
+	if opts.KillTmux {
+		logging.Logger.Debug("Killing tmux sessions", "session", sessionName)
+		// Kill shell session if exists
+		if session.ShellSession != nil {
+			logging.Logger.Debug("Killing shell session", "session", session.ShellSession.Name)
+			if err := s.tmuxClient.KillSession(session.ShellSession.Name); err != nil {
+				logging.Logger.Warn("Failed to kill shell session", "session", session.ShellSession.Name, "error", err)
+				fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", session.ShellSession.Name, err)
+			}
+		}
+
+		// Kill main session
+		if err := s.tmuxClient.KillSession(sessionName); err != nil {
+			logging.Logger.Warn("Failed to kill tmux session", "session", sessionName, "error", err)
+			fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sessionName, err)
+		}
+	}
+
+	// Delete from database (cascade deletes extension tables)
+	logging.Logger.Debug("Deleting session from database", "session", sessionName)
+	if err := s.sessionRepo.Delete(ctx, sessionName); err != nil {
+		logging.Logger.Error("Failed to delete session from database", "session", sessionName, "error", err)
+		return fmt.Errorf("failed to delete session %s from database: %w", sessionName, err)
+	}
+
+	// Remove worktree if requested and exists
+	if opts.RemoveWorktree && session.WorktreePath != "" && session.RepoPath != "" {
+		logging.Logger.Info("Removing worktree", "session", sessionName, "path", session.WorktreePath)
+		if err := s.gitRepo.RemoveWorktree(session.RepoPath, session.WorktreePath); err != nil {
+			logging.Logger.Warn("Failed to remove worktree", "session", sessionName, "path", session.WorktreePath, "error", err)
+			fmt.Printf("⚠ Warning: Failed to remove worktree for %s: %v\n", sessionName, err)
+		} else {
+			logging.Logger.Info("Worktree removed successfully", "session", sessionName)
+		}
+	}
+
+	logging.Logger.Info("Session deleted successfully", "session", sessionName)
+	return nil
+}
+
+// ArchiveSession archives a session and optionally removes its worktree
+func (s *SessionService) ArchiveSession(
+	ctx context.Context,
+	sessionName string,
+	removeWorktree bool,
+) error {
+	logging.Logger.Info("Archiving session", "name", sessionName, "removeWorktree", removeWorktree)
+
+	// Get session info
+	session, err := s.sessionRepo.Get(ctx, sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to get session info: %w", err)
+	}
+
+	// Remove worktree if requested
+	if removeWorktree && session.WorktreePath != "" {
+		logging.Logger.Info("Removing worktree", "path", session.WorktreePath, "repo", session.RepoPath)
+		if err := s.gitRepo.RemoveWorktree(session.RepoPath, session.WorktreePath); err != nil {
+			logging.Logger.Error("Failed to remove worktree", "error", err, "path", session.WorktreePath)
+			// Continue with archive even if worktree removal fails
+		} else {
+			logging.Logger.Info("Worktree removed successfully", "path", session.WorktreePath)
+		}
+	}
+
+	// Toggle archive state
+	if err := s.sessionRepo.ToggleArchive(ctx, sessionName); err != nil {
+		return fmt.Errorf("failed to archive session: %w", err)
+	}
+
+	logging.Logger.Info("Session archived", "name", sessionName)
+	return nil
+}
+
+// LoadState loads the session state from the repository
+func (s *SessionService) LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error) {
+	logging.Logger.Debug("Loading session state", "includeArchived", includeArchived)
+	state, err := s.sessionRepo.LoadState(ctx, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out shell sessions (names ending with "-shell") from the main list
+	// Shell sessions are nested under their parent session's ShellSession field
+	filteredSessions := make(map[string]domain.Session)
+	var filteredOrderedNames []string
+	for name, session := range state.Sessions {
+		if strings.HasSuffix(name, "-shell") {
+			continue
+		}
+		filteredSessions[name] = session
+	}
+	for _, name := range state.OrderedNames {
+		if !strings.HasSuffix(name, "-shell") {
+			filteredOrderedNames = append(filteredOrderedNames, name)
+		}
+	}
+	state.Sessions = filteredSessions
+	state.OrderedNames = filteredOrderedNames
+
+	return state, nil
+}
+
+// SaveState saves the session state to the repository
+func (s *SessionService) SaveState(ctx context.Context, state *domain.SessionCollection) error {
+	logging.Logger.Debug("Saving session state")
+	return s.sessionRepo.SaveState(ctx, state)
+}
+
+// GetSession retrieves a session by name
+func (s *SessionService) GetSession(ctx context.Context, name string) (*domain.Session, error) {
+	logging.Logger.Debug("Getting session", "name", name)
+	return s.sessionRepo.Get(ctx, name)
+}
+
+// ListSessions retrieves all sessions
+func (s *SessionService) ListSessions(ctx context.Context, includeArchived bool) ([]domain.Session, error) {
+	logging.Logger.Debug("Listing sessions", "includeArchived", includeArchived)
+
+	// Use LoadState to get filtered, ordered sessions
+	state, err := s.LoadState(ctx, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to slice preserving order
+	sessions := make([]domain.Session, 0, len(state.Sessions))
+	for _, name := range state.OrderedNames {
+		if session, exists := state.Sessions[name]; exists {
+			sessions = append(sessions, session)
+		}
+	}
+
+	return sessions, nil
+}
+
+// AddSession adds a new session to the repository
+func (s *SessionService) AddSession(ctx context.Context, session domain.Session) error {
+	logging.Logger.Debug("Adding session", "name", session.Name)
+	return s.sessionRepo.Add(ctx, session)
+}
+
+// UpdateComment updates the comment for a session
+func (s *SessionService) UpdateComment(ctx context.Context, name, comment string) error {
+	logging.Logger.Debug("Updating session comment", "name", name)
+	return s.sessionRepo.UpdateComment(ctx, name, comment)
+}
+
+// UpdateStatus updates the status for a session
+func (s *SessionService) UpdateStatus(ctx context.Context, name string, status *string) error {
+	logging.Logger.Debug("Updating session status", "name", name)
+	return s.sessionRepo.UpdateStatus(ctx, name, status)
+}
+
+// ToggleFlag toggles the flag for a session
+func (s *SessionService) ToggleFlag(ctx context.Context, name string) error {
+	logging.Logger.Debug("Toggling session flag", "name", name)
+	return s.sessionRepo.ToggleFlag(ctx, name)
+}
+
+// SwapPositions swaps the positions of two sessions
+func (s *SessionService) SwapPositions(ctx context.Context, name1, name2 string) error {
+	logging.Logger.Debug("Swapping session positions", "name1", name1, "name2", name2)
+	return s.sessionRepo.SwapPositions(ctx, name1, name2)
+}
+
+// UpdateRepoSource updates the repository source for a session
+func (s *SessionService) UpdateRepoSource(ctx context.Context, name, repoSource string) error {
+	logging.Logger.Debug("Updating session repo source", "name", name)
+	return s.sessionRepo.UpdateRepoSource(ctx, name, repoSource)
+}
+
+// RenameTmuxSession renames only the tmux session (not the database entry)
+func (s *SessionService) RenameTmuxSession(oldName, newName string) error {
+	logging.Logger.Debug("Renaming tmux session", "oldName", oldName, "newName", newName)
+	return s.tmuxClient.RenameSession(oldName, newName)
+}
+
+// RenameSession renames a session in both tmux and database, preserving position
+func (s *SessionService) RenameSession(ctx context.Context, oldName, newName, newDisplayName string) error {
+	logging.Logger.Debug("Renaming session", "oldName", oldName, "newName", newName, "displayName", newDisplayName)
+
+	// Rename in tmux first
+	if err := s.tmuxClient.RenameSession(oldName, newName); err != nil {
+		return fmt.Errorf("failed to rename tmux session: %w", err)
+	}
+
+	// Rename in database (preserves position)
+	if err := s.sessionRepo.Rename(ctx, oldName, newName, newDisplayName); err != nil {
+		// Try to rollback tmux rename
+		s.tmuxClient.RenameSession(newName, oldName)
+		return fmt.Errorf("failed to rename in database: %w", err)
+	}
+
+	return nil
+}
+
+// SessionExists checks if a tmux session exists
+func (s *SessionService) SessionExists(name string) bool {
+	return s.tmuxClient.SessionExists(name)
+}
+
+// RecreateSession recreates a tmux session that was previously closed
+func (s *SessionService) RecreateSession(name, worktreePath, claudeDir, tmuxStatusPosition string) error {
+	logging.Logger.Info("Recreating tmux session", "name", name)
+	_, err := s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+	return err
+}
+
+// ToggleArchive toggles the archive status of a session
+func (s *SessionService) ToggleArchive(ctx context.Context, name string) error {
+	logging.Logger.Debug("Toggling archive status", "name", name)
+	return s.sessionRepo.ToggleArchive(ctx, name)
+}
+
+// UpdateState updates the state and execution ID of a session
+func (s *SessionService) UpdateState(ctx context.Context, name string, state domain.SessionState, executionID string) error {
+	logging.Logger.Debug("Updating session state", "name", name, "state", state, "executionID", executionID)
+	return s.sessionRepo.UpdateState(ctx, name, state, executionID)
+}
+
+// ResolveClaudeDir resolves the Claude directory for a given repo
+func (s *SessionService) ResolveClaudeDir(repoInfo, userOverride string) string {
+	return s.claudeDirResolver.Resolve(repoInfo, userOverride)
+}
+
+// ListTmuxSessions returns all running tmux sessions
+func (s *SessionService) ListTmuxSessions() ([]*ports.TmuxSession, error) {
+	return s.tmuxClient.ListSessions()
+}
+
+// CreateTmuxSession creates a new tmux session
+func (s *SessionService) CreateTmuxSession(name, worktreePath, claudeDir, tmuxStatusPosition string) (*ports.TmuxSession, error) {
+	return s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+}
+
+// KillTmuxSession kills a tmux session without affecting the database
+func (s *SessionService) KillTmuxSession(name string) error {
+	return s.tmuxClient.KillSession(name)
+}
