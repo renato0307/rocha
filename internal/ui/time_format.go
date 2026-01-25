@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"time"
+
+	"rocha/internal/config"
 )
 
 // TimestampMode represents the display mode for timestamps
@@ -91,17 +93,17 @@ func formatAbsoluteTime(t time.Time) string {
 
 // getTimestampColor determines the color code based on how long ago the timestamp was.
 // Recent updates use one color, older updates use warning color, very old use stale color.
-func getTimestampColor(t time.Time, config *TimestampColorConfig) string {
+func getTimestampColor(t time.Time, cfg *config.TimestampColorConfig) string {
 	if t.IsZero() {
-		return config.RecentColor
+		return cfg.RecentColor
 	}
 
 	elapsed := time.Since(t).Minutes()
 
-	if elapsed < float64(config.RecentMinutes) {
-		return config.RecentColor
-	} else if elapsed < float64(config.WarningMinutes) {
-		return config.WarningColor
+	if elapsed < float64(cfg.RecentMinutes) {
+		return cfg.RecentColor
+	} else if elapsed < float64(cfg.WarningMinutes) {
+		return cfg.WarningColor
 	}
-	return config.StaleColor
+	return cfg.StaleColor
 }

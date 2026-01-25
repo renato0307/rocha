@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
+	"rocha/internal/config"
 	"rocha/internal/logging"
 	"rocha/internal/services"
 )
@@ -28,11 +29,11 @@ type SessionStatusForm struct {
 	selectedItem   string // Holds the selected option (status name or "<clear>")
 	sessionName    string
 	sessionService *services.SessionService
-	statusConfig   *StatusConfig
+	statusConfig   *config.StatusConfig
 }
 
 // NewSessionStatusForm creates a new session status form
-func NewSessionStatusForm(sessionService *services.SessionService, sessionName string, currentStatus *string, statusConfig *StatusConfig) *SessionStatusForm {
+func NewSessionStatusForm(sessionService *services.SessionService, sessionName string, currentStatus *string, statusConfig *config.StatusConfig) *SessionStatusForm {
 	sf := &SessionStatusForm{
 		result: SessionStatusFormResult{
 			SessionName: sessionName,

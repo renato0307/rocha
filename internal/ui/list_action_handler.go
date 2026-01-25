@@ -7,10 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rocha/internal/services"
+	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // ActionType indicates what action Model should take
@@ -65,7 +66,7 @@ type ListActionHandler struct {
 	sessionService                         *services.SessionService
 	sessionState                           *domain.SessionCollection
 	shellService                           *services.ShellService
-	statusConfig                           *StatusConfig
+	statusConfig                           *config.StatusConfig
 	tmuxStatusPosition                     string
 }
 
@@ -75,7 +76,7 @@ func NewListActionHandler(
 	sessionState *domain.SessionCollection,
 	gitService *services.GitService,
 	editor string,
-	statusConfig *StatusConfig,
+	statusConfig *config.StatusConfig,
 	errorManager *ErrorManager,
 	sessionOps *SessionOperations,
 	tmuxStatusPosition string,

@@ -15,10 +15,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"rocha/internal/services"
+	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 const escTimeout = 500 * time.Millisecond
@@ -60,12 +61,12 @@ func (i SessionItem) Description() string {
 // SessionDelegate is a custom delegate for rendering session items
 type SessionDelegate struct {
 	sessionState    *domain.SessionCollection
-	statusConfig    *StatusConfig
-	timestampConfig *TimestampColorConfig
+	statusConfig    *config.StatusConfig
+	timestampConfig *config.TimestampColorConfig
 	timestampMode   TimestampMode
 }
 
-func newSessionDelegate(sessionState *domain.SessionCollection, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, timestampMode TimestampMode) SessionDelegate {
+func newSessionDelegate(sessionState *domain.SessionCollection, statusConfig *config.StatusConfig, timestampConfig *config.TimestampColorConfig, timestampMode TimestampMode) SessionDelegate {
 	return SessionDelegate{
 		sessionState:    sessionState,
 		statusConfig:    statusConfig,
@@ -227,7 +228,7 @@ type SessionList struct {
 	list               list.Model
 	sessionService     *services.SessionService // Session service
 	sessionState       *domain.SessionCollection
-	statusConfig       *StatusConfig
+	statusConfig       *config.StatusConfig
 	timestampMode      TimestampMode
 	tmuxStatusPosition string
 
@@ -245,7 +246,7 @@ type SessionList struct {
 	width      int
 
 	// Timestamp configuration
-	timestampConfig *TimestampColorConfig
+	timestampConfig *config.TimestampColorConfig
 
 	// Result fields - set by component, read by Model
 	RequestHelp           bool               // User pressed 'h' or '?'
@@ -267,7 +268,7 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(sessionService *services.SessionService, gitService *services.GitService, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
+func NewSessionList(sessionService *services.SessionService, gitService *services.GitService, editor string, statusConfig *config.StatusConfig, timestampConfig *config.TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := sessionService.LoadState(context.Background(), false)
 	if err != nil {
@@ -757,7 +758,7 @@ func pollStateCmd() tea.Cmd {
 }
 
 // buildListItems converts SessionCollection to list items
-func buildListItems(sessionState *domain.SessionCollection, sessionService *services.SessionService, statusConfig *StatusConfig) []list.Item {
+func buildListItems(sessionState *domain.SessionCollection, sessionService *services.SessionService, statusConfig *config.StatusConfig) []list.Item {
 	var items []list.Item
 
 	// Build sessions from state

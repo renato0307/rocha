@@ -1,4 +1,4 @@
-package ui
+package config
 
 // TimestampColorConfig holds configuration for timestamp display colors.
 // Colors change based on how recently the session state was updated.

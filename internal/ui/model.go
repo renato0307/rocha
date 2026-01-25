@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
+	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
@@ -97,8 +98,8 @@ type Model struct {
 	sessionToKill                          *ports.TmuxSession           // Session being killed (for worktree removal)
 	shellService                           *services.ShellService       // Shell session service
 	state                                  uiState
-	statusConfig                           *StatusConfig                // Status configuration for implementation statuses
-	timestampConfig                        *TimestampColorConfig        // Timestamp color configuration
+	statusConfig                           *config.StatusConfig         // Status configuration for implementation statuses
+	timestampConfig                        *config.TimestampColorConfig // Timestamp color configuration
 	timestampMode                          TimestampMode
 	tmuxStatusPosition                     string
 	width                                  int
@@ -108,8 +109,8 @@ type Model struct {
 func NewModel(
 	editor string,
 	errorClearDelay time.Duration,
-	statusConfig *StatusConfig,
-	timestampConfig *TimestampColorConfig,
+	statusConfig *config.StatusConfig,
+	timestampConfig *config.TimestampColorConfig,
 	devMode bool,
 	showTimestamps bool,
 	tmuxStatusPosition string,

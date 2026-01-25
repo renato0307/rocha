@@ -238,8 +238,8 @@ func (r *RunCmd) Run(container *Container, cli *CLI) error {
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
 	errorClearDelay := time.Duration(r.ErrorClearDelay) * time.Second
-	statusConfig := ui.NewStatusConfig(r.Statuses, r.StatusIcons, r.StatusColors)
-	timestampConfig := ui.NewTimestampColorConfig(
+	statusConfig := config.NewStatusConfig(r.Statuses, r.StatusIcons, r.StatusColors)
+	timestampConfig := config.NewTimestampColorConfig(
 		r.TimestampRecentMinutes,
 		r.TimestampWarningMinutes,
 		r.TimestampRecentColor,
