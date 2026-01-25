@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // isGitRepo checks if the given path is within a git repository

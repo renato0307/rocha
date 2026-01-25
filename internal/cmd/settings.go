@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"rocha/internal/config"
+	"github.com/renato0307/rocha/internal/config"
 	"text/tabwriter"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"rocha/internal/theme"
+	"github.com/renato0307/rocha/internal/theme"
 
 	"github.com/charmbracelet/bubbles/key"
 )

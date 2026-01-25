@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"rocha/internal/config"
+	"github.com/renato0307/rocha/internal/config"
 )
 
 // TimestampMode represents the display mode for timestamps

@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"rocha/internal/domain"
-	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // SessionRepositoryFactory creates session repositories for a given path

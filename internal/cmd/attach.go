@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"rocha/internal/config"
-	"rocha/internal/domain"
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // AttachCmd attaches to a tmux session, creating it if needed

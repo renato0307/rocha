@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"rocha/internal/config"
-	"rocha/internal/domain"
-	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // SessionService handles session lifecycle operations

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // Monitor watches a tmux session for Claude prompts

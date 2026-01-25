@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // SessionsCaptureCmd captures the content of a session's tmux pane

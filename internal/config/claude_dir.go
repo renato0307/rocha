@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // DefaultClaudeDir returns the default Claude directory

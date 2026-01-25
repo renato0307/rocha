@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"rocha/test/integration/harness"
+	"github.com/renato0307/rocha/test/integration/harness"
 )
 
 func TestSessionsView(t *testing.T) {

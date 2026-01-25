@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/domain"
 )
 
 // SessionsViewCmd views a specific session

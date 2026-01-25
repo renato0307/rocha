@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/domain"
 )
 
 // sessionModelToDomain converts a SessionModel (GORM) to domain.Session

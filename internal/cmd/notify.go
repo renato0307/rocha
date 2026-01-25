@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // NotifyCmd handles notification events from Claude hooks

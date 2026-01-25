@@ -6,10 +6,10 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"rocha/internal/adapters/tmux"
-	"rocha/internal/cmd"
-	"rocha/internal/config"
-	"rocha/internal/ui"
+	"github.com/renato0307/rocha/internal/adapters/tmux"
+	"github.com/renato0307/rocha/internal/cmd"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/ui"
 )
 
 // Build information injected at build time via ldflags

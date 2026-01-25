@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // SessionsFlagCmd toggles the flag state of a session

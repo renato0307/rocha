@@ -7,7 +7,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/domain"
 )
 
 // SessionsListCmd lists all sessions

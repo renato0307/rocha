@@ -12,10 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 
-	"rocha/internal/config"
-	"rocha/internal/domain"
-	"rocha/internal/logging"
-	"rocha/internal/ui"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ui"
 )
 
 // CLI represents the command-line interface structure

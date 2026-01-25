@@ -3,7 +3,7 @@ package integration_test
 import (
 	"testing"
 
-	"rocha/test/integration/harness"
+	"github.com/renato0307/rocha/test/integration/harness"
 )
 
 func TestSessionsCapture(t *testing.T) {

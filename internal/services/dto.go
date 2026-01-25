@@ -1,6 +1,6 @@
 package services
 
-import "rocha/internal/domain"
+import "github.com/renato0307/rocha/internal/domain"
 
 // CreateSessionParams contains parameters for creating a new session
 type CreateSessionParams struct {

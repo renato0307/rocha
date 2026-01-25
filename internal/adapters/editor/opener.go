@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/logging"
 )
 
 // Opener implements ports.EditorOpener

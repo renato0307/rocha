@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/domain"
 )
 
 // SessionReader reads session data

@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
-	"rocha/internal/logging"
-	"rocha/internal/services"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/services"
 )
 
 // SendTextFormResult contains the result of the send text operation

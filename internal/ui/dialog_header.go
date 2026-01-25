@@ -3,7 +3,7 @@ package ui
 import (
 	"fmt"
 
-	"rocha/internal/theme"
+	"github.com/renato0307/rocha/internal/theme"
 )
 
 // VersionInfo holds version information for display in UI headers.

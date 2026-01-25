@@ -7,11 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rocha/internal/config"
-	"rocha/internal/domain"
-	"rocha/internal/logging"
-	"rocha/internal/ports"
-	"rocha/internal/services"
+	"github.com/renato0307/rocha/internal/config"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/services"
 )
 
 // ActionType indicates what action Model should take

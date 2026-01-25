@@ -14,9 +14,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"rocha/internal/domain"
-	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"github.com/renato0307/rocha/internal/domain"
+	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/ports"
 )
 
 // SQLiteRepository implements ports.SessionRepository using GORM
