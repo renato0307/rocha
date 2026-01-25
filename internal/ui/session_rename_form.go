@@ -10,7 +10,7 @@ import (
 
 	"rocha/internal/domain"
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 
@@ -31,21 +31,19 @@ type SessionRenameForm struct {
 	form               *huh.Form
 	oldTmuxName        string // Immutable - the session we're renaming
 	result             SessionRenameFormResult
-	sessionManager     ports.TmuxSessionLifecycle
-	sessionRepo        ports.SessionRepository
+	sessionService     *services.SessionService
 	sessionState       *domain.SessionCollection
 }
 
 // NewSessionRenameForm creates a new session rename form
-func NewSessionRenameForm(sessionManager ports.TmuxSessionLifecycle, sessionRepo ports.SessionRepository, sessionState *domain.SessionCollection, oldTmuxName, currentDisplayName string) *SessionRenameForm {
+func NewSessionRenameForm(sessionService *services.SessionService, sessionState *domain.SessionCollection, oldTmuxName, currentDisplayName string) *SessionRenameForm {
 	sf := &SessionRenameForm{
 		currentDisplayName: currentDisplayName,
 		oldTmuxName:        oldTmuxName,
 		result: SessionRenameFormResult{
 			OldTmuxName: oldTmuxName,
 		},
-		sessionManager: sessionManager,
-		sessionRepo:    sessionRepo,
+		sessionService: sessionService,
 		sessionState:   sessionState,
 	}
 
@@ -63,7 +61,7 @@ func NewSessionRenameForm(sessionManager ports.TmuxSessionLifecycle, sessionRepo
 					}
 					// Sanitize for tmux name check
 					tmuxName := domain.SanitizeSessionName(s)
-					if sessionManager.SessionExists(tmuxName) && tmuxName != oldTmuxName {
+					if sessionService.SessionExists(tmuxName) && tmuxName != oldTmuxName {
 						return fmt.Errorf("session %s already exists", tmuxName)
 					}
 					return nil
@@ -135,7 +133,7 @@ func (sf *SessionRenameForm) renameSession() error {
 		"new_display_name", newDisplayName)
 
 	// Rename tmux session first
-	if err := sf.sessionManager.RenameSession(sf.oldTmuxName, newTmuxName); err != nil {
+	if err := sf.sessionService.RenameSession(sf.oldTmuxName, newTmuxName); err != nil {
 		return fmt.Errorf("failed to rename tmux session: %w", err)
 	}
 
@@ -151,14 +149,14 @@ func (sf *SessionRenameForm) renameSession() error {
 		sf.sessionState.Sessions[newTmuxName] = session
 
 		// Save to database (OrderedNames will be repopulated on next LoadState)
-		if err := sf.sessionRepo.SaveState(context.Background(), sf.sessionState); err != nil {
+		if err := sf.sessionService.SaveState(context.Background(), sf.sessionState); err != nil {
 			// Try to rename back in tmux if state update fails
-			sf.sessionManager.RenameSession(newTmuxName, sf.oldTmuxName)
+			sf.sessionService.RenameSession(newTmuxName, sf.oldTmuxName)
 			return fmt.Errorf("failed to update session state: %w", err)
 		}
 	} else {
 		// Session not found in state
-		sf.sessionManager.RenameSession(newTmuxName, sf.oldTmuxName)
+		sf.sessionService.RenameSession(newTmuxName, sf.oldTmuxName)
 		return fmt.Errorf("session %s not found in state", sf.oldTmuxName)
 	}
 

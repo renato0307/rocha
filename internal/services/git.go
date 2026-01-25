@@ -1,4 +1,4 @@
-package application
+package services
 
 import (
 	"context"
@@ -63,4 +63,14 @@ func (s *GitService) RemoveWorktree(repoPath, worktreePath string) error {
 // FetchGitStats fetches git statistics for a path
 func (s *GitService) FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error) {
 	return s.gitRepo.FetchGitStats(ctx, worktreePath)
+}
+
+// GetMainRepoPath gets the main repository path (handles worktrees correctly)
+func (s *GitService) GetMainRepoPath(path string) (string, error) {
+	return s.gitRepo.GetMainRepoPath(path)
+}
+
+// GetBranchName gets the current branch name for a path
+func (s *GitService) GetBranchName(path string) string {
+	return s.gitRepo.GetBranchName(path)
 }

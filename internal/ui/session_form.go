@@ -12,11 +12,10 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
-	"rocha/internal/application"
 	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // sessionCreatedMsg is sent when session creation completes
@@ -42,10 +41,9 @@ type SessionForm struct {
 	cancelled          bool
 	creating           bool // True when session creation is in progress
 	form               *huh.Form
-	gitService         *application.GitService
+	gitService         *services.GitService
 	result             SessionFormResult
-	sessionRepo        ports.SessionRepository
-	sessionService     *application.SessionService
+	sessionService     *services.SessionService
 	sessionState       *domain.SessionCollection
 	spinner            spinner.Model
 	tmuxStatusPosition string
@@ -53,9 +51,8 @@ type SessionForm struct {
 
 // NewSessionForm creates a new session creation form
 func NewSessionForm(
-	gitService *application.GitService,
-	sessionService *application.SessionService,
-	sessionRepo ports.SessionRepository,
+	gitService *services.GitService,
+	sessionService *services.SessionService,
 	sessionState *domain.SessionCollection,
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
@@ -71,7 +68,6 @@ func NewSessionForm(
 			AllowDangerouslySkipPermissions: allowDangerouslySkipPermissionsDefault,
 			RepoSource:                      defaultRepoSource,
 		},
-		sessionRepo:        sessionRepo,
 		sessionService:     sessionService,
 		sessionState:       sessionState,
 		spinner:            s,
@@ -90,7 +86,7 @@ func NewSessionForm(
 	var defaultClaudeDir string
 	if isGit {
 		repoInfo := sf.gitService.GetRepoInfo(repo)
-		defaultClaudeDir = config.ResolveClaudeDir(sessionRepo, repoInfo, "")
+		defaultClaudeDir = sf.sessionService.ResolveClaudeDir(repoInfo, "")
 	} else {
 		defaultClaudeDir = config.DefaultClaudeDir()
 	}
@@ -268,7 +264,7 @@ func (sf *SessionForm) createSessionCmd() tea.Cmd {
 
 // createSession creates the tmux session with optional worktree
 func (sf *SessionForm) createSession() error {
-	params := application.CreateSessionParams{
+	params := services.CreateSessionParams{
 		AllowDangerouslySkipPermissions: sf.result.AllowDangerouslySkipPermissions,
 		BranchNameOverride:              sf.result.BranchName,
 		ClaudeDirOverride:               sf.result.ClaudeDir,

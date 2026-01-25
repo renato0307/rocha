@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
-	"rocha/internal/ports"
 )
 
 // AttachCmd attaches to a tmux session, creating it if needed
@@ -25,24 +25,17 @@ type AttachCmd struct {
 }
 
 // Run executes the attach command
-func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (a *AttachCmd) Run(container *Container, cli *CLI) error {
 	logging.Logger.Info("Attach command started")
 
 	// Apply TmuxStatusPosition setting with proper precedence
-	if a.TmuxStatusPosition == ports.DefaultTmuxStatusPosition {
+	if a.TmuxStatusPosition == config.DefaultTmuxStatusPosition {
 		if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
 			if cli.settings != nil && cli.settings.TmuxStatusPosition != "" {
 				a.TmuxStatusPosition = cli.settings.TmuxStatusPosition
 			}
 		}
 	}
-
-	// Initialize container
-	container, err := NewContainer(tmuxClient)
-	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
 
 	// Step 1: Auto-detect parameters from current directory
 	cwd, err := os.Getwd()
@@ -53,17 +46,17 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	var repoPath, branchName, repoInfo, worktreePath, sessionName string
 
 	// Check if in git repo
-	isGit, _ := container.GitRepository.IsGitRepo(cwd)
+	isGit, _ := container.GitService.IsGitRepo(cwd)
 	if isGit {
 		// Get main repo path (handles worktrees correctly)
-		mainRepoPath, err := container.GitRepository.GetMainRepoPath(cwd)
+		mainRepoPath, err := container.GitService.GetMainRepoPath(cwd)
 		if err != nil {
 			logging.Logger.Warn("Failed to get main repo path, using detected path", "error", err)
 			mainRepoPath = cwd
 		}
 		repoPath = mainRepoPath
-		branchName = container.GitRepository.GetBranchName(cwd)
-		repoInfo = container.GitRepository.GetRepoInfo(repoPath)
+		branchName = container.GitService.GetBranchName(cwd)
+		repoInfo = container.GitService.GetRepoInfo(repoPath)
 		worktreePath = cwd
 		sessionName = branchName // Use branch as default session name
 	} else {
@@ -101,7 +94,7 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 
 	// Step 3.5: Check for duplicate sessions with same branch or worktree
 	ctx := context.Background()
-	st, err := container.SessionRepository.LoadState(ctx, false)
+	st, err := container.SessionService.LoadState(ctx, false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state for duplicate check", "error", err)
 	}
@@ -125,10 +118,10 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	}
 
 	// Step 4: Check if tmux session exists, create if needed
-	if !tmuxClient.SessionExists(sessionName) {
+	if !container.SessionService.SessionExists(sessionName) {
 		logging.Logger.Info("Session does not exist, creating", "name", sessionName)
 		// Note: attach command doesn't support claudeDir parameter, use empty string
-		_, err := tmuxClient.CreateSession(sessionName, worktreePath, "", a.TmuxStatusPosition)
+		_, err := container.SessionService.CreateTmuxSession(sessionName, worktreePath, "", a.TmuxStatusPosition)
 		if err != nil {
 			return fmt.Errorf("failed to create tmux session: %w", err)
 		}
@@ -140,7 +133,7 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 
 	// Step 5: Update database
 	// Reload state in case it changed
-	st, err = container.SessionRepository.LoadState(ctx, false)
+	st, err = container.SessionService.LoadState(ctx, false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state", "error", err)
 	}
@@ -189,7 +182,7 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 
 	st.Sessions[sessionName] = sessionInfo
 
-	if err := container.SessionRepository.SaveState(ctx, st); err != nil {
+	if err := container.SessionService.SaveState(ctx, st); err != nil {
 		logging.Logger.Error("Failed to save state", "error", err)
 		// Continue anyway - session is created
 	}

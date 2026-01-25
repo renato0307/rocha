@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rocha/internal/application"
+	"rocha/internal/services"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
@@ -58,16 +58,14 @@ type ListActionHandler struct {
 	allowDangerouslySkipPermissionsDefault bool
 	devMode                                bool
 	editor                                 string
-	editorOpener                           ports.EditorOpener
 	errorManager                           *ErrorManager
-	gitService                             *application.GitService
+	gitService                             *services.GitService
 	sessionList                            *SessionList
 	sessionOps                             *SessionOperations
-	sessionRepo                            ports.SessionRepository
-	sessionService                         *application.SessionService
+	sessionService                         *services.SessionService
 	sessionState                           *domain.SessionCollection
+	shellService                           *services.ShellService
 	statusConfig                           *StatusConfig
-	tmuxClient                             ports.TmuxClient
 	tmuxStatusPosition                     string
 }
 
@@ -75,33 +73,29 @@ type ListActionHandler struct {
 func NewListActionHandler(
 	sessionList *SessionList,
 	sessionState *domain.SessionCollection,
-	sessionRepo ports.SessionRepository,
-	gitService *application.GitService,
+	gitService *services.GitService,
 	editor string,
-	editorOpener ports.EditorOpener,
 	statusConfig *StatusConfig,
 	errorManager *ErrorManager,
 	sessionOps *SessionOperations,
-	tmuxClient ports.TmuxClient,
 	tmuxStatusPosition string,
 	devMode bool,
 	allowDangerouslySkipPermissionsDefault bool,
-	sessionService *application.SessionService,
+	sessionService *services.SessionService,
+	shellService *services.ShellService,
 ) *ListActionHandler {
 	return &ListActionHandler{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
 		devMode:                                devMode,
 		editor:                                 editor,
-		editorOpener:                           editorOpener,
 		errorManager:                           errorManager,
 		gitService:                             gitService,
 		sessionList:                            sessionList,
 		sessionOps:                             sessionOps,
-		sessionRepo:                            sessionRepo,
 		sessionService:                         sessionService,
 		sessionState:                           sessionState,
+		shellService:                           shellService,
 		statusConfig:                           statusConfig,
-		tmuxClient:                             tmuxClient,
 		tmuxStatusPosition:                     tmuxStatusPosition,
 	}
 }
@@ -109,7 +103,7 @@ func NewListActionHandler(
 // getFreshSessionInfo loads fresh session info from the database to avoid stale state issues.
 // Returns the Session and true if found, or zero value and false if not found.
 func (lah *ListActionHandler) getFreshSessionInfo(sessionName string) (domain.Session, bool) {
-	freshState, err := lah.sessionRepo.LoadState(context.Background(), false)
+	freshState, err := lah.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		logging.Logger.Error("Failed to load fresh state", "error", err)
 		// Fall back to cached state
@@ -175,7 +169,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			currentDisplayName = sessionInfo.DisplayName
 		}
 
-		contentForm := NewSessionRenameForm(lah.tmuxClient, lah.sessionRepo, lah.sessionState, session.Name, currentDisplayName)
+		contentForm := NewSessionRenameForm(lah.sessionService, lah.sessionState, session.Name, currentDisplayName)
 		return ActionResult{
 			ActionType:    ActionShowRenameDialog,
 			DialogTitle:   "Rename Session",
@@ -195,7 +189,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			currentStatus = sessionInfo.Status
 		}
 
-		contentForm := NewSessionStatusForm(lah.sessionRepo, session.Name, currentStatus, lah.statusConfig)
+		contentForm := NewSessionStatusForm(lah.sessionService, session.Name, currentStatus, lah.statusConfig)
 		return ActionResult{
 			ActionType:    ActionShowStatusDialog,
 			DialogTitle:   "Set Status",
@@ -215,7 +209,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			currentComment = sessionInfo.Comment
 		}
 
-		contentForm := NewSessionCommentForm(lah.sessionRepo, session.Name, currentComment)
+		contentForm := NewSessionCommentForm(lah.sessionService, session.Name, currentComment)
 		return ActionResult{
 			ActionType:    ActionShowCommentDialog,
 			DialogTitle:   "Edit Session Comment",
@@ -229,7 +223,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		session := lah.sessionList.SessionToSendText
 		lah.sessionList.SessionToSendText = nil
 
-		contentForm := NewSendTextForm(lah.tmuxClient, session.Name)
+		contentForm := NewSendTextForm(lah.shellService, session.Name)
 		return ActionResult{
 			ActionType:    ActionShowSendTextDialog,
 			DialogTitle:   "Send Text to Claude",
@@ -252,7 +246,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			}
 		}
 
-		if err := lah.editorOpener.Open(sessionInfo.WorktreePath, lah.editor); err != nil {
+		if err := lah.shellService.OpenEditor(sessionInfo.WorktreePath, lah.editor); err != nil {
 			lah.errorManager.SetError(fmt.Errorf("failed to open editor: %w", err))
 			return ActionResult{
 				ActionType: ActionNone,
@@ -271,7 +265,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		session := lah.sessionList.SessionToToggleFlag
 		lah.sessionList.SessionToToggleFlag = nil
 
-		if err := lah.sessionRepo.ToggleFlag(context.Background(), session.Name); err != nil {
+		if err := lah.sessionService.ToggleFlag(context.Background(), session.Name); err != nil {
 			lah.errorManager.SetError(fmt.Errorf("failed to toggle flag: %w", err))
 			return ActionResult{
 				ActionType: ActionNone,
@@ -280,7 +274,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		}
 
 		// Reload session state
-		sessionState, err := lah.sessionRepo.LoadState(context.Background(), false)
+		newSessionState, err := lah.sessionService.LoadState(context.Background(), false)
 		if err != nil {
 			lah.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 			lah.sessionList.RefreshFromState()
@@ -289,7 +283,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 				Cmd:        tea.Batch(lah.sessionList.Init(), lah.errorManager.ClearAfterDelay()),
 			}
 		}
-		*lah.sessionState = *sessionState
+		*lah.sessionState = *newSessionState
 
 		// Refresh UI
 		lah.sessionList.RefreshFromState()
@@ -376,7 +370,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 						logging.Logger.Info("Fetched remote URL, updating database", "remote_url", remoteURL)
 
 						// Update the session in the database with the fetched RepoSource
-						if err := lah.sessionRepo.UpdateRepoSource(context.Background(), lah.sessionList.SessionForTemplate.Name, remoteURL); err != nil {
+						if err := lah.sessionService.UpdateRepoSource(context.Background(), lah.sessionList.SessionForTemplate.Name, remoteURL); err != nil {
 							logging.Logger.Error("Failed to update RepoSource in database", "error", err)
 						} else {
 							// Also update in-memory state

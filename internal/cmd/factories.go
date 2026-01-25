@@ -9,7 +9,7 @@ import (
 	adaptergit "rocha/internal/adapters/git"
 	adaptersound "rocha/internal/adapters/sound"
 	adapterstorage "rocha/internal/adapters/storage"
-	"rocha/internal/application"
+	"rocha/internal/services"
 	"rocha/internal/config"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
@@ -17,20 +17,16 @@ import (
 
 // Container holds all dependencies for the application
 type Container struct {
-	// Adapters
-	EditorOpener      ports.EditorOpener
-	GitRepository     ports.GitRepository
-	SessionRepository ports.SessionRepository
-	SoundPlayer       ports.SoundPlayer
-	TmuxClient        ports.TmuxClient
-
 	// Services
-	GitService          *application.GitService
-	MigrationService    *application.MigrationService
-	NotificationService *application.NotificationService
-	SessionService      *application.SessionService
-	SettingsService     *application.SettingsService
-	ShellService        *application.ShellService
+	GitService          *services.GitService
+	MigrationService    *services.MigrationService
+	NotificationService *services.NotificationService
+	SessionService      *services.SessionService
+	SettingsService     *services.SettingsService
+	ShellService        *services.ShellService
+
+	// Internal - for cleanup only
+	sessionRepo ports.SessionRepository
 }
 
 // NewContainer creates a new Container with all dependencies wired
@@ -48,41 +44,36 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 	// Create ClaudeDir resolver
 	claudeDirResolver := NewClaudeDirResolverAdapter(sessionRepo)
 
+	// Create repository factory for migration service
+	repoFactory := func(rochaHomePath string) (ports.SessionRepository, error) {
+		return adapterstorage.NewSQLiteRepositoryForPath(rochaHomePath)
+	}
+
 	// Create services
-	gitService := application.NewGitService(gitRepo)
-	migrationService := application.NewMigrationService(gitRepo, tmuxClient)
-	notificationService := application.NewNotificationService(sessionRepo, sessionRepo)
-	sessionService := application.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver)
-	settingsService := application.NewSettingsService(sessionRepo)
-	shellService := application.NewShellService(sessionRepo, sessionRepo, tmuxClient)
+	gitService := services.NewGitService(gitRepo)
+	migrationService := services.NewMigrationService(gitRepo, tmuxClient, repoFactory)
+	notificationService := services.NewNotificationService(sessionRepo, sessionRepo, soundPlayer)
+	sessionService := services.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver)
+	settingsService := services.NewSettingsService(sessionRepo)
+	shellService := services.NewShellService(sessionRepo, sessionRepo, tmuxClient, editorOpener)
 
 	return &Container{
-		EditorOpener:        editorOpener,
-		GitRepository:       gitRepo,
 		GitService:          gitService,
 		MigrationService:    migrationService,
 		NotificationService: notificationService,
-		SessionRepository:   sessionRepo,
 		SessionService:      sessionService,
 		SettingsService:     settingsService,
 		ShellService:        shellService,
-		SoundPlayer:         soundPlayer,
-		TmuxClient:          tmuxClient,
+		sessionRepo:         sessionRepo,
 	}, nil
 }
 
 // Close closes all resources held by the container
 func (c *Container) Close() error {
-	if c.SessionRepository != nil {
-		return c.SessionRepository.Close()
+	if c.sessionRepo != nil {
+		return c.sessionRepo.Close()
 	}
 	return nil
-}
-
-// NewSessionRepositoryForPath creates a session repository for a specific ROCHA_HOME path.
-// This is used for migration operations that need to work with multiple databases.
-func NewSessionRepositoryForPath(rochaHomePath string) (ports.SessionRepository, error) {
-	return adapterstorage.NewSQLiteRepositoryForPath(rochaHomePath)
 }
 
 // ClaudeDirResolverAdapter implements application.ClaudeDirResolver

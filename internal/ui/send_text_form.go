@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SendTextFormResult contains the result of the send text operation
@@ -20,19 +20,19 @@ type SendTextFormResult struct {
 
 // SendTextForm is a Bubble Tea component for sending text to a tmux session
 type SendTextForm struct {
-	Completed   bool
-	cancelled   bool
-	form        *huh.Form
-	result      SendTextFormResult
-	sessionName string
-	tmuxClient  ports.TmuxClient
+	Completed    bool
+	cancelled    bool
+	form         *huh.Form
+	result       SendTextFormResult
+	sessionName  string
+	shellService *services.ShellService
 }
 
 // NewSendTextForm creates a new send text form
-func NewSendTextForm(tmuxClient ports.TmuxClient, sessionName string) *SendTextForm {
+func NewSendTextForm(shellService *services.ShellService, sessionName string) *SendTextForm {
 	sf := &SendTextForm{
-		sessionName: sessionName,
-		tmuxClient:  tmuxClient,
+		sessionName:  sessionName,
+		shellService: shellService,
 		result: SendTextFormResult{
 			SessionName: sessionName,
 			Text:        "rebase with origin/main",
@@ -112,12 +112,12 @@ func (sf *SendTextForm) sendText() error {
 		"text_length", len(sf.result.Text))
 
 	// Send the text to tmux first
-	if err := sf.tmuxClient.SendKeys(sf.sessionName, sf.result.Text); err != nil {
+	if err := sf.shellService.SendKeys(sf.sessionName, sf.result.Text); err != nil {
 		return fmt.Errorf("failed to send text to tmux: %w", err)
 	}
 
 	// Then send Enter key separately to submit
-	if err := sf.tmuxClient.SendKeys(sf.sessionName, "C-m"); err != nil {
+	if err := sf.shellService.SendKeys(sf.sessionName, "C-m"); err != nil {
 		return fmt.Errorf("failed to send enter key to tmux: %w", err)
 	}
 

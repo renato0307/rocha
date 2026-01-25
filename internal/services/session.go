@@ -1,4 +1,4 @@
-package application
+package services
 
 import (
 	"context"
@@ -316,3 +316,112 @@ func (s *SessionService) ArchiveSession(
 	return nil
 }
 
+// LoadState loads the session state from the repository
+func (s *SessionService) LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error) {
+	logging.Logger.Debug("Loading session state", "includeArchived", includeArchived)
+	return s.sessionRepo.LoadState(ctx, includeArchived)
+}
+
+// SaveState saves the session state to the repository
+func (s *SessionService) SaveState(ctx context.Context, state *domain.SessionCollection) error {
+	logging.Logger.Debug("Saving session state")
+	return s.sessionRepo.SaveState(ctx, state)
+}
+
+// GetSession retrieves a session by name
+func (s *SessionService) GetSession(ctx context.Context, name string) (*domain.Session, error) {
+	logging.Logger.Debug("Getting session", "name", name)
+	return s.sessionRepo.Get(ctx, name)
+}
+
+// ListSessions retrieves all sessions
+func (s *SessionService) ListSessions(ctx context.Context, includeArchived bool) ([]domain.Session, error) {
+	logging.Logger.Debug("Listing sessions", "includeArchived", includeArchived)
+	return s.sessionRepo.List(ctx, includeArchived)
+}
+
+// AddSession adds a new session to the repository
+func (s *SessionService) AddSession(ctx context.Context, session domain.Session) error {
+	logging.Logger.Debug("Adding session", "name", session.Name)
+	return s.sessionRepo.Add(ctx, session)
+}
+
+// UpdateComment updates the comment for a session
+func (s *SessionService) UpdateComment(ctx context.Context, name, comment string) error {
+	logging.Logger.Debug("Updating session comment", "name", name)
+	return s.sessionRepo.UpdateComment(ctx, name, comment)
+}
+
+// UpdateStatus updates the status for a session
+func (s *SessionService) UpdateStatus(ctx context.Context, name string, status *string) error {
+	logging.Logger.Debug("Updating session status", "name", name)
+	return s.sessionRepo.UpdateStatus(ctx, name, status)
+}
+
+// ToggleFlag toggles the flag for a session
+func (s *SessionService) ToggleFlag(ctx context.Context, name string) error {
+	logging.Logger.Debug("Toggling session flag", "name", name)
+	return s.sessionRepo.ToggleFlag(ctx, name)
+}
+
+// SwapPositions swaps the positions of two sessions
+func (s *SessionService) SwapPositions(ctx context.Context, name1, name2 string) error {
+	logging.Logger.Debug("Swapping session positions", "name1", name1, "name2", name2)
+	return s.sessionRepo.SwapPositions(ctx, name1, name2)
+}
+
+// UpdateRepoSource updates the repository source for a session
+func (s *SessionService) UpdateRepoSource(ctx context.Context, name, repoSource string) error {
+	logging.Logger.Debug("Updating session repo source", "name", name)
+	return s.sessionRepo.UpdateRepoSource(ctx, name, repoSource)
+}
+
+// RenameSession renames a tmux session
+func (s *SessionService) RenameSession(oldName, newName string) error {
+	logging.Logger.Debug("Renaming tmux session", "oldName", oldName, "newName", newName)
+	return s.tmuxClient.RenameSession(oldName, newName)
+}
+
+// SessionExists checks if a tmux session exists
+func (s *SessionService) SessionExists(name string) bool {
+	return s.tmuxClient.SessionExists(name)
+}
+
+// RecreateSession recreates a tmux session that was previously closed
+func (s *SessionService) RecreateSession(name, worktreePath, claudeDir, tmuxStatusPosition string) error {
+	logging.Logger.Info("Recreating tmux session", "name", name)
+	_, err := s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+	return err
+}
+
+// ToggleArchive toggles the archive status of a session
+func (s *SessionService) ToggleArchive(ctx context.Context, name string) error {
+	logging.Logger.Debug("Toggling archive status", "name", name)
+	return s.sessionRepo.ToggleArchive(ctx, name)
+}
+
+// UpdateState updates the state and execution ID of a session
+func (s *SessionService) UpdateState(ctx context.Context, name string, state domain.SessionState, executionID string) error {
+	logging.Logger.Debug("Updating session state", "name", name, "state", state, "executionID", executionID)
+	return s.sessionRepo.UpdateState(ctx, name, state, executionID)
+}
+
+// ResolveClaudeDir resolves the Claude directory for a given repo
+func (s *SessionService) ResolveClaudeDir(repoInfo, userOverride string) string {
+	return s.claudeDirResolver.Resolve(repoInfo, userOverride)
+}
+
+// ListTmuxSessions returns all running tmux sessions
+func (s *SessionService) ListTmuxSessions() ([]*ports.TmuxSession, error) {
+	return s.tmuxClient.ListSessions()
+}
+
+// CreateTmuxSession creates a new tmux session
+func (s *SessionService) CreateTmuxSession(name, worktreePath, claudeDir, tmuxStatusPosition string) (*ports.TmuxSession, error) {
+	return s.tmuxClient.CreateSession(name, worktreePath, claudeDir, tmuxStatusPosition)
+}
+
+// KillTmuxSession kills a tmux session without affecting the database
+func (s *SessionService) KillTmuxSession(name string) error {
+	return s.tmuxClient.KillSession(name)
+}

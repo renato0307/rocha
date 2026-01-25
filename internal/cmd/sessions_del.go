@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"rocha/internal/application"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SessionsDelCmd deletes a session
@@ -19,20 +18,13 @@ type SessionsDelCmd struct {
 }
 
 // Run executes the del command
-func (s *SessionsDelCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (s *SessionsDelCmd) Run(container *Container, cli *CLI) error {
 	killTmux := !s.SkipKillTmux
 	removeWorktree := !s.SkipRemoveWorktree
 
 	logging.Logger.Info("Executing sessions del command", "session", s.Name, "killTmux", killTmux, "removeWorktree", removeWorktree, "force", s.Force)
 
 	ctx := context.Background()
-	container, err := NewContainer(tmuxClient)
-	if err != nil {
-		logging.Logger.Error("Failed to create container", "error", err)
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
 	session, err := s.validateSession(ctx, container)
 	if err != nil {
 		return err
@@ -49,7 +41,7 @@ func (s *SessionsDelCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 
 func (s *SessionsDelCmd) validateSession(ctx context.Context, container *Container) (*domain.Session, error) {
 	logging.Logger.Debug("Checking if session exists", "session", s.Name)
-	session, err := container.SessionRepository.Get(ctx, s.Name)
+	session, err := container.SessionService.GetSession(ctx, s.Name)
 	if err != nil {
 		logging.Logger.Error("Session not found", "session", s.Name, "error", err)
 		return nil, fmt.Errorf("session not found: %w", err)
@@ -81,7 +73,7 @@ func (s *SessionsDelCmd) confirmDeletion(session *domain.Session, killTmux, remo
 
 func (s *SessionsDelCmd) deleteSession(ctx context.Context, container *Container, killTmux, removeWorktree bool) error {
 	logging.Logger.Info("Deleting session", "session", s.Name)
-	err := container.SessionService.DeleteSession(ctx, s.Name, application.DeleteSessionOptions{
+	err := container.SessionService.DeleteSession(ctx, s.Name, services.DeleteSessionOptions{
 		KillTmux:       killTmux,
 		RemoveWorktree: removeWorktree,
 	})

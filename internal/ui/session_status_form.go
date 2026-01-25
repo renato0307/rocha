@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SessionStatusFormResult contains the result of the status update operation
@@ -21,25 +21,25 @@ type SessionStatusFormResult struct {
 
 // SessionStatusForm is a Bubble Tea component for setting session status
 type SessionStatusForm struct {
-	Completed    bool
-	cancelled    bool
-	form         *huh.Form
-	result       SessionStatusFormResult
-	selectedItem string // Holds the selected option (status name or "<clear>")
-	sessionName  string
-	sessionRepo  ports.SessionRepository
-	statusConfig *StatusConfig
+	Completed      bool
+	cancelled      bool
+	form           *huh.Form
+	result         SessionStatusFormResult
+	selectedItem   string // Holds the selected option (status name or "<clear>")
+	sessionName    string
+	sessionService *services.SessionService
+	statusConfig   *StatusConfig
 }
 
 // NewSessionStatusForm creates a new session status form
-func NewSessionStatusForm(sessionRepo ports.SessionRepository, sessionName string, currentStatus *string, statusConfig *StatusConfig) *SessionStatusForm {
+func NewSessionStatusForm(sessionService *services.SessionService, sessionName string, currentStatus *string, statusConfig *StatusConfig) *SessionStatusForm {
 	sf := &SessionStatusForm{
 		result: SessionStatusFormResult{
 			SessionName: sessionName,
 		},
-		sessionName:  sessionName,
-		sessionRepo:  sessionRepo,
-		statusConfig: statusConfig,
+		sessionName:    sessionName,
+		sessionService: sessionService,
+		statusConfig:   statusConfig,
 	}
 
 	// Build status options
@@ -138,8 +138,8 @@ func (sf *SessionStatusForm) updateStatus() error {
 		"session", sf.sessionName,
 		"status", sf.selectedItem)
 
-	// Update in database
-	if err := sf.sessionRepo.UpdateStatus(context.Background(), sf.sessionName, newStatus); err != nil {
+	// Update via service
+	if err := sf.sessionService.UpdateStatus(context.Background(), sf.sessionName, newStatus); err != nil {
 		return fmt.Errorf("failed to update session status: %w", err)
 	}
 

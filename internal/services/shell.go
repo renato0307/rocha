@@ -1,8 +1,9 @@
-package application
+package services
 
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"time"
 
 	"rocha/internal/domain"
@@ -10,20 +11,23 @@ import (
 	"rocha/internal/ports"
 )
 
-// ShellService handles shell session management
+// ShellService handles shell session management and tmux pane operations
 type ShellService struct {
+	editorOpener  ports.EditorOpener
 	sessionReader ports.SessionReader
 	sessionWriter ports.SessionWriter
-	tmuxClient    ports.TmuxSessionLifecycle
+	tmuxClient    ports.TmuxClient
 }
 
 // NewShellService creates a new ShellService
 func NewShellService(
 	sessionReader ports.SessionReader,
 	sessionWriter ports.SessionWriter,
-	tmuxClient ports.TmuxSessionLifecycle,
+	tmuxClient ports.TmuxClient,
+	editorOpener ports.EditorOpener,
 ) *ShellService {
 	return &ShellService{
+		editorOpener:  editorOpener,
 		sessionReader: sessionReader,
 		sessionWriter: sessionWriter,
 		tmuxClient:    tmuxClient,
@@ -110,4 +114,28 @@ func (s *ShellService) GetRunningTmuxSessions(ctx context.Context) (map[string]b
 
 	logging.Logger.Debug("Found running tmux sessions", "count", len(runningSessions))
 	return runningSessions, nil
+}
+
+// SendKeys sends keys to a tmux session
+func (s *ShellService) SendKeys(sessionName string, keys ...string) error {
+	logging.Logger.Debug("Sending keys to tmux session", "session", sessionName)
+	return s.tmuxClient.SendKeys(sessionName, keys...)
+}
+
+// OpenEditor opens the specified path in the configured editor
+func (s *ShellService) OpenEditor(path, editor string) error {
+	logging.Logger.Debug("Opening editor", "path", path, "editor", editor)
+	return s.editorOpener.Open(path, editor)
+}
+
+// SourceFile reloads tmux configuration from the specified file
+func (s *ShellService) SourceFile(configPath string) error {
+	logging.Logger.Debug("Sourcing tmux config file", "path", configPath)
+	return s.tmuxClient.SourceFile(configPath)
+}
+
+// GetAttachCommand returns an exec.Cmd configured for attaching to a tmux session
+func (s *ShellService) GetAttachCommand(sessionName string) *exec.Cmd {
+	logging.Logger.Debug("Getting attach command for session", "session", sessionName)
+	return s.tmuxClient.GetAttachCommand(sessionName)
 }

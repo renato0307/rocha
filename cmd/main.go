@@ -9,7 +9,6 @@ import (
 	"rocha/internal/adapters/tmux"
 	"rocha/internal/cmd"
 	"rocha/internal/config"
-	"rocha/internal/ports"
 	"rocha/internal/ui"
 )
 
@@ -48,8 +47,14 @@ func main() {
 		settings = &config.Settings{} // Use empty settings
 	}
 
-	// Create tmux client for dependency injection
+	// Create tmux client and container for dependency injection
 	tmuxClient := tmux.NewClient()
+	container, err := cmd.NewContainer(tmuxClient)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing: %v\n", err)
+		os.Exit(1)
+	}
+	defer container.Close()
 
 	// Parse CLI arguments with Kong
 	var cli cmd.CLI
@@ -61,7 +66,7 @@ func main() {
 			"version": versionInfo(),
 		},
 		kong.UsageOnError(),
-		kong.BindTo(tmuxClient, (*ports.TmuxClient)(nil)),
+		kong.BindTo(container, (*cmd.Container)(nil)),
 		kong.BindTo(&cli, (*cmd.CLI)(nil)),
 	)
 

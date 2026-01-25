@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SessionSetCmd sets configuration for a session
@@ -34,17 +34,10 @@ func (s *SessionSetCmd) AfterApply() error {
 }
 
 // Run executes the set command
-func (s *SessionSetCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (s *SessionSetCmd) Run(container *Container, cli *CLI) error {
 	ctx := context.Background()
 	logging.Logger.Info("Executing session set command",
 		"name", s.Name, "variable", s.Variable, "value", s.Value, "all", s.All, "killTmux", s.KillTmux)
-
-	container, err := NewContainer(tmuxClient)
-	if err != nil {
-		logging.Logger.Error("Failed to create container", "error", err)
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
 
 	sessionNames, err := s.getSessionNames(ctx, container)
 	if err != nil {
@@ -58,7 +51,7 @@ func (s *SessionSetCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 
 	successCount, failedSessions := updateAllSessions(ctx, sessionNames, updater)
 
-	s.handleTmuxSessions(container.TmuxClient, sessionNames, failedSessions)
+	s.handleTmuxSessions(container.SessionService, sessionNames, failedSessions)
 
 	s.printSummary(successCount, len(sessionNames))
 
@@ -72,7 +65,7 @@ func (s *SessionSetCmd) getSessionNames(ctx context.Context, container *Containe
 	}
 
 	logging.Logger.Info("Updating all sessions", "variable", s.Variable)
-	sessions, err := container.SessionRepository.List(ctx, false)
+	sessions, err := container.SessionService.ListSessions(ctx, false)
 	if err != nil {
 		logging.Logger.Error("Failed to list sessions", "error", err)
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
@@ -110,16 +103,16 @@ func (s *SessionSetCmd) createUpdater(container *Container) (sessionUpdater, err
 	}
 }
 
-func (s *SessionSetCmd) handleTmuxSessions(tmuxClient ports.TmuxClient, sessionNames, failedSessions []string) {
+func (s *SessionSetCmd) handleTmuxSessions(sessionService *services.SessionService, sessionNames, failedSessions []string) {
 	successfulSessions := filterSuccessfulSessions(sessionNames, failedSessions)
 
 	if s.KillTmux {
-		killTmuxSessions(tmuxClient, successfulSessions)
+		killTmuxSessions(sessionService, successfulSessions)
 		return
 	}
 
 	restartCmd := s.buildRestartCommand()
-	warnAboutRunningSessions(tmuxClient, successfulSessions, restartCmd)
+	warnAboutRunningSessions(sessionService, successfulSessions, restartCmd)
 }
 
 func (s *SessionSetCmd) buildRestartCommand() string {
@@ -180,12 +173,12 @@ func filterSuccessfulSessions(sessionNames, failedSessions []string) []string {
 }
 
 // killTmuxSessions kills tmux sessions for the given session names
-func killTmuxSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []string) {
+func killTmuxSessions(sessionService *services.SessionService, sessionNames []string) {
 	logging.Logger.Info("Killing tmux sessions", "count", len(sessionNames))
 
 	for _, name := range sessionNames {
 		logging.Logger.Debug("Killing main tmux session", "session", name)
-		if err := tmuxClient.KillSession(name); err != nil {
+		if err := sessionService.KillTmuxSession(name); err != nil {
 			logging.Logger.Warn("Failed to kill tmux session", "session", name, "error", err)
 			fmt.Printf("Warning: Failed to kill tmux session '%s': %v\n", name, err)
 		} else {
@@ -195,7 +188,7 @@ func killTmuxSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []stri
 
 		shellName := name + "-shell"
 		logging.Logger.Debug("Attempting to kill shell session", "session", shellName)
-		if err := tmuxClient.KillSession(shellName); err != nil {
+		if err := sessionService.KillTmuxSession(shellName); err != nil {
 			logging.Logger.Debug("Shell session not found or already killed", "session", shellName)
 		} else {
 			logging.Logger.Debug("Shell tmux session killed", "session", shellName)
@@ -207,11 +200,11 @@ func killTmuxSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []stri
 }
 
 // warnAboutRunningSessions checks for running tmux sessions and prints a warning with restart instructions
-func warnAboutRunningSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []string, restartCmd string) {
+func warnAboutRunningSessions(sessionService *services.SessionService, sessionNames []string, restartCmd string) {
 	logging.Logger.Debug("Checking for running tmux sessions")
 
 	// Get all running tmux sessions
-	allRunningSessions, err := tmuxClient.ListSessions()
+	allRunningSessions, err := sessionService.ListTmuxSessions()
 	if err != nil {
 		logging.Logger.Debug("No tmux sessions running or tmux error", "error", err)
 		return

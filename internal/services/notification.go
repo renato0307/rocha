@@ -1,4 +1,4 @@
-package application
+package services
 
 import (
 	"context"
@@ -11,18 +11,21 @@ import (
 
 // NotificationService handles notification events from Claude hooks
 type NotificationService struct {
-	sessionRepo ports.SessionStateUpdater
 	sessionReader ports.SessionReader
+	sessionRepo   ports.SessionStateUpdater
+	soundPlayer   ports.SoundPlayer
 }
 
 // NewNotificationService creates a new NotificationService
 func NewNotificationService(
 	sessionRepo ports.SessionStateUpdater,
 	sessionReader ports.SessionReader,
+	soundPlayer ports.SoundPlayer,
 ) *NotificationService {
 	return &NotificationService{
 		sessionReader: sessionReader,
 		sessionRepo:   sessionRepo,
+		soundPlayer:   soundPlayer,
 	}
 }
 
@@ -111,4 +114,16 @@ func (s *NotificationService) ShouldPlaySound(eventType string) bool {
 	default:
 		return false
 	}
+}
+
+// PlaySound plays the default notification sound
+func (s *NotificationService) PlaySound() error {
+	logging.Logger.Debug("Playing notification sound")
+	return s.soundPlayer.PlaySound()
+}
+
+// PlaySoundForEvent plays a sound for a specific event type
+func (s *NotificationService) PlaySoundForEvent(eventType string) error {
+	logging.Logger.Debug("Playing sound for event", "event", eventType)
+	return s.soundPlayer.PlaySoundForEvent(eventType)
 }

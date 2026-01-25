@@ -6,11 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"rocha/internal/application"
 	"rocha/internal/config"
-	"rocha/internal/domain"
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SessionsMoveCmd moves sessions between ROCHA_HOME directories
@@ -22,7 +20,7 @@ type SessionsMoveCmd struct {
 }
 
 // Run executes the move command
-func (s *SessionsMoveCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (s *SessionsMoveCmd) Run(container *Container, cli *CLI) error {
 	logging.Logger.Info("Executing sessions move command", "repo", s.Repo, "from", s.From, "to", s.To, "force", s.Force)
 
 	if err := s.validateRepoFormat(); err != nil {
@@ -39,16 +37,21 @@ func (s *SessionsMoveCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		return err
 	}
 
-	sourceRepo, destRepo, err := s.openRepositories(sourceHome, destHome)
-	if err != nil {
-		return err
-	}
-	defer sourceRepo.Close()
-	defer destRepo.Close()
+	ctx := context.Background()
 
-	sourceSessions, err := s.getSourceSessions(sourceRepo)
+	// Get session count for confirmation
+	sourceSessions, err := container.MigrationService.GetSessionsForRepo(
+		ctx,
+		sourceHome,
+		s.Repo,
+	)
 	if err != nil {
-		return err
+		logging.Logger.Error("Failed to get sessions for repo", "repo", s.Repo, "error", err)
+		return fmt.Errorf("failed to get sessions for repository %s: %w", s.Repo, err)
+	}
+
+	if len(sourceSessions) == 0 {
+		return fmt.Errorf("no sessions found for repository: %s", s.Repo)
 	}
 
 	if !s.Force {
@@ -57,7 +60,22 @@ func (s *SessionsMoveCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		}
 	}
 
-	return s.moveRepository(tmuxClient, sourceSessions, sourceRepo, destRepo, sourceHome, destHome)
+	fmt.Printf("\nMoving repository: %s\n", s.Repo)
+	logging.Logger.Info("Starting repository move", "repo", s.Repo)
+
+	result, err := container.MigrationService.MoveRepositoryBetweenHomes(ctx, services.MoveRepositoryBetweenHomesParams{
+		DestRochaHome:   destHome,
+		RepoInfo:        s.Repo,
+		SourceRochaHome: sourceHome,
+	})
+	if err != nil {
+		logging.Logger.Error("Failed to move repository", "repo", s.Repo, "error", err)
+		return fmt.Errorf("failed to move repository %s: %w", s.Repo, err)
+	}
+
+	fmt.Printf("Moved repository '%s' (%d session(s))\n", s.Repo, result.MovedSessionCount)
+	logging.Logger.Info("Sessions move command completed successfully", "movedCount", result.MovedSessionCount, "repo", s.Repo)
+	return nil
 }
 
 func (s *SessionsMoveCmd) validateRepoFormat() error {
@@ -92,42 +110,6 @@ func (s *SessionsMoveCmd) createDestPath(destHome string) error {
 	return nil
 }
 
-func (s *SessionsMoveCmd) openRepositories(sourceHome, destHome string) (ports.SessionRepository, ports.SessionRepository, error) {
-	logging.Logger.Debug("Opening repositories", "sourceHome", sourceHome, "destHome", destHome)
-
-	sourceRepo, err := NewSessionRepositoryForPath(sourceHome)
-	if err != nil {
-		logging.Logger.Error("Failed to open source repository", "path", sourceHome, "error", err)
-		return nil, nil, fmt.Errorf("failed to open source database: %w", err)
-	}
-
-	destRepo, err := NewSessionRepositoryForPath(destHome)
-	if err != nil {
-		sourceRepo.Close()
-		logging.Logger.Error("Failed to open destination repository", "path", destHome, "error", err)
-		return nil, nil, fmt.Errorf("failed to open destination database: %w", err)
-	}
-
-	return sourceRepo, destRepo, nil
-}
-
-func (s *SessionsMoveCmd) getSourceSessions(sourceRepo ports.SessionReader) ([]domain.Session, error) {
-	ctx := context.Background()
-	sessions, err := sourceRepo.List(ctx, false)
-	if err != nil {
-		logging.Logger.Error("Failed to list sessions", "error", err)
-		return nil, fmt.Errorf("failed to list sessions: %w", err)
-	}
-
-	var repoSessions []domain.Session
-	for _, sess := range sessions {
-		if sess.RepoInfo == s.Repo {
-			repoSessions = append(repoSessions, sess)
-		}
-	}
-	return repoSessions, nil
-}
-
 func (s *SessionsMoveCmd) confirmMove(sourceHome, destHome string, sessionCount int) bool {
 	logging.Logger.Debug("Prompting user for confirmation", "repo", s.Repo)
 	fmt.Println("WARNING: This operation will:")
@@ -146,51 +128,4 @@ func (s *SessionsMoveCmd) confirmMove(sourceHome, destHome string, sessionCount 
 	}
 	logging.Logger.Info("User confirmed session move", "repo", s.Repo)
 	return true
-}
-
-func (s *SessionsMoveCmd) moveRepository(
-	tmuxClient ports.TmuxClient,
-	sourceSessions []domain.Session,
-	sourceRepo ports.SessionRepository,
-	destRepo ports.SessionRepository,
-	sourceHome, destHome string,
-) error {
-	ctx := context.Background()
-
-	// Create a temporary container for the migration service
-	container, err := NewContainer(tmuxClient)
-	if err != nil {
-		logging.Logger.Error("Failed to create container", "error", err)
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	defer container.Close()
-
-	fmt.Printf("\nMoving repository: %s\n", s.Repo)
-	logging.Logger.Info("Starting repository move", "repo", s.Repo)
-
-	movedSessions, err := container.MigrationService.MoveRepository(ctx, application.MoveRepositoryParams{
-		DestRochaHome:   destHome,
-		DestSessionRepo: destRepo,
-		RepoInfo:        s.Repo,
-		SourceRochaHome: sourceHome,
-		SourceSessions:  sourceSessions,
-	})
-	if err != nil {
-		logging.Logger.Error("Failed to move repository", "repo", s.Repo, "error", err)
-		return fmt.Errorf("failed to move repository %s: %w", s.Repo, err)
-	}
-
-	// Delete sessions from source store after successful move
-	fmt.Printf("Cleaning up source database...\n")
-	for _, sessName := range movedSessions {
-		logging.Logger.Debug("Deleting session from source", "session", sessName)
-		if err := sourceRepo.Delete(ctx, sessName); err != nil {
-			logging.Logger.Warn("Failed to delete session from source", "session", sessName, "error", err)
-			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", sessName, err)
-		}
-	}
-
-	fmt.Printf("Moved repository '%s' (%d session(s))\n", s.Repo, len(movedSessions))
-	logging.Logger.Info("Sessions move command completed successfully", "movedCount", len(movedSessions), "repo", s.Repo)
-	return nil
 }

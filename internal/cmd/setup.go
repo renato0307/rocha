@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"rocha/internal/ports"
 )
 
 // SetupCmd configures tmux automatically
@@ -26,7 +24,7 @@ set -g mouse on  # Enable mouse support (scrolling, pane selection, resizing)
 )
 
 // Run executes the setup command
-func (s *SetupCmd) Run(tmuxClient ports.TmuxClient) error {
+func (s *SetupCmd) Run(container *Container) error {
 	// Verify required dependencies
 	if err := s.verifyDependencies(); err != nil {
 		return err
@@ -50,7 +48,7 @@ func (s *SetupCmd) Run(tmuxClient ports.TmuxClient) error {
 	}
 
 	// Setup tmux configuration
-	if err := s.setupTmux(tmuxClient, homeDir); err != nil {
+	if err := s.setupTmux(container, homeDir); err != nil {
 		return err
 	}
 
@@ -112,7 +110,7 @@ func (s *SetupCmd) setupPath(homeDir, rochaDir string) error {
 }
 
 // setupTmux configures tmux status bar (idempotent)
-func (s *SetupCmd) setupTmux(tmuxClient ports.TmuxClient, homeDir string) error {
+func (s *SetupCmd) setupTmux(container *Container, homeDir string) error {
 	tmuxConfPath := filepath.Join(homeDir, ".tmux.conf")
 
 	// Read existing config
@@ -179,7 +177,7 @@ func (s *SetupCmd) setupTmux(tmuxClient ports.TmuxClient, homeDir string) error 
 	fmt.Printf("✓ Added %d missing setting(s) to ~/.tmux.conf\n", len(missingSettings))
 
 	// Reload tmux configuration if tmux is running
-	if err := tmuxClient.SourceFile(tmuxConfPath); err != nil {
+	if err := container.ShellService.SourceFile(tmuxConfPath); err != nil {
 		// It's OK if this fails (tmux might not be running)
 		fmt.Println("  Note: tmux is not currently running. Configuration will be loaded when you start tmux.")
 	} else {

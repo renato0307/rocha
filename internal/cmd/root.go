@@ -15,7 +15,6 @@ import (
 	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
-	"rocha/internal/ports"
 	"rocha/internal/ui"
 )
 
@@ -113,7 +112,7 @@ type RunCmd struct {
 }
 
 // Run executes the TUI
-func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (r *RunCmd) Run(container *Container, cli *CLI) error {
 	// Apply RunCmd-specific settings with proper precedence
 	// Only apply if flag is at default value and env var is not set
 
@@ -160,7 +159,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		}
 
 		// Apply TmuxStatusPosition setting
-		if r.TmuxStatusPosition == ports.DefaultTmuxStatusPosition {
+		if r.TmuxStatusPosition == config.DefaultTmuxStatusPosition {
 			if _, hasEnv := os.LookupEnv("ROCHA_TMUX_STATUS_POSITION"); !hasEnv {
 				if cli.settings.TmuxStatusPosition != "" {
 					r.TmuxStatusPosition = cli.settings.TmuxStatusPosition
@@ -195,15 +194,8 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	os.Setenv("ROCHA_EXECUTION_ID", executionID)
 	logging.Logger.Info("Generated new execution ID", "execution_id", executionID)
 
-	// Create container with all services
-	container, err := NewContainer(tmuxClient)
-	if err != nil {
-		return fmt.Errorf("failed to create container: %w", err)
-	}
-	defer container.Close()
-
 	// Load state for initial session info
-	st, err := container.SessionRepository.LoadState(context.Background(), false)
+	st, err := container.SessionService.LoadState(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load session state: %v", err)
 		logging.Logger.Warn("Failed to load session state", "error", err)
@@ -212,7 +204,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	logging.Logger.Debug("State loaded", "existing_sessions", len(st.Sessions))
 
 	// Sync with running tmux sessions
-	runningSessions, err := tmuxClient.ListSessions()
+	runningSessions, err := container.SessionService.ListTmuxSessions()
 	if err != nil {
 		logging.Logger.Warn("Failed to list tmux sessions", "error", err)
 	} else {
@@ -225,7 +217,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		// Update execution ID for running sessions without changing last_updated timestamp
 		for _, sessionName := range runningNames {
 			if _, exists := st.Sessions[sessionName]; exists {
-				if err := container.SessionRepository.UpdateState(context.Background(), sessionName, domain.StateIdle, executionID); err != nil {
+				if err := container.SessionService.UpdateState(context.Background(), sessionName, domain.StateIdle, executionID); err != nil {
 					logging.Logger.Error("Failed to update execution ID", "error", err, "session", sessionName)
 				} else {
 					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
@@ -261,10 +253,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	}
 	p := tea.NewProgram(
 		ui.NewModel(
-			tmuxClient,
-			container.SessionRepository,
 			r.Editor,
-			container.EditorOpener,
 			errorClearDelay,
 			statusConfig,
 			timestampConfig,

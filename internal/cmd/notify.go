@@ -55,7 +55,7 @@ func (n *NotifyCmd) Run(cli *CLI) error {
 	// Play sound (presentation concern - stays in command)
 	if container.NotificationService.ShouldPlaySound(n.EventType) {
 		logging.Logger.Debug("Playing notification sound", "event", n.EventType)
-		if err := container.SoundPlayer.PlaySoundForEvent(n.EventType); err != nil {
+		if err := container.NotificationService.PlaySoundForEvent(n.EventType); err != nil {
 			logging.Logger.Error("Failed to play sound", "error", err)
 			return fmt.Errorf("failed to play notification sound: %w", err)
 		}

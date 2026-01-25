@@ -8,7 +8,6 @@ import (
 	"text/tabwriter"
 
 	"rocha/internal/domain"
-	"rocha/internal/ports"
 )
 
 // SessionsListCmd lists all sessions
@@ -18,14 +17,14 @@ type SessionsListCmd struct {
 }
 
 // Run executes the list command
-func (s *SessionsListCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
-	container, err := NewContainer(tmuxClient)
+func (s *SessionsListCmd) Run(cli *CLI) error {
+	container, err := NewContainer(nil)
 	if err != nil {
 		return fmt.Errorf("failed to initialize: %w", err)
 	}
 	defer container.Close()
 
-	sessions, err := container.SessionRepository.List(context.Background(), s.ShowArchived)
+	sessions, err := container.SessionService.ListSessions(context.Background(), s.ShowArchived)
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}

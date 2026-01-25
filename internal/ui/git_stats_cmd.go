@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rocha/internal/application"
+	"rocha/internal/services"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 )
@@ -32,7 +32,7 @@ type GitStatsErrorMsg struct {
 
 // StartGitStatsFetcher starts an async worker that fetches git stats
 // Returns a tea.Cmd that will send GitStatsReadyMsg or GitStatsErrorMsg
-func StartGitStatsFetcher(gitService *application.GitService, request GitStatsRequest) tea.Cmd {
+func StartGitStatsFetcher(gitService *services.GitService, request GitStatsRequest) tea.Cmd {
 	return func() tea.Msg {
 		// Create context with 3 second timeout
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

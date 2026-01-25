@@ -2,182 +2,101 @@
 
 TUI application for managing Claude Code sessions via tmux with git worktree support.
 
-## System Overview
+## Hexagonal Architecture Overview
 
 ```mermaid
 graph TB
-    subgraph "CLI Layer"
+    subgraph "Outer Layer - Drivers"
         CLI[CLI Commands<br/>cmd/]
-    end
-
-    subgraph "UI Layer"
         TUI[TUI<br/>ui/]
     end
 
-    subgraph "Business Logic"
-        TMUX[Tmux Client<br/>tmux/]
-        STORAGE[Storage Layer<br/>storage/]
-        GIT[Git Operations<br/>git/]
-        EDITOR[Editor Opener<br/>editor/]
+    subgraph "Application Layer"
+        SS[SessionService]
+        GS[GitService]
+        SHS[ShellService]
+        STS[SettingsService]
+        NS[NotificationService]
+        MS[MigrationService]
     end
 
-    subgraph "Cross-Cutting Concerns"
-        LOG[Logging<br/>logging/]
-        VER[Version<br/>version/]
-        PATHS[Paths<br/>paths/]
+    subgraph "Domain"
+        DOM[Domain Entities<br/>domain/]
     end
 
-    subgraph "External"
-        TMUXCLI[tmux CLI]
-        GITCLI[git CLI]
-        DB[SQLite Database<br/>rocha.db]
-        LOGFS[Log Files]
+    subgraph "Ports Layer"
+        SR[SessionRepository]
+        GR[GitRepository]
+        TC[TmuxClient]
+        EO[EditorOpener]
+        SP[SoundPlayer]
     end
 
-    CLI --> TUI
-    CLI --> TMUX
-    CLI --> GIT
-    CLI --> STORAGE
-    TUI --> TMUX
-    TUI --> STORAGE
-    TUI --> GIT
-    TUI --> EDITOR
-    TMUX --> TMUXCLI
-    STORAGE --> DB
-    GIT --> GITCLI
+    subgraph "Adapters Layer"
+        SQLITE[SQLite Adapter<br/>storage/]
+        GITCLI[Git CLI Adapter<br/>git/]
+        TMUXCLI[Tmux CLI Adapter<br/>tmux/]
+        EDITOR[Editor Adapter<br/>editor/]
+        SOUND[Sound Adapter<br/>sound/]
+    end
 
-    %% Cross-cutting concerns (dotted lines)
-    CLI -.-> LOG
-    CLI -.-> PATHS
-    TUI -.-> LOG
-    TUI -.-> VER
-    TUI -.-> PATHS
-    TMUX -.-> LOG
-    STORAGE -.-> PATHS
-    LOG --> LOGFS
+    subgraph "External Systems"
+        DB[(SQLite DB)]
+        GIT[git CLI]
+        TMUX[tmux CLI]
+        VSCODE[VS Code/Editor]
+        AUDIO[Audio System]
+    end
+
+    CLI --> SS
+    CLI --> GS
+    CLI --> SHS
+    CLI --> STS
+    CLI --> NS
+    CLI --> MS
+    TUI --> SS
+    TUI --> GS
+    TUI --> SHS
+
+    SS --> SR
+    SS --> GR
+    SS --> TC
+    GS --> GR
+    SHS --> SR
+    SHS --> TC
+    SHS --> EO
+    NS --> SR
+    NS --> SP
+    MS --> GR
+    MS --> TC
+    STS --> SR
+
+    SR -.-> SQLITE
+    GR -.-> GITCLI
+    TC -.-> TMUXCLI
+    EO -.-> EDITOR
+    SP -.-> SOUND
+
+    SQLITE --> DB
+    GITCLI --> GIT
+    TMUXCLI --> TMUX
+    EDITOR --> VSCODE
+    SOUND --> AUDIO
 ```
 
-### Cross-Cutting Concerns
+### Architecture Layers
 
-Components shown with dotted lines (-.->) are **cross-cutting concerns** - they're used across multiple layers but don't participate in the main architectural flow:
+1. **Drivers (Outer Layer)**: CLI commands and TUI - entry points that use services
+2. **Application Services**: Business logic orchestration - facade to the domain
+3. **Domain**: Core entities and business rules
+4. **Ports**: Interface definitions - contracts between layers
+5. **Adapters**: Infrastructure implementations - connect to external systems
 
-- **logging/**: Structured logging (slog) used by cmd, ui, and tmux for debugging and audit trails
-  - No business logic depends on logging
-  - Can be disabled/redirected without affecting core functionality
-  - Used for: operation traces, error diagnostics, debugging
+### Key Principle
 
-- **version/**: Version and tagline constants
-  - Read-only data used for display
-  - No behavioral dependencies
-
-- **paths/**: Centralized path computation for rocha directories
-  - Single source of truth for all rocha paths (database, worktrees, settings)
-  - Uses `ROCHA_HOME` environment variable (default: `~/.rocha`)
-  - No behavioral logic, only path string computation
-  - Used by: cmd (for database/config), ui (for worktrees), storage (for settings)
-
-These packages are designed to be:
-- **Non-invasive**: Removing them doesn't break business logic
-- **Uni-directional**: They don't call back into application code
-- **Replaceable**: Can swap implementations (e.g., different log backends, path strategies)
-
-## Component Architecture
-
-```mermaid
-classDiagram
-    class Client {
-        <<interface>>
-        SessionManager
-        Attacher
-        PaneOperations
-        Configurator
-    }
-
-    class DefaultClient {
-        +Create()
-        +List()
-        +Kill()
-        +Attach()
-        +SendKeys()
-    }
-
-    class Store {
-        +Load()
-        +Save()
-        +UpdateSession()
-        +UpdateSessionStatus()
-        +SwapPositions()
-        +ToggleFlag()
-        +GetSession()
-        +ListSessions()
-    }
-
-    class StatusConfig {
-        +Statuses: []string
-        +Colors: []string
-        +GetColor()
-        +GetNextStatus()
-    }
-
-    class Git {
-        +CreateWorktree()
-        +RemoveWorktree()
-        +IsGitRepo()
-        +GetRepoInfo()
-    }
-
-    class Model {
-        +Update()
-        +View()
-        +sessionList: SessionList
-        +sessionForm: SessionForm
-        +sessionStatusForm: SessionStatusForm
-        +statusConfig: StatusConfig
-    }
-
-    class SessionList {
-        +Init() "Start polling"
-        +Update()
-        +View()
-        +RefreshFromState()
-        +cycleSessionStatus()
-        -pollStateCmd() "Every 2s"
-    }
-
-    class SessionForm {
-        +Init()
-        +Update()
-        +View()
-        +Result()
-        +createSessionCmd() "Async creation"
-    }
-
-    class SessionStatusForm {
-        +Init()
-        +Update()
-        +View()
-        +Result()
-        +updateStatus() "Update status in DB"
-    }
-
-    DefaultClient ..|> Client
-    Model --> Client
-    Model --> Store
-    Model --> Git
-    Model --> StatusConfig
-    Model --> SessionList
-    Model --> SessionForm
-    Model --> SessionStatusForm
-    SessionList --> Store
-    SessionList --> Client
-    SessionList --> StatusConfig
-    SessionForm --> Store
-    SessionForm --> Client
-    SessionStatusForm --> Store
-    SessionStatusForm --> StatusConfig
-
-    note for SessionList "Auto-refreshes every 2s\nby checking database\nupdates (UpdatedAt)"
-```
+- **CLI and UI only depend on Services** - never on Ports or Adapters directly
+- **Services orchestrate Ports** - implement business use cases
+- **Adapters implement Ports** - provide infrastructure
 
 ## Data Flow
 
@@ -187,200 +106,94 @@ classDiagram
 sequenceDiagram
     participant User
     participant TUI
-    participant Cmd as tea.Cmd<br/>(Background)
-    participant Tmux
-    participant State
-    participant Git
+    participant SS as SessionService
+    participant GR as GitRepository<br/>(Port)
+    participant TC as TmuxClient<br/>(Port)
+    participant SR as SessionRepository<br/>(Port)
 
     User->>TUI: Create session
-    TUI->>Cmd: createSessionCmd()
-    Note over TUI: UI remains responsive
-    Cmd->>Git: Create worktree
-    Cmd->>Tmux: Create tmux session
-    Cmd->>State: Save metadata
-    State->>State: Write state.json
-    Cmd->>TUI: sessionCreatedMsg
-
-    User->>TUI: Attach to session
-    TUI->>Tmux: Attach
-    Tmux-->>User: Session shell
-
-    User->>Tmux: Detach
-    Tmux-->>TUI: Resume
-    TUI->>State: Sync sessions
+    TUI->>SS: CreateSession()
+    SS->>GR: CreateWorktree()
+    SS->>TC: CreateSession()
+    SS->>SR: Add(session)
+    SS-->>TUI: SessionResult
+    TUI-->>User: Session created
 ```
 
-### State Update Flow (Auto-refresh)
+### State Update Flow (Hook Events)
 
 ```mermaid
 sequenceDiagram
     participant Claude
     participant Hook
-    participant Storage
+    participant NS as NotificationService
+    participant SR as SessionRepository<br/>(Port)
     participant TUI
 
-    Note over Claude,TUI: Session starts
     Claude->>Hook: SessionStart event
-    Hook->>Storage: rocha notify start
-    Storage->>Storage: Update StateIdle (○) in DB
+    Hook->>NS: HandleEvent(start)
+    NS->>SR: UpdateState(Idle)
 
     loop Every 2 seconds
-        TUI->>Storage: Load() from database
-        Storage-->>TUI: Session data with UpdatedAt
-        TUI->>TUI: Reload & display ○ (yellow)
+        TUI->>SR: LoadState()
+        SR-->>TUI: Session data
+        TUI->>TUI: Display state
     end
 
-    Note over Claude,TUI: User submits prompt
-    Claude->>Hook: UserPromptSubmit event
-    Hook->>Storage: rocha notify prompt
-    Storage->>Storage: Update StateWorking (●) in DB
-    TUI->>Storage: Poll detects change
-    TUI->>TUI: Display ● (green)
-
-    Note over Claude,TUI: Claude finishes task
-    Claude->>Hook: Stop event
-    Hook->>Storage: rocha notify stop
-    Storage->>Storage: Update StateIdle (○) in DB
-    TUI->>Storage: Poll detects change
-    TUI->>TUI: Display ○ (yellow)
-
-    Note over Claude,TUI: Claude needs input
-    Claude->>Hook: Notification event
-    Hook->>Storage: rocha notify notification
-    Storage->>Storage: Update StateWaitingUser (◐) in DB
-    TUI->>Storage: Poll detects change
-    TUI->>TUI: Display ◐ (red)
-
-    Note over Claude,TUI: Claude exits
-    Claude->>Hook: SessionEnd event
-    Hook->>Storage: rocha notify end
-    Storage->>Storage: Update StateExited (■) in DB
-    TUI->>Storage: Poll detects change
-    TUI->>TUI: Display ■ (gray)
+    Claude->>Hook: UserPromptSubmit
+    Hook->>NS: HandleEvent(prompt)
+    NS->>SR: UpdateState(Working)
 ```
 
 ### Hook Event Mapping
 
-Claude Code hooks trigger state transitions:
+| Hook Event | New State | Symbol | Meaning |
+|------------|-----------|--------|---------|
+| `SessionStart` | `StateIdle` | ○ (yellow) | Session initialized |
+| `UserPromptSubmit` | `StateWorking` | ● (green) | User submitted prompt |
+| `Stop` | `StateIdle` | ○ (yellow) | Claude finished |
+| `Notification` | `StateWaitingUser` | ◐ (red) | Needs user input |
+| `SessionEnd` | `StateExited` | ■ (gray) | Claude exited |
 
-| Hook Event | Command | New State | Symbol | Meaning |
-|------------|---------|-----------|--------|---------|
-| `SessionStart` | `rocha notify start` | `StateIdle` | ○ (yellow) | Session initialized and ready |
-| `UserPromptSubmit` | `rocha notify prompt` | `StateWorking` | ● (green) | User submitted prompt |
-| `Stop` | `rocha notify stop` | `StateIdle` | ○ (yellow) | Claude finished working |
-| `Notification` | `rocha notify notification` | `StateWaitingUser` | ◐ (red) | Claude needs user input |
-| `SessionEnd` | `rocha notify end` | `StateExited` | ■ (gray) | Claude has exited |
+## Package Structure
 
-### Session Status Update Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant TUI
-    participant Storage
-    participant DB
-
-    Note over User,DB: Option 1: Form-based status selection
-    User->>TUI: Press 's' on session
-    TUI->>TUI: Show SessionStatusForm
-    User->>TUI: Select status or <clear>
-    TUI->>Storage: UpdateSessionStatus()
-    Storage->>DB: Upsert/Delete in session_statuses table
-    Storage-->>TUI: Success
-    TUI->>Storage: Load() to refresh
-    TUI->>TUI: Display colored status [status]
-
-    Note over User,DB: Option 2: Quick status cycling
-    User->>TUI: Press Shift+S on session
-    TUI->>TUI: cycleSessionStatus()
-    TUI->>Storage: UpdateSessionStatus(next_status)
-    Storage->>DB: Upsert/Delete in session_statuses table
-    Storage-->>TUI: Success
-    TUI->>TUI: Immediately refresh (checkStateMsg)
-    TUI->>TUI: Display colored status [status]
+```
+internal/
+├── cmd/           # CLI commands (drivers)
+├── ui/            # TUI components (drivers)
+├── services/      # Application services
+├── domain/        # Domain entities
+├── ports/         # Interface definitions
+├── adapters/      # Infrastructure implementations
+│   ├── storage/   # SQLite repository
+│   ├── git/       # Git CLI operations
+│   ├── tmux/      # Tmux CLI operations
+│   ├── editor/    # Editor integration
+│   └── sound/     # Sound playback
+├── config/        # Configuration and paths
+└── logging/       # Structured logging
 ```
 
-#### Status Feature Details
+### Services
 
-- **Storage**: Status stored in separate `session_statuses` table (1-to-1 with sessions)
-- **Customization**:
-  - `--statuses` flag: Comma-separated status names (default: "spec,plan,implement,review,done")
-  - `--status-colors` flag: ANSI color codes for each status (default: "141,33,214,226,46")
-- **Display**: Status shown in brackets next to session name with color coding
-- **Keyboard shortcuts**:
-  - `s`: Open status selection form with `<clear>` option
-  - `Shift+S`: Cycle through statuses (nil → first → ... → last → nil)
-- **Restrictions**: Only top-level sessions can have status (nested/shell sessions excluded)
+| Service | Responsibility |
+|---------|----------------|
+| SessionService | Session lifecycle (create, kill, archive) |
+| GitService | Git and worktree operations |
+| ShellService | Tmux pane operations, editor, shell sessions |
+| SettingsService | Session configuration (claudedir, permissions) |
+| NotificationService | Hook event handling, sounds |
+| MigrationService | Move sessions between ROCHA_HOME directories |
 
-## Packages
+### Ports (Interfaces)
 
-### Core Application Packages
-
-#### cmd/
-CLI command handlers using Kong framework.
-- `RunCmd` - Start TUI
-- `AttachCmd` - Register session (creates tmux session, updates state)
-- `StatusCmd` - Status bar (`◐:N ○:N ●:N ■:N`)
-- `SetupCmd` - Shell integration
-- `StartClaudeCmd` - Bootstrap Claude Code with hooks (hidden)
-- `NotifyCmd` - Handle Claude hook events (hidden)
-- `PlaySoundCmd` - Play notification sounds (hidden)
-
-#### ui/
-Bubble Tea TUI with component architecture.
-- **SessionList** - Uses bubbles/list component, auto-refresh (2s poll), fuzzy filtering, status symbols (●○◐■), status display with colors
-- **SessionForm** - Session creation forms
-- **SessionStatusForm** - Status selection form with `<clear>` option
-- **StatusConfig** - Configuration for status names, colors, and cycling logic
-- **KeyMap** - Centralized keyboard shortcuts using bubbles/key bindings
-- **Model** - Orchestrates states (list, creating, confirming, settingStatus)
-
-#### tmux/
-Tmux abstraction layer with dependency injection.
-- `Client` interface - Tmux operations
-- `DefaultClient` - Implementation via tmux CLI
-- `Monitor` - Background session monitoring
-
-#### storage/
-Persistent session storage using SQLite.
-- **Store** - GORM-based database abstraction with ACID guarantees
-- **Schema** - Session, SessionFlag, SessionStatus tables
-- **Types** - SessionInfo and SessionState for business logic
-- SQLite with WAL mode for concurrent access
-- Atomic transactions with retry logic for busy database scenarios
-- Session metadata (git info, status, timestamps, flags)
-- Four session states: `WaitingUser` (◐), `Idle` (○), `Working` (●), `Exited` (■)
-- Separate tables for:
-  - **sessions** - Core session data with position ordering
-  - **session_flags** - Flag/marker for important sessions
-  - **session_statuses** - Implementation status tracking (1-to-1 with sessions)
-
-#### git/
-Git worktree operations.
-- Create/remove worktrees
-- Branch name validation and sanitization
-- Branch detection
-- Repository metadata extraction
-
-#### editor/
-Editor integration with platform-specific defaults.
-- Build-tag based platform detection (linux, darwin, windows)
-- Fallback chain: CLI flag → `$ROCHA_EDITOR` → `$VISUAL` → `$EDITOR` → platform defaults
-- Non-blocking editor launch
-
-### Cross-Cutting Concerns
-
-#### logging/
-Structured logging with slog (used by cmd, ui, tmux).
-- OS-specific log directories
-- JSON log format
-- Non-blocking operation tracing
-
-#### version/
-Version and build metadata (used by cmd, ui).
-- Build-time version injection (Version, Commit, Date, GoVersion)
-- Application tagline for display
-- Injectable via ldflags during compilation
+| Port | Methods |
+|------|---------|
+| SessionRepository | Add, Get, List, Delete, Update*, LoadState, SaveState |
+| GitRepository | CreateWorktree, RemoveWorktree, IsGitRepo, GetRepoInfo |
+| TmuxClient | CreateSession, KillSession, ListSessions, SendKeys |
+| EditorOpener | Open |
+| SoundPlayer | Play |
 
 ## Dependencies
 
@@ -389,58 +202,29 @@ graph LR
     subgraph "Go Libraries"
         KONG[kong - CLI]
         BT[bubbletea - TUI]
-        BUBBLES[bubbles - Components]
-        HUH[huh - Forms]
-        LG[lipgloss - Styles]
         GORM[gorm - ORM]
-        SQLITE[go-sqlite3 - Driver]
     end
 
-    subgraph "System Tools"
+    subgraph "External Tools"
         TMUX[tmux]
         GIT[git]
-        CLAUDE[claude<br/>Claude Code CLI]
-        CODE[code<br/>VS Code/Editor]
+        CLAUDE[claude CLI]
     end
 
     APP[Rocha] --> KONG
     APP --> BT
-    APP --> BUBBLES
-    APP --> HUH
-    APP --> LG
     APP --> GORM
-    APP --> SQLITE
     APP --> TMUX
     APP --> GIT
     APP -.-> CLAUDE
-    APP -.-> CODE
 ```
-
-**Go Libraries:**
-- `kong` - CLI framework with dependency injection
-- `bubbletea` - Terminal UI framework
-- `bubbles` - Pre-built TUI components (list, textinput, etc.)
-- `huh` - Form components
-- `lipgloss` - Styling
-- `gorm` - ORM for database operations with transaction support
-- `go-sqlite3` - SQLite driver for Go (CGo-based)
-- `uuid` - UUID generation
-
-**External Tools:**
-- `tmux` - Terminal multiplexer (required)
-- `git` - Version control (required for worktrees)
-- `claude` - Claude Code CLI (bootstrapped automatically, dotted line indicates it's spawned not directly called)
-- `code` - VS Code or other editor (optional, dotted line indicates it's spawned via 'o' key, falls back to shell)
 
 ## Testing
 
 ```
 test/integration/
 ├── harness/           # Test utilities
-│   ├── binary.go      # Binary compilation & execution
-│   ├── environment.go # ROCHA_HOME isolation
-│   └── assertions.go  # Custom assertions
-└── *_test.go          # Table-driven CLI tests
+└── *_test.go          # CLI integration tests
 ```
 
-<!-- Keep this document more visual than textual, an image is better than 1000 words -->
+<!-- Keep this document visual - diagrams over text -->

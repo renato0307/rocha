@@ -5,16 +5,15 @@ import (
 	"fmt"
 
 	"rocha/internal/domain"
-	"rocha/internal/ports"
 )
 
 // StatusCmd displays session state counts for tmux status bar
 type StatusCmd struct{}
 
 // Run executes the status command
-func (s *StatusCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (s *StatusCmd) Run(cli *CLI) error {
 	// Initialize container
-	container, err := NewContainer(tmuxClient)
+	container, err := NewContainer(nil)
 	if err != nil {
 		// Database doesn't exist or can't be opened
 		fmt.Printf("%s:? %s:? %s:?", domain.SymbolWaiting, domain.SymbolIdle, domain.SymbolWorking)
@@ -22,7 +21,7 @@ func (s *StatusCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	}
 	defer container.Close()
 
-	st, err := container.SessionRepository.LoadState(context.Background(), false)
+	st, err := container.SessionService.LoadState(context.Background(), false)
 	if err != nil {
 		// No state
 		fmt.Printf("%s:? %s:? %s:?", domain.SymbolWaiting, domain.SymbolIdle, domain.SymbolWorking)

@@ -10,10 +10,10 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
-	"rocha/internal/application"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 var (
@@ -79,7 +79,7 @@ type Model struct {
 	errorManager                           *ErrorManager                // Error display and auto-clearing
 	formRemoveWorktree                     *bool                        // Worktree removal decision (pointer to persist across updates)
 	formRemoveWorktreeArchive              *bool                        // Worktree removal decision for archive (pointer to persist across updates)
-	gitService                             *application.GitService      // Git operations service
+	gitService                             *services.GitService         // Git operations service
 	height                                 int
 	helpScreen                             *Dialog                      // Help screen dialog
 	keys                                   KeyMap                       // Keyboard shortcuts
@@ -90,28 +90,23 @@ type Model struct {
 	sessionList                            *SessionList                 // Session list component
 	sessionOps                             *SessionOperations           // Session lifecycle operations
 	sessionRenameForm                      *Dialog                      // Session rename dialog
-	sessionRepo                            ports.SessionRepository      // Session repository
-	sessionService                         *application.SessionService  // Session lifecycle service
+	sessionService                         *services.SessionService     // Session lifecycle service
 	sessionState                           *domain.SessionCollection    // State data for git metadata and status
 	sessionStatusForm                      *Dialog                      // Session status dialog
 	sessionToArchive                       *ports.TmuxSession           // Session being archived (for worktree removal)
 	sessionToKill                          *ports.TmuxSession           // Session being killed (for worktree removal)
-	shellService                           *application.ShellService    // Shell session service
+	shellService                           *services.ShellService       // Shell session service
 	state                                  uiState
 	statusConfig                           *StatusConfig                // Status configuration for implementation statuses
 	timestampConfig                        *TimestampColorConfig        // Timestamp color configuration
 	timestampMode                          TimestampMode
-	tmuxClient                             ports.TmuxClient
 	tmuxStatusPosition                     string
 	width                                  int
 	worktreeRemovalForm                    *Dialog                      // Worktree removal dialog
 }
 
 func NewModel(
-	tmuxClient ports.TmuxClient,
-	sessionRepo ports.SessionRepository,
 	editor string,
-	editorOpener ports.EditorOpener,
 	errorClearDelay time.Duration,
 	statusConfig *StatusConfig,
 	timestampConfig *TimestampColorConfig,
@@ -120,12 +115,12 @@ func NewModel(
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
-	gitService *application.GitService,
-	sessionService *application.SessionService,
-	shellService *application.ShellService,
+	gitService *services.GitService,
+	sessionService *services.SessionService,
+	shellService *services.ShellService,
 ) *Model {
 	// Load session state - this is the source of truth
-	sessionState, stateErr := sessionRepo.LoadState(context.Background(), false)
+	sessionState, stateErr := sessionService.LoadState(context.Background(), false)
 	errorManager := NewErrorManager(errorClearDelay)
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
@@ -145,27 +140,25 @@ func NewModel(
 	keys := NewKeyMap()
 
 	// Create session operations component
-	sessionOps := NewSessionOperations(errorManager, sessionRepo, tmuxClient, tmuxStatusPosition, sessionService, shellService)
+	sessionOps := NewSessionOperations(errorManager, tmuxStatusPosition, sessionService, shellService)
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, sessionRepo, gitService, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
+	sessionList := NewSessionList(sessionService, gitService, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
 
 	// Create list action handler
 	listActionHandler := NewListActionHandler(
 		sessionList,
 		sessionState,
-		sessionRepo,
 		gitService,
 		editor,
-		editorOpener,
 		statusConfig,
 		errorManager,
 		sessionOps,
-		tmuxClient,
 		tmuxStatusPosition,
 		devMode,
 		allowDangerouslySkipPermissionsDefault,
 		sessionService,
+		shellService,
 	)
 
 	return &Model{
@@ -178,7 +171,6 @@ func NewModel(
 		listActionHandler:                      listActionHandler,
 		sessionList:                            sessionList,
 		sessionOps:                             sessionOps,
-		sessionRepo:                            sessionRepo,
 		sessionService:                         sessionService,
 		sessionState:                           sessionState,
 		shellService:                           shellService,
@@ -186,7 +178,6 @@ func NewModel(
 		statusConfig:                           statusConfig,
 		timestampConfig:                        timestampConfig,
 		timestampMode:                          initialMode,
-		tmuxClient:                             tmuxClient,
 		tmuxStatusPosition:                     tmuxStatusPosition,
 	}
 }
@@ -442,7 +433,7 @@ func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
 // reloadSessionStateAfterDialog reloads state and refreshes list.
 // Eliminates the 8 duplications of reload pattern across dialog handlers.
 func (m *Model) reloadSessionStateAfterDialog() error {
-	newState, err := m.sessionRepo.LoadState(context.Background(), false)
+	newState, err := m.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		return fmt.Errorf("failed to refresh sessions: %w", err)
 	}
@@ -517,7 +508,7 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		logging.Logger.Debug("Creating new session dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionRepo, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()
@@ -526,7 +517,7 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		logging.Logger.Debug("Creating new session from template dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionRepo, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()

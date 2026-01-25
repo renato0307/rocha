@@ -7,38 +7,32 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"rocha/internal/application"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SessionOperations handles session lifecycle operations.
 // Responsible for kill, archive, attach, and shell session management.
 type SessionOperations struct {
 	errorManager       *ErrorManager
-	sessionRepo        ports.SessionRepository
-	sessionService     *application.SessionService
-	shellService       *application.ShellService
-	tmuxClient         ports.TmuxClient
+	sessionService     *services.SessionService
+	shellService       *services.ShellService
 	tmuxStatusPosition string
 }
 
 // NewSessionOperations creates a new SessionOperations component.
 func NewSessionOperations(
 	errorManager *ErrorManager,
-	sessionRepo ports.SessionRepository,
-	tmuxClient ports.TmuxClient,
 	tmuxStatusPosition string,
-	sessionService *application.SessionService,
-	shellService *application.ShellService,
+	sessionService *services.SessionService,
+	shellService *services.ShellService,
 ) *SessionOperations {
 	return &SessionOperations{
 		errorManager:       errorManager,
-		sessionRepo:        sessionRepo,
 		sessionService:     sessionService,
 		shellService:       shellService,
-		tmuxClient:         tmuxClient,
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
 }
@@ -48,7 +42,7 @@ func NewSessionOperations(
 func (so *SessionOperations) AttachToSession(sessionName string) tea.Cmd {
 	logging.Logger.Info("Attaching to session via abstraction layer", "name", sessionName)
 
-	cmd := so.tmuxClient.GetAttachCommand(sessionName)
+	cmd := so.shellService.GetAttachCommand(sessionName)
 
 	logging.Logger.Debug("Executing tmux attach command",
 		"command", cmd.Path,
@@ -82,7 +76,7 @@ func (so *SessionOperations) GetOrCreateShellSession(
 	}
 
 	// Reload session state to get updated shell info
-	newState, err := so.sessionRepo.LoadState(context.Background(), false)
+	newState, err := so.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to reload state after shell creation", "error", err)
 	} else {
@@ -106,7 +100,7 @@ func (so *SessionOperations) KillSession(
 	}
 
 	// Reload session state
-	newState, err := so.sessionRepo.LoadState(context.Background(), false)
+	newState, err := so.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load state: %v", err)
 	} else {
@@ -133,7 +127,7 @@ func (so *SessionOperations) ArchiveSession(
 	}
 
 	// Reload session state
-	newState, err := so.sessionRepo.LoadState(context.Background(), false)
+	newState, err := so.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		so.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 		sessionList.RefreshFromState()

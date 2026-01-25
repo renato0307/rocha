@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"rocha/internal/domain"
-	"rocha/internal/ports"
 )
 
 // SessionsArchiveCmd archives or unarchives a session
@@ -17,14 +16,14 @@ type SessionsArchiveCmd struct {
 }
 
 // Run executes the archive command
-func (s *SessionsArchiveCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
-	container, err := NewContainer(tmuxClient)
+func (s *SessionsArchiveCmd) Run(cli *CLI) error {
+	container, err := NewContainer(nil)
 	if err != nil {
 		return fmt.Errorf("failed to initialize: %w", err)
 	}
 	defer container.Close()
 
-	session, err := container.SessionRepository.Get(context.Background(), s.Name)
+	session, err := container.SessionService.GetSession(context.Background(), s.Name)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
@@ -70,7 +69,7 @@ func (s *SessionsArchiveCmd) archiveSession(container *Container, session *domai
 }
 
 func (s *SessionsArchiveCmd) unarchiveSession(container *Container) error {
-	if err := container.SessionRepository.ToggleArchive(context.Background(), s.Name); err != nil {
+	if err := container.SessionService.ToggleArchive(context.Background(), s.Name); err != nil {
 		return fmt.Errorf("failed to unarchive session: %w", err)
 	}
 

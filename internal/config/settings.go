@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// DefaultTmuxStatusPosition is the default tmux status bar position
+const DefaultTmuxStatusPosition = "bottom"
+
 // Settings represents the structure of ~/.rocha/settings.json
 type Settings struct {
 	AllowDangerouslySkipPermissions *bool       `json:"allow_dangerously_skip_permissions,omitempty"`

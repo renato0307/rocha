@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"rocha/internal/logging"
-	"rocha/internal/ports"
+	"rocha/internal/services"
 )
 
 // SessionCommentFormResult contains the result of the comment operation
@@ -28,15 +28,15 @@ type SessionCommentForm struct {
 	form           *huh.Form
 	result         SessionCommentFormResult
 	sessionName    string
-	sessionRepo    ports.SessionRepository
+	sessionService *services.SessionService
 }
 
 // NewSessionCommentForm creates a new session comment form
-func NewSessionCommentForm(sessionRepo ports.SessionRepository, sessionName, currentComment string) *SessionCommentForm {
+func NewSessionCommentForm(sessionService *services.SessionService, sessionName, currentComment string) *SessionCommentForm {
 	sf := &SessionCommentForm{
 		currentComment: currentComment,
 		sessionName:    sessionName,
-		sessionRepo:    sessionRepo,
+		sessionService: sessionService,
 		result: SessionCommentFormResult{
 			SessionName: sessionName,
 			NewComment:  currentComment, // Preload the current comment for editing
@@ -113,8 +113,8 @@ func (sf *SessionCommentForm) updateComment() error {
 		"session_name", sf.sessionName,
 		"comment_length", len(newComment))
 
-	// Update repository (empty string = delete comment)
-	if err := sf.sessionRepo.UpdateComment(context.Background(), sf.sessionName, newComment); err != nil {
+	// Update via service (empty string = delete comment)
+	if err := sf.sessionService.UpdateComment(context.Background(), sf.sessionName, newComment); err != nil {
 		return fmt.Errorf("failed to update session comment: %w", err)
 	}
 

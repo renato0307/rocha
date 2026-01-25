@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	"rocha/internal/logging"
-	"rocha/internal/ports"
 )
 
 // StartClaudeCmd starts Claude Code with hooks configured
@@ -18,7 +17,7 @@ type StartClaudeCmd struct {
 }
 
 // Run executes Claude with hooks configuration
-func (s *StartClaudeCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
+func (s *StartClaudeCmd) Run(container *Container, cli *CLI) error {
 	// Get the path to the rocha binary
 	rochaBin, err := os.Executable()
 	if err != nil {
@@ -36,46 +35,35 @@ func (s *StartClaudeCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	var executionID string
 	var allowDangerouslySkipPermissions bool
 
-	container, err := NewContainer(tmuxClient)
+	ctx := context.Background()
+	st, err := container.SessionService.LoadState(ctx, false)
 	if err != nil {
-		logging.Logger.Warn("Failed to initialize container for execution ID", "error", err)
-		// Fall back to environment variable
+		logging.Logger.Warn("Failed to load state for execution ID", "error", err)
 		executionID = os.Getenv("ROCHA_EXECUTION_ID")
 		if executionID == "" {
 			executionID = "unknown"
 		}
 	} else {
-		defer container.Close()
-		ctx := context.Background()
-		st, err := container.SessionRepository.LoadState(ctx, false)
-		if err != nil {
-			logging.Logger.Warn("Failed to load state for execution ID", "error", err)
+		// Get ExecutionID, ClaudeDir, and agent CLI flags from session info
+		if session, exists := st.Sessions[sessionName]; exists {
+			claudeDir = session.ClaudeDir
+			executionID = session.ExecutionID
+			allowDangerouslySkipPermissions = session.AllowDangerouslySkipPermissions
+			logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
+			if allowDangerouslySkipPermissions {
+				logging.Logger.Warn("DANGEROUS MODE ENABLED: Claude will skip permission prompts",
+					"session", sessionName)
+			}
+			if claudeDir != "" {
+				logging.Logger.Info("Using ClaudeDir from session", "claude_dir", claudeDir)
+			}
+		} else {
+			// Session not found, fallback to env or unknown
 			executionID = os.Getenv("ROCHA_EXECUTION_ID")
 			if executionID == "" {
 				executionID = "unknown"
 			}
-		} else {
-			// Get ExecutionID, ClaudeDir, and agent CLI flags from session info
-			if session, exists := st.Sessions[sessionName]; exists {
-				claudeDir = session.ClaudeDir
-				executionID = session.ExecutionID
-				allowDangerouslySkipPermissions = session.AllowDangerouslySkipPermissions
-				logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
-				if allowDangerouslySkipPermissions {
-					logging.Logger.Warn("DANGEROUS MODE ENABLED: Claude will skip permission prompts",
-						"session", sessionName)
-				}
-				if claudeDir != "" {
-					logging.Logger.Info("Using ClaudeDir from session", "claude_dir", claudeDir)
-				}
-			} else {
-				// Session not found, fallback to env or unknown
-				executionID = os.Getenv("ROCHA_EXECUTION_ID")
-				if executionID == "" {
-					executionID = "unknown"
-				}
-				logging.Logger.Warn("Session not found, using fallback execution ID", "execution_id", executionID)
-			}
+			logging.Logger.Warn("Session not found, using fallback execution ID", "execution_id", executionID)
 		}
 	}
 

@@ -15,7 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"rocha/internal/application"
+	"rocha/internal/services"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
@@ -222,14 +222,13 @@ type SessionList struct {
 	editor             string // Editor to open sessions in
 	err                error
 	fetchingGitStats   bool // Prevent concurrent fetches
-	gitService         *application.GitService // Git operations service
+	gitService         *services.GitService // Git operations service
 	keys               KeyMap
 	list               list.Model
-	sessionRepo        ports.SessionRepository // Session repository
+	sessionService     *services.SessionService // Session service
 	sessionState       *domain.SessionCollection
 	statusConfig       *StatusConfig
 	timestampMode      TimestampMode
-	tmuxClient         ports.TmuxClient
 	tmuxStatusPosition string
 
 	// Tips feature
@@ -268,16 +267,16 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient ports.TmuxClient, sessionRepo ports.SessionRepository, gitService *application.GitService, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
+func NewSessionList(sessionService *services.SessionService, gitService *services.GitService, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
-	sessionState, err := sessionRepo.LoadState(context.Background(), false)
+	sessionState, err := sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load session state", "error", err)
 		sessionState = &domain.SessionCollection{Sessions: make(map[string]domain.Session)}
 	}
 
 	// Build items from state
-	items := buildListItems(sessionState, tmuxClient, statusConfig)
+	items := buildListItems(sessionState, sessionService, statusConfig)
 
 	// Create delegate
 	delegate := newSessionDelegate(sessionState, statusConfig, timestampConfig, timestampMode)
@@ -305,13 +304,12 @@ func NewSessionList(tmuxClient ports.TmuxClient, sessionRepo ports.SessionReposi
 		gitService:         gitService,
 		keys:               keys,
 		list:               l,
-		sessionRepo:        sessionRepo,
+		sessionService:     sessionService,
 		sessionState:       sessionState,
 		statusConfig:       statusConfig,
 		timestampConfig:    timestampConfig,
 		timestampMode:      timestampMode,
 		tipsConfig:         tipsConfig,
-		tmuxClient:         tmuxClient,
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
 }
@@ -362,7 +360,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Rebuild items with updated stats
 		delegate := newSessionDelegate(sl.sessionState, sl.statusConfig, sl.timestampConfig, sl.timestampMode)
 		sl.list.SetDelegate(delegate)
-		items := buildListItems(sl.sessionState, sl.tmuxClient, sl.statusConfig)
+		items := buildListItems(sl.sessionState, sl.sessionService, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
 
 		// Don't schedule new poll - one is already running
@@ -387,7 +385,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Auto-refresh: Check if state has changed (showArchived=false - TUI never shows archived)
-		newState, err := sl.sessionRepo.LoadState(context.Background(), false)
+		newState, err := sl.sessionService.LoadState(context.Background(), false)
 		if err != nil {
 			// Continue polling even on error
 			return sl, pollStateCmd()
@@ -408,7 +406,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sl.list.SetDelegate(delegate)
 
 		// Rebuild items
-		items := buildListItems(newState, sl.tmuxClient, sl.statusConfig)
+		items := buildListItems(newState, sl.sessionService, sl.statusConfig)
 		cmd := sl.list.SetItems(items)
 
 		// Request git stats for visible sessions
@@ -725,7 +723,7 @@ func (sl *SessionList) SetSize(width, height, listHeight int) {
 
 // RefreshFromState reloads the session list from state
 func (sl *SessionList) RefreshFromState() {
-	sessionState, err := sl.sessionRepo.LoadState(context.Background(), false)
+	sessionState, err := sl.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		logging.Logger.Error("Failed to refresh session state", "error", err)
@@ -747,7 +745,7 @@ func (sl *SessionList) RefreshFromState() {
 	sl.list.SetDelegate(delegate)
 
 	// Rebuild items
-	items := buildListItems(sessionState, sl.tmuxClient, sl.statusConfig)
+	items := buildListItems(sessionState, sl.sessionService, sl.statusConfig)
 	sl.list.SetItems(items)
 }
 
@@ -759,7 +757,7 @@ func pollStateCmd() tea.Cmd {
 }
 
 // buildListItems converts SessionCollection to list items
-func buildListItems(sessionState *domain.SessionCollection, tmuxClient ports.TmuxClient, statusConfig *StatusConfig) []list.Item {
+func buildListItems(sessionState *domain.SessionCollection, sessionService *services.SessionService, statusConfig *StatusConfig) []list.Item {
 	var items []list.Item
 
 	// Build sessions from state
@@ -815,7 +813,7 @@ func buildListItems(sessionState *domain.SessionCollection, tmuxClient ports.Tmu
 		// Check if shell session exists (check nested object)
 		hasShell := false
 		if info.ShellSession != nil {
-			hasShell = tmuxClient.SessionExists(info.ShellSession.Name)
+			hasShell = sessionService.SessionExists(info.ShellSession.Name)
 		}
 
 		// Append git stats if available
@@ -915,7 +913,7 @@ func formatHelpLine(line string) string {
 
 // ensureSessionExists checks if a session exists and recreates it if needed
 func (sl *SessionList) ensureSessionExists(session *ports.TmuxSession) bool {
-	if sl.tmuxClient.SessionExists(session.Name) {
+	if sl.sessionService.SessionExists(session.Name) {
 		return true
 	}
 
@@ -933,7 +931,7 @@ func (sl *SessionList) ensureSessionExists(session *ports.TmuxSession) bool {
 	}
 
 	// Recreate the session
-	if _, err := sl.tmuxClient.CreateSession(session.Name, worktreePath, claudeDir, sl.tmuxStatusPosition); err != nil {
+	if err := sl.sessionService.RecreateSession(session.Name, worktreePath, claudeDir, sl.tmuxStatusPosition); err != nil {
 		sl.err = fmt.Errorf("failed to recreate session: %w", err)
 		return false
 	}
@@ -972,7 +970,7 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 		"total_items", len(items))
 
 	// Swap positions in database
-	if err := sl.sessionRepo.SwapPositions(context.Background(), movedItemName, prevItem.Session.Name); err != nil {
+	if err := sl.sessionService.SwapPositions(context.Background(), movedItemName, prevItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
 		return nil
 	}
@@ -1044,7 +1042,7 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 		"total_items", len(items))
 
 	// Swap positions in database
-	if err := sl.sessionRepo.SwapPositions(context.Background(), movedItemName, nextItem.Session.Name); err != nil {
+	if err := sl.sessionService.SwapPositions(context.Background(), movedItemName, nextItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
 		return nil
 	}
@@ -1202,7 +1200,7 @@ func (sl *SessionList) cycleSessionStatus(sessionName string) tea.Cmd {
 	nextStatus := sl.statusConfig.GetNextStatus(currentStatus)
 
 	// Update in database
-	if err := sl.sessionRepo.UpdateStatus(context.Background(), sessionName, nextStatus); err != nil {
+	if err := sl.sessionService.UpdateStatus(context.Background(), sessionName, nextStatus); err != nil {
 		logging.Logger.Error("Failed to cycle session status", "error", err, "session", sessionName)
 		return nil
 	}

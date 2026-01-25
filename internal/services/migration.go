@@ -1,4 +1,4 @@
-package application
+package services
 
 import (
 	"context"
@@ -13,9 +13,13 @@ import (
 	"rocha/internal/ports"
 )
 
+// SessionRepositoryFactory creates session repositories for a given path
+type SessionRepositoryFactory func(rochaHomePath string) (ports.SessionRepository, error)
+
 // MigrationService handles session migration between ROCHA_HOME directories
 type MigrationService struct {
 	gitRepo    ports.GitRepository
+	repoFactory SessionRepositoryFactory
 	tmuxClient ports.TmuxSessionLifecycle
 }
 
@@ -23,14 +27,139 @@ type MigrationService struct {
 func NewMigrationService(
 	gitRepo ports.GitRepository,
 	tmuxClient ports.TmuxSessionLifecycle,
+	repoFactory SessionRepositoryFactory,
 ) *MigrationService {
 	return &MigrationService{
-		gitRepo:    gitRepo,
-		tmuxClient: tmuxClient,
+		gitRepo:     gitRepo,
+		repoFactory: repoFactory,
+		tmuxClient:  tmuxClient,
 	}
 }
 
+// MoveRepositoryBetweenHomesParams contains parameters for moving a repository between ROCHA_HOME directories
+type MoveRepositoryBetweenHomesParams struct {
+	DestRochaHome   string
+	RepoInfo        string
+	SourceRochaHome string
+}
+
+// MoveRepositoryBetweenHomesResult contains the result of a repository move operation
+type MoveRepositoryBetweenHomesResult struct {
+	MovedSessionCount int
+	SourceSessions    []domain.Session
+}
+
+// MoveRepositoryBetweenHomes moves all sessions for a repository from one ROCHA_HOME to another
+// This is the high-level API that manages repositories internally
+func (s *MigrationService) MoveRepositoryBetweenHomes(
+	ctx context.Context,
+	params MoveRepositoryBetweenHomesParams,
+) (*MoveRepositoryBetweenHomesResult, error) {
+	logging.Logger.Info("Moving repository between ROCHA_HOME directories",
+		"repo", params.RepoInfo,
+		"from", params.SourceRochaHome,
+		"to", params.DestRochaHome)
+
+	// Open source repository
+	sourceRepo, err := s.repoFactory(params.SourceRochaHome)
+	if err != nil {
+		logging.Logger.Error("Failed to open source repository", "path", params.SourceRochaHome, "error", err)
+		return nil, fmt.Errorf("failed to open source database: %w", err)
+	}
+	defer sourceRepo.Close()
+
+	// List sessions and filter by repo
+	sessions, err := sourceRepo.List(ctx, false)
+	if err != nil {
+		logging.Logger.Error("Failed to list sessions", "error", err)
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	var sourceSessions []domain.Session
+	for _, sess := range sessions {
+		if sess.RepoInfo == params.RepoInfo {
+			sourceSessions = append(sourceSessions, sess)
+		}
+	}
+
+	if len(sourceSessions) == 0 {
+		logging.Logger.Error("No sessions found for repository", "repo", params.RepoInfo)
+		return nil, fmt.Errorf("no sessions found for repository: %s", params.RepoInfo)
+	}
+
+	// Open destination repository
+	destRepo, err := s.repoFactory(params.DestRochaHome)
+	if err != nil {
+		logging.Logger.Error("Failed to open destination repository", "path", params.DestRochaHome, "error", err)
+		return nil, fmt.Errorf("failed to open destination database: %w", err)
+	}
+	defer destRepo.Close()
+
+	// Move repository using internal method
+	movedNames, err := s.moveRepository(ctx, moveRepositoryInternalParams{
+		DestRochaHome:   params.DestRochaHome,
+		DestSessionRepo: destRepo,
+		RepoInfo:        params.RepoInfo,
+		SourceRochaHome: params.SourceRochaHome,
+		SourceSessions:  sourceSessions,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Delete sessions from source
+	fmt.Printf("Cleaning up source database...\n")
+	for _, sessName := range movedNames {
+		logging.Logger.Debug("Deleting session from source", "session", sessName)
+		if err := sourceRepo.Delete(ctx, sessName); err != nil {
+			logging.Logger.Warn("Failed to delete session from source", "session", sessName, "error", err)
+			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", sessName, err)
+		}
+	}
+
+	return &MoveRepositoryBetweenHomesResult{
+		MovedSessionCount: len(movedNames),
+		SourceSessions:    sourceSessions,
+	}, nil
+}
+
+// GetSessionsForRepo returns sessions for a specific repository from a ROCHA_HOME directory
+func (s *MigrationService) GetSessionsForRepo(
+	ctx context.Context,
+	rochaHome string,
+	repoInfo string,
+) ([]domain.Session, error) {
+	repo, err := s.repoFactory(rochaHome)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %w", err)
+	}
+	defer repo.Close()
+
+	sessions, err := repo.List(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	var result []domain.Session
+	for _, sess := range sessions {
+		if sess.RepoInfo == repoInfo {
+			result = append(result, sess)
+		}
+	}
+	return result, nil
+}
+
+// moveRepositoryInternalParams contains parameters for the internal move operation
+type moveRepositoryInternalParams struct {
+	DestRochaHome   string
+	DestSessionRepo ports.SessionRepository
+	RepoInfo        string
+	SourceRochaHome string
+	SourceSessions  []domain.Session
+}
+
 // MoveRepositoryParams contains parameters for moving a repository
+// Deprecated: Use MoveRepositoryBetweenHomes instead for cleaner API
 type MoveRepositoryParams struct {
 	DestRochaHome   string
 	DestSessionRepo ports.SessionRepository
@@ -40,10 +169,25 @@ type MoveRepositoryParams struct {
 }
 
 // MoveRepository moves all sessions from a single repository
+// Deprecated: Use MoveRepositoryBetweenHomes instead for cleaner API
 // Returns: list of moved session names, error
 func (s *MigrationService) MoveRepository(
 	ctx context.Context,
 	params MoveRepositoryParams,
+) ([]string, error) {
+	return s.moveRepository(ctx, moveRepositoryInternalParams{
+		DestRochaHome:   params.DestRochaHome,
+		DestSessionRepo: params.DestSessionRepo,
+		RepoInfo:        params.RepoInfo,
+		SourceRochaHome: params.SourceRochaHome,
+		SourceSessions:  params.SourceSessions,
+	})
+}
+
+// moveRepository is the internal implementation for moving a repository
+func (s *MigrationService) moveRepository(
+	ctx context.Context,
+	params moveRepositoryInternalParams,
 ) ([]string, error) {
 	logging.Logger.Info("Moving repository",
 		"repo", params.RepoInfo,
