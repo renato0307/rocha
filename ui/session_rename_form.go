@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"rocha/logging"
+	"rocha/ports"
 	"rocha/storage"
 	"rocha/tmux"
 )
@@ -31,13 +32,13 @@ type SessionRenameForm struct {
 	form               *huh.Form
 	oldTmuxName        string // Immutable - the session we're renaming
 	result             SessionRenameFormResult
-	sessionManager     tmux.SessionManager
+	sessionManager     ports.TmuxSessionLifecycle
 	sessionState       *storage.SessionState
 	store              *storage.Store
 }
 
 // NewSessionRenameForm creates a new session rename form
-func NewSessionRenameForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string) *SessionRenameForm {
+func NewSessionRenameForm(sessionManager ports.TmuxSessionLifecycle, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string) *SessionRenameForm {
 	sf := &SessionRenameForm{
 		currentDisplayName: currentDisplayName,
 		oldTmuxName:        oldTmuxName,
@@ -63,7 +64,7 @@ func NewSessionRenameForm(sessionManager tmux.SessionManager, store *storage.Sto
 					}
 					// Sanitize for tmux name check
 					tmuxName := tmux.SanitizeSessionName(s)
-					if sessionManager.Exists(tmuxName) && tmuxName != oldTmuxName {
+					if sessionManager.SessionExists(tmuxName) && tmuxName != oldTmuxName {
 						return fmt.Errorf("session %s already exists", tmuxName)
 					}
 					return nil
@@ -135,7 +136,7 @@ func (sf *SessionRenameForm) renameSession() error {
 		"new_display_name", newDisplayName)
 
 	// Rename tmux session first
-	if err := sf.sessionManager.Rename(sf.oldTmuxName, newTmuxName); err != nil {
+	if err := sf.sessionManager.RenameSession(sf.oldTmuxName, newTmuxName); err != nil {
 		return fmt.Errorf("failed to rename tmux session: %w", err)
 	}
 
@@ -153,12 +154,12 @@ func (sf *SessionRenameForm) renameSession() error {
 		// Save to database (OrderedSessionNames will be repopulated on next Load)
 		if err := sf.store.Save(context.Background(), sf.sessionState); err != nil {
 			// Try to rename back in tmux if state update fails
-			sf.sessionManager.Rename(newTmuxName, sf.oldTmuxName)
+			sf.sessionManager.RenameSession(newTmuxName, sf.oldTmuxName)
 			return fmt.Errorf("failed to update session state: %w", err)
 		}
 	} else {
 		// Session not found in state
-		sf.sessionManager.Rename(newTmuxName, sf.oldTmuxName)
+		sf.sessionManager.RenameSession(newTmuxName, sf.oldTmuxName)
 		return fmt.Errorf("session %s not found in state", sf.oldTmuxName)
 	}
 

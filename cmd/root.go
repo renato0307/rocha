@@ -8,16 +8,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kong"
+	tea "github.com/charmbracelet/bubbletea"
+
 	"rocha/config"
 	"rocha/logging"
 	"rocha/paths"
+	"rocha/ports"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
 	"rocha/ui"
-
-	"github.com/alecthomas/kong"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // CLI represents the command-line interface structure
@@ -114,7 +115,7 @@ type RunCmd struct {
 }
 
 // Run executes the TUI
-func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
+func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	// Apply RunCmd-specific settings with proper precedence
 	// Only apply if flag is at default value and env var is not set
 
@@ -213,7 +214,7 @@ func (r *RunCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	logging.Logger.Debug("State loaded", "existing_sessions", len(st.Sessions))
 
 	// Sync with running tmux sessions
-	runningSessions, err := tmuxClient.List()
+	runningSessions, err := tmuxClient.ListSessions()
 	if err != nil {
 		logging.Logger.Warn("Failed to list tmux sessions", "error", err)
 	} else {

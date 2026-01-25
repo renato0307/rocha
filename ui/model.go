@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"rocha/git"
-	"rocha/logging"
-	"rocha/storage"
-	"rocha/tmux"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+
+	"rocha/git"
+	"rocha/logging"
+	"rocha/ports"
+	"rocha/storage"
 )
 
 var (
@@ -90,20 +91,20 @@ type Model struct {
 	sessionRenameForm                      *Dialog               // Session rename dialog
 	sessionState                           *storage.SessionState // State data for git metadata and status
 	sessionStatusForm                      *Dialog               // Session status dialog
-	sessionToArchive                       *tmux.Session         // Session being archived (for worktree removal)
-	sessionToKill                          *tmux.Session         // Session being killed (for worktree removal)
+	sessionToArchive                       *ports.TmuxSession    // Session being archived (for worktree removal)
+	sessionToKill                          *ports.TmuxSession    // Session being killed (for worktree removal)
 	state                                  uiState
 	statusConfig                           *StatusConfig         // Status configuration for implementation statuses
 	store                                  *storage.Store        // Storage for persistent state
 	timestampConfig                        *TimestampColorConfig // Timestamp color configuration
 	timestampMode                          TimestampMode
-	tmuxClient                             tmux.Client
+	tmuxClient                             ports.TmuxClient
 	tmuxStatusPosition                     string
 	width                                  int
 	worktreeRemovalForm                    *Dialog // Worktree removal dialog
 }
 
-func NewModel(tmuxClient tmux.Client, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, tipsConfig TipsConfig) *Model {
+func NewModel(tmuxClient ports.TmuxClient, store *storage.Store, editor string, errorClearDelay time.Duration, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, showTimestamps bool, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, tipsConfig TipsConfig) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := store.Load(context.Background(), false)
 	errorManager := NewErrorManager(errorClearDelay)

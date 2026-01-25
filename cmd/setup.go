@@ -5,8 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"rocha/tmux"
 	"strings"
+
+	"rocha/ports"
 )
 
 // SetupCmd configures tmux automatically
@@ -25,7 +26,7 @@ set -g mouse on  # Enable mouse support (scrolling, pane selection, resizing)
 )
 
 // Run executes the setup command
-func (s *SetupCmd) Run(tmuxClient tmux.Client) error {
+func (s *SetupCmd) Run(tmuxClient ports.TmuxClient) error {
 	// Verify required dependencies
 	if err := s.verifyDependencies(); err != nil {
 		return err
@@ -111,7 +112,7 @@ func (s *SetupCmd) setupPath(homeDir, rochaDir string) error {
 }
 
 // setupTmux configures tmux status bar (idempotent)
-func (s *SetupCmd) setupTmux(tmuxClient tmux.Client, homeDir string) error {
+func (s *SetupCmd) setupTmux(tmuxClient ports.TmuxClient, homeDir string) error {
 	tmuxConfPath := filepath.Join(homeDir, ".tmux.conf")
 
 	// Read existing config

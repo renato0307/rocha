@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"rocha/git"
-	"rocha/logging"
-	"rocha/state"
-	"rocha/storage"
-	"rocha/tmux"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"rocha/git"
+	"rocha/logging"
+	"rocha/ports"
+	"rocha/state"
+	"rocha/storage"
 )
 
 // SessionOperations handles session lifecycle operations.
@@ -19,7 +20,7 @@ import (
 type SessionOperations struct {
 	errorManager       *ErrorManager
 	store              *storage.Store
-	tmuxClient         tmux.Client
+	tmuxClient         ports.TmuxClient
 	tmuxStatusPosition string
 }
 
@@ -27,7 +28,7 @@ type SessionOperations struct {
 func NewSessionOperations(
 	errorManager *ErrorManager,
 	store *storage.Store,
-	tmuxClient tmux.Client,
+	tmuxClient ports.TmuxClient,
 	tmuxStatusPosition string,
 ) *SessionOperations {
 	return &SessionOperations{
@@ -67,7 +68,7 @@ func (so *SessionOperations) AttachToSession(sessionName string) tea.Cmd {
 // Returns empty string on error (error stored in errorManager).
 // Updates sessionState if shell session is created.
 func (so *SessionOperations) GetOrCreateShellSession(
-	session *tmux.Session,
+	session *ports.TmuxSession,
 	sessionState *storage.SessionState,
 ) string {
 	sessionInfo, ok := sessionState.Sessions[session.Name]
@@ -79,7 +80,7 @@ func (so *SessionOperations) GetOrCreateShellSession(
 	// Check if shell session already exists
 	if sessionInfo.ShellSession != nil {
 		// Check if tmux session exists
-		if so.tmuxClient.Exists(sessionInfo.ShellSession.Name) {
+		if so.tmuxClient.SessionExists(sessionInfo.ShellSession.Name) {
 			return sessionInfo.ShellSession.Name
 		}
 	}
@@ -128,7 +129,7 @@ func (so *SessionOperations) GetOrCreateShellSession(
 // KillSession kills a session and removes it from state.
 // Updates sessionState and sessionList, returns tea.Cmd.
 func (so *SessionOperations) KillSession(
-	session *tmux.Session,
+	session *ports.TmuxSession,
 	sessionState *storage.SessionState,
 	sessionList *SessionList,
 ) tea.Cmd {
@@ -140,13 +141,13 @@ func (so *SessionOperations) KillSession(
 	// Kill shell session if it exists
 	if hasInfo && sessionInfo.ShellSession != nil {
 		logging.Logger.Info("Killing shell session", "name", sessionInfo.ShellSession.Name)
-		if err := so.tmuxClient.Kill(sessionInfo.ShellSession.Name); err != nil {
+		if err := so.tmuxClient.KillSession(sessionInfo.ShellSession.Name); err != nil {
 			logging.Logger.Warn("Failed to kill shell session", "error", err)
 		}
 	}
 
 	// Kill main Claude session (continue with deletion even if kill fails - session may already be exited)
-	if err := so.tmuxClient.Kill(session.Name); err != nil {
+	if err := so.tmuxClient.KillSession(session.Name); err != nil {
 		logging.Logger.Warn("Failed to kill session (may already be exited)", "name", session.Name, "error", err)
 	}
 
@@ -176,7 +177,7 @@ func (so *SessionOperations) KillSession(
 // ArchiveSession archives a session and optionally removes its worktree.
 // Updates sessionState and sessionList, returns tea.Cmd.
 func (so *SessionOperations) ArchiveSession(
-	session *tmux.Session,
+	session *ports.TmuxSession,
 	removeWorktree bool,
 	sessionState *storage.SessionState,
 	sessionList *SessionList,

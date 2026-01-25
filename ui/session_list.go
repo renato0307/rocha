@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"rocha/git"
-	"rocha/logging"
-	"rocha/state"
-	"rocha/storage"
-	"rocha/tmux"
-
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"rocha/git"
+	"rocha/logging"
+	"rocha/ports"
+	"rocha/state"
+	"rocha/storage"
 )
 
 const escTimeout = 500 * time.Millisecond
@@ -38,7 +38,7 @@ type SessionItem struct {
 	HasShellSession bool // Track if shell session exists
 	IsFlagged       bool
 	LastUpdated     time.Time
-	Session         *tmux.Session
+	Session         *ports.TmuxSession
 	State           string
 	Status          *string // Implementation status
 }
@@ -229,7 +229,7 @@ type SessionList struct {
 	statusConfig       *StatusConfig
 	store              *storage.Store // Storage for persistent state
 	timestampMode      TimestampMode
-	tmuxClient         tmux.Client
+	tmuxClient         ports.TmuxClient
 	tmuxStatusPosition string
 
 	// Tips feature
@@ -249,26 +249,26 @@ type SessionList struct {
 	timestampConfig *TimestampColorConfig
 
 	// Result fields - set by component, read by Model
-	RequestHelp           bool          // User pressed 'h' or '?'
-	RequestNewSession     bool          // User pressed 'n'
-	RequestNewSessionFrom bool          // User pressed 'shift+n' (new from same repo)
-	RequestTestError      bool          // User pressed 'alt+e' (test command)
-	SelectedSession       *tmux.Session // Session user wants to attach to
-	SessionForTemplate    *tmux.Session // Session to use as template for new session
-	SelectedShellSession  *tmux.Session // Session user wants shell session for
-	SessionToArchive      *tmux.Session // Session user wants to archive
-	SessionToComment      *tmux.Session // Session user wants to comment
-	SessionToKill         *tmux.Session // Session user wants to kill
-	SessionToOpenEditor   *tmux.Session // Session user wants to open in editor
-	SessionToRename       *tmux.Session // Session user wants to rename
-	SessionToSendText     *tmux.Session // Session user wants to send text to
-	SessionToSetStatus    *tmux.Session // Session user wants to set status for
-	SessionToToggleFlag   *tmux.Session // Session user wants to toggle flag
-	ShouldQuit            bool          // User pressed 'q' or Ctrl+C
+	RequestHelp           bool               // User pressed 'h' or '?'
+	RequestNewSession     bool               // User pressed 'n'
+	RequestNewSessionFrom bool               // User pressed 'shift+n' (new from same repo)
+	RequestTestError      bool               // User pressed 'alt+e' (test command)
+	SelectedSession       *ports.TmuxSession // Session user wants to attach to
+	SessionForTemplate    *ports.TmuxSession // Session to use as template for new session
+	SelectedShellSession  *ports.TmuxSession // Session user wants shell session for
+	SessionToArchive      *ports.TmuxSession // Session user wants to archive
+	SessionToComment      *ports.TmuxSession // Session user wants to comment
+	SessionToKill         *ports.TmuxSession // Session user wants to kill
+	SessionToOpenEditor   *ports.TmuxSession // Session user wants to open in editor
+	SessionToRename       *ports.TmuxSession // Session user wants to rename
+	SessionToSendText     *ports.TmuxSession // Session user wants to send text to
+	SessionToSetStatus    *ports.TmuxSession // Session user wants to set status for
+	SessionToToggleFlag   *ports.TmuxSession // Session user wants to toggle flag
+	ShouldQuit            bool               // User pressed 'q' or Ctrl+C
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient tmux.Client, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
+func NewSessionList(tmuxClient ports.TmuxClient, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := store.Load(context.Background(), false)
 	if err != nil {
@@ -748,21 +748,21 @@ func pollStateCmd() tea.Cmd {
 }
 
 // buildListItems converts SessionState to list items
-func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client, statusConfig *StatusConfig) []list.Item {
+func buildListItems(sessionState *storage.SessionState, tmuxClient ports.TmuxClient, statusConfig *StatusConfig) []list.Item {
 	var items []list.Item
 
 	// Build sessions from state
 	// No need to filter - shell sessions won't have top-level entries with nested structure!
-	sessionsMap := make(map[string]*tmux.Session)
+	sessionsMap := make(map[string]*ports.TmuxSession)
 	for name, info := range sessionState.Sessions {
-		sessionsMap[name] = &tmux.Session{
+		sessionsMap[name] = &ports.TmuxSession{
 			Name:      name,
 			CreatedAt: info.LastUpdated,
 		}
 	}
 
 	// Build ordered sessions list using OrderedSessionNames from database
-	var sessions []*tmux.Session
+	var sessions []*ports.TmuxSession
 	orderedSet := make(map[string]bool)
 
 	// Add sessions in database order
@@ -804,7 +804,7 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient tmux.Client, 
 		// Check if shell session exists (check nested object)
 		hasShell := false
 		if info.ShellSession != nil {
-			hasShell = tmuxClient.Exists(info.ShellSession.Name)
+			hasShell = tmuxClient.SessionExists(info.ShellSession.Name)
 		}
 
 		// Append git stats if available
@@ -904,8 +904,8 @@ func formatHelpLine(line string) string {
 }
 
 // ensureSessionExists checks if a session exists and recreates it if needed
-func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
-	if sl.tmuxClient.Exists(session.Name) {
+func (sl *SessionList) ensureSessionExists(session *ports.TmuxSession) bool {
+	if sl.tmuxClient.SessionExists(session.Name) {
 		return true
 	}
 
@@ -923,7 +923,7 @@ func (sl *SessionList) ensureSessionExists(session *tmux.Session) bool {
 	}
 
 	// Recreate the session
-	if _, err := sl.tmuxClient.Create(session.Name, worktreePath, claudeDir, sl.tmuxStatusPosition); err != nil {
+	if _, err := sl.tmuxClient.CreateSession(session.Name, worktreePath, claudeDir, sl.tmuxStatusPosition); err != nil {
 		sl.err = fmt.Errorf("failed to recreate session: %w", err)
 		return false
 	}

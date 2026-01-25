@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
-	"rocha/cmd"
-	"rocha/config"
-	"rocha/tmux"
-	"rocha/version"
 
 	"github.com/alecthomas/kong"
+
+	"rocha/cmd"
+	"rocha/config"
+	"rocha/ports"
+	"rocha/tmux"
+	"rocha/version"
 )
 
 func main() {
@@ -32,7 +34,7 @@ func main() {
 			"version": version.Info(),
 		},
 		kong.UsageOnError(),
-		kong.BindTo(tmuxClient, (*tmux.Client)(nil)),
+		kong.BindTo(tmuxClient, (*ports.TmuxClient)(nil)),
 		kong.BindTo(&cli, (*cmd.CLI)(nil)),
 	)
 

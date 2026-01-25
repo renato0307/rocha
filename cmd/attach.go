@@ -12,6 +12,7 @@ import (
 	"rocha/git"
 	"rocha/logging"
 	"rocha/paths"
+	"rocha/ports"
 	"rocha/state"
 	"rocha/storage"
 	"rocha/tmux"
@@ -28,7 +29,7 @@ type AttachCmd struct {
 }
 
 // Run executes the attach command
-func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
+func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	logging.Logger.Info("Attach command started")
 
 	// Apply TmuxStatusPosition setting with proper precedence
@@ -127,10 +128,10 @@ func (a *AttachCmd) Run(tmuxClient tmux.Client, cli *CLI) error {
 	}
 
 	// Step 4: Check if tmux session exists, create if needed
-	if !tmuxClient.Exists(sessionName) {
+	if !tmuxClient.SessionExists(sessionName) {
 		logging.Logger.Info("Session does not exist, creating", "name", sessionName)
 		// Note: attach command doesn't support claudeDir parameter, use empty string
-		_, err := tmuxClient.Create(sessionName, worktreePath, "", a.TmuxStatusPosition)
+		_, err := tmuxClient.CreateSession(sessionName, worktreePath, "", a.TmuxStatusPosition)
 		if err != nil {
 			return fmt.Errorf("failed to create tmux session: %w", err)
 		}

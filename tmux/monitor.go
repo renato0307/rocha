@@ -3,20 +3,22 @@ package tmux
 import (
 	"strings"
 	"time"
+
+	"rocha/ports"
 )
 
 // Monitor watches a tmux session for Claude prompts
 type Monitor struct {
-	client       Client
+	client       ports.TmuxClient
+	isWaiting    bool
+	lastContent  string
+	notifyCh     chan string
 	sessionName  string
 	stopCh       chan struct{}
-	notifyCh     chan string
-	lastContent  string
-	isWaiting    bool
 }
 
 // NewMonitor creates a new session monitor
-func NewMonitor(client Client, sessionName string, notifyCh chan string) *Monitor {
+func NewMonitor(client ports.TmuxClient, sessionName string, notifyCh chan string) *Monitor {
 	return &Monitor{
 		client:      client,
 		sessionName: sessionName,
@@ -53,7 +55,7 @@ func (m *Monitor) monitorLoop() {
 
 // checkForPrompt captures the pane content and looks for Claude prompts
 func (m *Monitor) checkForPrompt() {
-	if !m.client.Exists(m.sessionName) {
+	if !m.client.SessionExists(m.sessionName) {
 		return
 	}
 

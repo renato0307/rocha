@@ -5,12 +5,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"rocha/logging"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
+
+	"rocha/logging"
+	"rocha/ports"
 )
 
 // attachmentState tracks the state of an attached session
@@ -27,7 +29,15 @@ type DefaultClient struct {
 }
 
 // Compile-time interface verification
-var _ Client = (*DefaultClient)(nil)
+var _ ports.TmuxClient = (*DefaultClient)(nil)
+
+// Local error aliases for backward compatibility within this package
+var (
+	ErrAlreadyAttached = ports.ErrTmuxAlreadyAttached
+	ErrNotAttached     = ports.ErrTmuxNotAttached
+	ErrSessionExists   = ports.ErrTmuxSessionExists
+	ErrSessionNotFound = ports.ErrTmuxSessionNotFound
+)
 
 // NewClient creates a new DefaultClient instance
 func NewClient() *DefaultClient {
@@ -37,9 +47,9 @@ func NewClient() *DefaultClient {
 }
 
 // createBaseSession creates a tmux session without running rocha start-claude
-// This is the common logic shared by Create() and CreateShellSession()
+// This is the common logic shared by CreateSession() and CreateShellSession()
 func (c *DefaultClient) createBaseSession(name string, worktreePath string, statusPosition string) error {
-	if c.Exists(name) {
+	if c.SessionExists(name) {
 		return ErrSessionExists
 	}
 
@@ -85,7 +95,7 @@ func (c *DefaultClient) createBaseSession(name string, worktreePath string, stat
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for session %s to be created", name)
 		case <-ticker.C:
-			if c.Exists(name) {
+			if c.SessionExists(name) {
 				return nil
 			}
 		}
@@ -120,10 +130,10 @@ fi
 	return c.BindKey("root", "C-]", command)
 }
 
-// Create creates a new tmux session with the given name
+// CreateSession creates a new tmux session with the given name
 // If worktreePath is provided (non-empty), the session will start in that directory
 // If claudeDir is provided (non-empty), CLAUDE_CONFIG_DIR environment variable will be set
-func (c *DefaultClient) Create(name string, worktreePath string, claudeDir string, statusPosition string) (*Session, error) {
+func (c *DefaultClient) CreateSession(name string, worktreePath string, claudeDir string, statusPosition string) (*ports.TmuxSession, error) {
 	logging.Logger.Info("Creating new tmux session", "name", name, "worktree_path", worktreePath, "claude_dir", claudeDir, "status_position", statusPosition)
 
 	if err := c.createBaseSession(name, worktreePath, statusPosition); err != nil {
@@ -177,14 +187,14 @@ func (c *DefaultClient) Create(name string, worktreePath string, claudeDir strin
 		logging.Logger.Info("Session created and Claude started", "name", name)
 	}
 
-	return &Session{
+	return &ports.TmuxSession{
 		Name:      name,
 		CreatedAt: time.Now(),
 	}, nil
 }
 
 // CreateShellSession creates a plain shell session without rocha start-claude
-func (c *DefaultClient) CreateShellSession(name string, worktreePath string, statusPosition string) (*Session, error) {
+func (c *DefaultClient) CreateShellSession(name string, worktreePath string, statusPosition string) (*ports.TmuxSession, error) {
 	logging.Logger.Info("Creating shell tmux session", "name", name, "worktree_path", worktreePath)
 
 	if err := c.createBaseSession(name, worktreePath, statusPosition); err != nil {
@@ -192,17 +202,17 @@ func (c *DefaultClient) CreateShellSession(name string, worktreePath string, sta
 	}
 
 	logging.Logger.Info("Shell session created", "name", name)
-	return &Session{Name: name, CreatedAt: time.Now()}, nil
+	return &ports.TmuxSession{Name: name, CreatedAt: time.Now()}, nil
 }
 
-// Exists checks if the tmux session exists
-func (c *DefaultClient) Exists(name string) bool {
+// SessionExists checks if the tmux session exists
+func (c *DefaultClient) SessionExists(name string) bool {
 	cmd := exec.Command("tmux", "has-session", "-t", name)
 	return cmd.Run() == nil
 }
 
-// List returns all active tmux sessions
-func (c *DefaultClient) List() ([]*Session, error) {
+// ListSessions returns all active tmux sessions
+func (c *DefaultClient) ListSessions() ([]*ports.TmuxSession, error) {
 	cmd := exec.Command("tmux", "ls", "-F", "#{session_name}")
 	output, err := cmd.Output()
 	if err != nil {
@@ -210,19 +220,19 @@ func (c *DefaultClient) List() ([]*Session, error) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if exitErr.ExitCode() == 1 {
 				// No sessions exist, this is fine
-				return []*Session{}, nil
+				return []*ports.TmuxSession{}, nil
 			}
 		}
 		// Actual error
-		return []*Session{}, err
+		return []*ports.TmuxSession{}, err
 	}
 
-	var sessions []*Session
+	var sessions []*ports.TmuxSession
 	lines := splitLines(string(output))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			sessions = append(sessions, &Session{
+			sessions = append(sessions, &ports.TmuxSession{
 				Name:      line,
 				CreatedAt: time.Now(), // We don't track creation time for existing sessions
 			})
@@ -232,25 +242,25 @@ func (c *DefaultClient) List() ([]*Session, error) {
 	return sessions, nil
 }
 
-// Kill terminates the tmux session
-func (c *DefaultClient) Kill(name string) error {
+// KillSession terminates the tmux session
+func (c *DefaultClient) KillSession(name string) error {
 	cmd := exec.Command("tmux", "kill-session", "-t", name)
 	return cmd.Run()
 }
 
-// Rename renames a tmux session
-func (c *DefaultClient) Rename(oldName, newName string) error {
+// RenameSession renames a tmux session
+func (c *DefaultClient) RenameSession(oldName, newName string) error {
 	if oldName == "" || newName == "" {
 		return fmt.Errorf("session names cannot be empty")
 	}
 
 	// Check if old session exists
-	if !c.Exists(oldName) {
+	if !c.SessionExists(oldName) {
 		return fmt.Errorf("session %s not found", oldName)
 	}
 
 	// Check if new name already exists
-	if c.Exists(newName) {
+	if c.SessionExists(newName) {
 		return fmt.Errorf("session %s already exists", newName)
 	}
 

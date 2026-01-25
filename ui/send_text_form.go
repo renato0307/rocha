@@ -3,11 +3,11 @@ package ui
 import (
 	"fmt"
 
-	"rocha/logging"
-	"rocha/tmux"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+
+	"rocha/logging"
+	"rocha/ports"
 )
 
 // SendTextFormResult contains the result of the send text operation
@@ -25,11 +25,11 @@ type SendTextForm struct {
 	form        *huh.Form
 	result      SendTextFormResult
 	sessionName string
-	tmuxClient  tmux.Client
+	tmuxClient  ports.TmuxClient
 }
 
 // NewSendTextForm creates a new send text form
-func NewSendTextForm(tmuxClient tmux.Client, sessionName string) *SendTextForm {
+func NewSendTextForm(tmuxClient ports.TmuxClient, sessionName string) *SendTextForm {
 	sf := &SendTextForm{
 		sessionName: sessionName,
 		tmuxClient:  tmuxClient,

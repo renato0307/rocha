@@ -8,6 +8,7 @@ import (
 	"rocha/logging"
 	"rocha/operations"
 	"rocha/paths"
+	"rocha/ports"
 	"rocha/storage"
 	"rocha/tmux"
 )
@@ -197,12 +198,12 @@ func filterSuccessfulSessions(sessionNames, failedSessions []string) []string {
 }
 
 // killTmuxSessions kills tmux sessions for the given session names
-func killTmuxSessions(tmuxClient tmux.SessionManager, sessionNames []string) {
+func killTmuxSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []string) {
 	logging.Logger.Info("Killing tmux sessions", "count", len(sessionNames))
 
 	for _, name := range sessionNames {
 		logging.Logger.Debug("Killing main tmux session", "session", name)
-		if err := tmuxClient.Kill(name); err != nil {
+		if err := tmuxClient.KillSession(name); err != nil {
 			logging.Logger.Warn("Failed to kill tmux session", "session", name, "error", err)
 			fmt.Printf("Warning: Failed to kill tmux session '%s': %v\n", name, err)
 		} else {
@@ -212,7 +213,7 @@ func killTmuxSessions(tmuxClient tmux.SessionManager, sessionNames []string) {
 
 		shellName := name + "-shell"
 		logging.Logger.Debug("Attempting to kill shell session", "session", shellName)
-		if err := tmuxClient.Kill(shellName); err != nil {
+		if err := tmuxClient.KillSession(shellName); err != nil {
 			logging.Logger.Debug("Shell session not found or already killed", "session", shellName)
 		} else {
 			logging.Logger.Debug("Shell tmux session killed", "session", shellName)
@@ -224,7 +225,7 @@ func killTmuxSessions(tmuxClient tmux.SessionManager, sessionNames []string) {
 }
 
 // warnAboutRunningSessions checks for running tmux sessions and prints a warning with restart instructions
-func warnAboutRunningSessions(tmuxClient tmux.SessionManager, sessionNames []string, restartCmd string) {
+func warnAboutRunningSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []string, restartCmd string) {
 	logging.Logger.Debug("Checking for running tmux sessions")
 
 	runningSessions, err := operations.GetRunningTmuxSessions(sessionNames, tmuxClient)

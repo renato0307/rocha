@@ -8,18 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"rocha/config"
-	"rocha/git"
-	"rocha/logging"
-	"rocha/paths"
-	"rocha/state"
-	"rocha/storage"
-	"rocha/tmux"
-
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+
+	"rocha/config"
+	"rocha/git"
+	"rocha/logging"
+	"rocha/paths"
+	"rocha/ports"
+	"rocha/state"
+	"rocha/storage"
+	"rocha/tmux"
 )
 
 // sessionCreatedMsg is sent when session creation completes
@@ -46,7 +47,7 @@ type SessionForm struct {
 	creating           bool // True when session creation is in progress
 	form               *huh.Form
 	result             SessionFormResult
-	sessionManager     tmux.SessionManager
+	sessionManager     ports.TmuxSessionLifecycle
 	sessionState       *storage.SessionState
 	spinner            spinner.Model
 	store              *storage.Store
@@ -55,7 +56,7 @@ type SessionForm struct {
 
 // NewSessionForm creates a new session creation form
 // If defaultRepoSource is provided, it will be pre-filled in the repository field
-func NewSessionForm(sessionManager tmux.SessionManager, store *storage.Store, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, defaultRepoSource string) *SessionForm {
+func NewSessionForm(sessionManager ports.TmuxSessionLifecycle, store *storage.Store, sessionState *storage.SessionState, tmuxStatusPosition string, allowDangerouslySkipPermissionsDefault bool, defaultRepoSource string) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -396,7 +397,7 @@ func (sf *SessionForm) createSession() error {
 	}
 
 	// 4. Create tmux session with ClaudeDir and status position
-	session, err := sf.sessionManager.Create(tmuxName, worktreePath, claudeDir, sf.tmuxStatusPosition)
+	session, err := sf.sessionManager.CreateSession(tmuxName, worktreePath, claudeDir, sf.tmuxStatusPosition)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}

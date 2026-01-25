@@ -6,8 +6,8 @@ import (
 
 	"rocha/logging"
 	"rocha/paths"
+	"rocha/ports"
 	"rocha/storage"
-	"rocha/tmux"
 )
 
 // SetSessionClaudeDir updates ClaudeDir for a single session
@@ -59,11 +59,11 @@ func SetSessionSkipPermissions(
 }
 
 // GetRunningTmuxSessions returns list of tmux sessions that are currently running
-func GetRunningTmuxSessions(sessionNames []string, tmuxClient tmux.SessionManager) ([]string, error) {
+func GetRunningTmuxSessions(sessionNames []string, tmuxClient ports.TmuxSessionLifecycle) ([]string, error) {
 	logging.Logger.Debug("Checking for running tmux sessions", "sessions", sessionNames)
 
 	// Get all running tmux sessions
-	sessions, err := tmuxClient.List()
+	sessions, err := tmuxClient.ListSessions()
 	if err != nil {
 		// List returns error if no sessions exist
 		logging.Logger.Debug("No tmux sessions running or tmux error", "error", err)

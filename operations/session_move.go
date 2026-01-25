@@ -10,8 +10,8 @@ import (
 
 	"rocha/git"
 	"rocha/logging"
+	"rocha/ports"
 	"rocha/storage"
-	"rocha/tmux"
 )
 
 // MoveRepository moves all sessions from a single repository
@@ -23,7 +23,7 @@ func MoveRepository(
 	destStore *storage.Store,
 	sourceRochaHome string,
 	destRochaHome string,
-	tmuxClient tmux.SessionManager,
+	tmuxClient ports.TmuxSessionLifecycle,
 ) ([]string, error) {
 	logging.Logger.Info("Moving repository", "repo", repoInfo, "from", sourceRochaHome, "to", destRochaHome)
 
@@ -68,7 +68,7 @@ func MoveRepository(
 	logging.Logger.Debug("Killing tmux sessions for repository", "repo", repoInfo)
 	for _, sess := range repoSessions {
 		fmt.Printf("Killing tmux session '%s'...\n", sess.Name)
-		if err := tmuxClient.Kill(sess.Name); err != nil {
+		if err := tmuxClient.KillSession(sess.Name); err != nil {
 			logging.Logger.Warn("Failed to kill tmux session", "session", sess.Name, "error", err)
 			fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sess.Name, err)
 		}
@@ -77,7 +77,7 @@ func MoveRepository(
 		if sess.ShellSession != nil {
 			shellName := sess.ShellSession.Name
 			logging.Logger.Debug("Killing shell session", "session", shellName)
-			if err := tmuxClient.Kill(shellName); err != nil {
+			if err := tmuxClient.KillSession(shellName); err != nil {
 				logging.Logger.Warn("Failed to kill shell session", "session", shellName, "error", err)
 				fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", shellName, err)
 			}
@@ -281,7 +281,7 @@ func MoveSession(
 	destStore *storage.Store,
 	sourceRochaHome string,
 	destRochaHome string,
-	tmuxClient tmux.SessionManager,
+	tmuxClient ports.TmuxSessionLifecycle,
 ) error {
 	logging.Logger.Info("Moving session", "session", sessionName, "from", sourceRochaHome, "to", destRochaHome)
 
@@ -295,7 +295,7 @@ func MoveSession(
 
 	// Kill tmux session (graceful failure - session might not be running)
 	logging.Logger.Debug("Killing tmux session", "session", sessionName)
-	if err := tmuxClient.Kill(sessionName); err != nil {
+	if err := tmuxClient.KillSession(sessionName); err != nil {
 		// Log warning but continue - tmux session might not exist
 		logging.Logger.Warn("Failed to kill tmux session", "session", sessionName, "error", err)
 		fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sessionName, err)
@@ -305,7 +305,7 @@ func MoveSession(
 	if sessInfo.ShellSession != nil {
 		shellName := sessInfo.ShellSession.Name
 		logging.Logger.Debug("Killing shell session", "session", shellName)
-		if err := tmuxClient.Kill(shellName); err != nil {
+		if err := tmuxClient.KillSession(shellName); err != nil {
 			logging.Logger.Warn("Failed to kill shell session", "session", shellName, "error", err)
 			fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", shellName, err)
 		}
@@ -370,7 +370,7 @@ func DeleteSession(
 	sessionName string,
 	store *storage.Store,
 	opts DeleteSessionOptions,
-	tmuxClient tmux.SessionManager,
+	tmuxClient ports.TmuxSessionLifecycle,
 ) error {
 	logging.Logger.Info("Deleting session", "session", sessionName, "killTmux", opts.KillTmux, "removeWorktree", opts.RemoveWorktree)
 
@@ -387,14 +387,14 @@ func DeleteSession(
 		// Kill shell session if exists
 		if sessInfo.ShellSession != nil {
 			logging.Logger.Debug("Killing shell session", "session", sessInfo.ShellSession.Name)
-			if err := tmuxClient.Kill(sessInfo.ShellSession.Name); err != nil {
+			if err := tmuxClient.KillSession(sessInfo.ShellSession.Name); err != nil {
 				logging.Logger.Warn("Failed to kill shell session", "session", sessInfo.ShellSession.Name, "error", err)
 				fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", sessInfo.ShellSession.Name, err)
 			}
 		}
 
 		// Kill main session
-		if err := tmuxClient.Kill(sessionName); err != nil {
+		if err := tmuxClient.KillSession(sessionName); err != nil {
 			logging.Logger.Warn("Failed to kill tmux session", "session", sessionName, "error", err)
 			fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sessionName, err)
 		}

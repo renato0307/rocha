@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
+
 	"rocha/editor"
 	"rocha/git"
 	"rocha/logging"
+	"rocha/ports"
 	"rocha/storage"
-	"rocha/tmux"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // ActionType indicates what action Model should take
@@ -37,17 +38,17 @@ const (
 
 // ActionResult tells Model what action to take
 type ActionResult struct {
-	ActionType      ActionType
-	Cmd             tea.Cmd
-	SessionName     string
-	SessionToKill   *tmux.Session
-	SessionToArchive *tmux.Session
-	WorktreePath    string
+	ActionType       ActionType
+	Cmd              tea.Cmd
+	SessionName      string
+	SessionToArchive *ports.TmuxSession
+	SessionToKill    *ports.TmuxSession
+	WorktreePath     string
 
 	// For dialog creation
-	DialogTitle     string
-	DialogContent   tea.Model
-	NewState        uiState
+	DialogContent tea.Model
+	DialogTitle   string
+	NewState      uiState
 
 	// For new session dialog
 	DefaultRepoSource string
@@ -64,7 +65,7 @@ type ListActionHandler struct {
 	sessionState                           *storage.SessionState
 	statusConfig                           *StatusConfig
 	store                                  *storage.Store
-	tmuxClient                             tmux.Client
+	tmuxClient                             ports.TmuxClient
 	tmuxStatusPosition                     string
 }
 
@@ -77,7 +78,7 @@ func NewListActionHandler(
 	statusConfig *StatusConfig,
 	errorManager *ErrorManager,
 	sessionOps *SessionOperations,
-	tmuxClient tmux.Client,
+	tmuxClient ports.TmuxClient,
 	tmuxStatusPosition string,
 	devMode bool,
 	allowDangerouslySkipPermissionsDefault bool,
