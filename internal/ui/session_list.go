@@ -13,13 +13,13 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
 	"rocha/internal/services"
+	"rocha/internal/theme"
 )
 
 const escTimeout = 500 * time.Millisecond
@@ -111,18 +111,18 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	var statusIcon string
 	switch sessionState {
 	case domain.StateWorking:
-		statusIcon = workingIconStyle.Render(domain.SymbolWorking)
+		statusIcon = theme.WorkingIconStyle.Render(domain.SymbolWorking)
 	case domain.StateIdle:
-		statusIcon = idleIconStyle.Render(domain.SymbolIdle)
+		statusIcon = theme.IdleIconStyle.Render(domain.SymbolIdle)
 	case domain.StateWaiting:
-		statusIcon = waitingIconStyle.Render(domain.SymbolWaiting)
+		statusIcon = theme.WaitingIconStyle.Render(domain.SymbolWaiting)
 	case domain.StateExited:
-		statusIcon = exitedIconStyle.Render(domain.SymbolExited)
+		statusIcon = theme.ExitedIconStyle.Render(domain.SymbolExited)
 	}
 
 	// Build first line: cursor + zero-padded number + status + name
 	line1 := fmt.Sprintf("%s %02d. %s %s", cursor, index+1, statusIcon, item.DisplayName)
-	line1 = normalStyle.Render(line1)
+	line1 = theme.NormalStyle.Render(line1)
 
 	// Add flag indicator if flagged
 	if item.IsFlagged {
@@ -142,9 +142,7 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	// Add implementation status if set (with color-coded brackets)
 	if item.Status != nil && *item.Status != "" {
 		statusColor := d.statusConfig.GetColor(*item.Status)
-		line1 += " " + lipgloss.NewStyle().
-			Foreground(lipgloss.Color(statusColor)).
-			Render("["+*item.Status+"]")
+		line1 += " " + theme.StatusStyle(statusColor).Render("["+*item.Status+"]")
 	}
 
 	// Add timestamp at the end with color based on age
@@ -161,8 +159,7 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 		if timeStr != "" {
 			color := getTimestampColor(item.LastUpdated, d.timestampConfig)
-			timestampStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-			line1 += " " + timestampStyle.Render("["+timeStr+"]")
+			line1 += " " + theme.TimestampStyle(color).Render("["+timeStr+"]")
 		}
 	}
 
@@ -194,23 +191,23 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 				// Color file stats: +N in green, -N in red
 				for j, word := range words {
 					if strings.HasPrefix(word, "+") && len(word) > 1 && word[1] >= '0' && word[1] <= '9' {
-						words[j] = additionsStyle.Render(word)
+						words[j] = theme.AdditionsStyle.Render(word)
 					} else if strings.HasPrefix(word, "-") && len(word) > 1 && word[1] >= '0' && word[1] <= '9' {
-						words[j] = deletionsStyle.Render(word)
+						words[j] = theme.DeletionsStyle.Render(word)
 					} else {
 						// Other parts of stats section stay gray
-						words[j] = branchStyle.Render(word)
+						words[j] = theme.BranchStyle.Render(word)
 					}
 				}
 				parts[i] = strings.Join(words, " ")
 			} else {
 				// Apply gray color to non-stat parts (branch name, PR, ahead/behind, etc)
-				parts[i] = branchStyle.Render(part)
+				parts[i] = theme.BranchStyle.Render(part)
 			}
 		}
-		styledGitRef = strings.Join(parts, branchStyle.Render(" | "))
+		styledGitRef = strings.Join(parts, theme.BranchStyle.Render(" | "))
 
-		line2 = branchStyle.Render(indent) + styledGitRef
+		line2 = theme.BranchStyle.Render(indent) + styledGitRef
 	}
 
 	// Write both lines
@@ -658,24 +655,19 @@ func (sl *SessionList) View() string {
 	s += renderHeader(sl.devMode, "", "")
 
 	// Legend + Shortcuts (moved to top, below header)
-	shortcutStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
-	helpText := sl.renderStatusLegend() + "  " + shortcutStyle.Render("?") + helpLabelStyle.Render(" shortcuts")
+	helpText := sl.renderStatusLegend() + "  " + theme.HelpShortcutStyle.Render("?") + theme.HelpLabelStyle.Render(" shortcuts")
 
 	// Add first-session hint when there's exactly 1 session (highlighted for first-timers)
 	if len(sl.list.Items()) == 1 {
-		hintKeyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
-		hintLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("178"))
-		helpText += "  " + hintKeyStyle.Render("enter") + hintLabelStyle.Render(" open Claude ") +
-			hintKeyStyle.Render("ctrl+q") + hintLabelStyle.Render(" return here")
+		helpText += "  " + theme.HintKeyStyle.Render("enter") + theme.HintLabelStyle.Render(" open Claude ") +
+			theme.HintKeyStyle.Render("ctrl+q") + theme.HintLabelStyle.Render(" return here")
 	}
 
-	s += helpStyle.Render(helpText) + "\n"
+	s += theme.HelpStyle.Render(helpText) + "\n"
 
 	// Session List
 	if len(sl.list.Items()) == 0 {
-		emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-		shortcutStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
-		s += emptyStyle.Render("No sessions. Press ") + shortcutStyle.Render("n") + emptyStyle.Render(" to create a session.") + "\n"
+		s += theme.HelpLabelStyle.Render("No sessions. Press ") + theme.HelpShortcutStyle.Render("n") + theme.HelpLabelStyle.Render(" to create a session.") + "\n"
 
 		// Add padding to push tip/error to bottom
 		// The list area should fill listHeight lines
@@ -691,7 +683,7 @@ func (sl *SessionList) View() string {
 	// Show SessionList error if any (transient, limited to 2 lines)
 	if sl.err != nil {
 		errorText := formatErrorForDisplay(sl.err, sl.width)
-		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(errorText)
+		s += "\n" + theme.ErrorStyle.Render(errorText)
 		sl.currentTip = nil // Clear tip when error is shown
 		sl.err = nil
 	}
@@ -857,10 +849,10 @@ func buildListItems(sessionState *domain.SessionCollection, sessionService *serv
 func (sl *SessionList) renderStatusLegend() string {
 	workingCount, idleCount, waitingCount, exitedCount := sl.countSessionsByState()
 
-	legend := workingIconStyle.Render(domain.SymbolWorking) + fmt.Sprintf(" %d working • ", workingCount)
-	legend += idleIconStyle.Render(domain.SymbolIdle) + fmt.Sprintf(" %d idle • ", idleCount)
-	legend += waitingIconStyle.Render(domain.SymbolWaiting) + fmt.Sprintf(" %d waiting • ", waitingCount)
-	legend += exitedIconStyle.Render(domain.SymbolExited) + fmt.Sprintf(" %d exited", exitedCount)
+	legend := theme.WorkingIconStyle.Render(domain.SymbolWorking) + fmt.Sprintf(" %d working • ", workingCount)
+	legend += theme.IdleIconStyle.Render(domain.SymbolIdle) + fmt.Sprintf(" %d idle • ", idleCount)
+	legend += theme.WaitingIconStyle.Render(domain.SymbolWaiting) + fmt.Sprintf(" %d waiting • ", waitingCount)
+	legend += theme.ExitedIconStyle.Render(domain.SymbolExited) + fmt.Sprintf(" %d exited", exitedCount)
 
 	return legend
 }
@@ -901,8 +893,8 @@ func formatHelpLine(line string) string {
 		label := part[colonIdx+2:] // +2 to skip ": "
 
 		// Style shortcut and label separately
-		styledShortcut := helpShortcutStyle.Render(shortcut)
-		styledLabel := helpLabelStyle.Render(": " + label)
+		styledShortcut := theme.HelpShortcutStyle.Render(shortcut)
+		styledLabel := theme.HelpLabelStyle.Render(": " + label)
 
 		formatted = append(formatted, styledShortcut+styledLabel)
 	}

@@ -8,55 +8,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 
 	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/ports"
 	"rocha/internal/services"
-)
-
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("99")).
-			Padding(1, 0)
-
-	normalStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("250"))
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Padding(1, 0)
-
-	helpShortcutStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("255")).
-				Bold(true)
-
-	helpLabelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
-
-	branchStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")) // Dimmed/gray
-
-	workingIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("2")) // Green - actively working
-
-	idleIconStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("3")) // Yellow - finished/idle
-
-	waitingIconStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("1")) // Red - waiting for prompt
-
-	exitedIconStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")) // Gray - Claude has exited
-
-	additionsStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("2")) // Green for additions
-
-	deletionsStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("1")) // Red for deletions
+	"rocha/internal/theme"
 )
 
 type uiState int
@@ -702,9 +660,8 @@ func (m *Model) View() string {
 		// Always reserve 2 lines to prevent layout shift
 		view += "\n"
 		if m.errorManager.HasError() {
-			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 			errorText := formatErrorForDisplay(m.errorManager.GetError(), m.width)
-			view += errorStyle.Render(errorText)
+			view += theme.ErrorStyle.Render(errorText)
 			// Clear tip when error is shown
 			m.sessionList.ClearCurrentTip()
 		} else if tip := m.sessionList.GetCurrentTip(); tip != "" {

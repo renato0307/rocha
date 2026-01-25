@@ -3,7 +3,7 @@ package ui
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
+	"rocha/internal/theme"
 )
 
 // VersionInfo holds version information for display in UI headers.
@@ -37,26 +37,8 @@ func SetVersionInfo(info VersionInfo) {
 // It displays the app name with optional version info (in dev mode) and tagline.
 // If subtitle is provided, it's rendered below the tagline (used for dialog form titles).
 func renderHeader(devMode bool, subtitle string, _ string) string {
-	// Title style - matches session list (color 99, bold)
-	appNameStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("99"))
-
-	// Version info style - grey, shown next to title in dev mode
-	versionStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
-
-	// Tagline style - matches session list (color 250)
-	taglineStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("250"))
-
-	// Subtitle style - used for dialog form titles
-	subtitleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("86"))
-
 	// Build app name line (with optional version info)
-	appNameLine := appNameStyle.Render("Rocha")
+	appNameLine := theme.AppNameStyle.Render("Rocha")
 	if devMode {
 		commit := versionInfo.Commit
 		if len(commit) > 7 {
@@ -67,16 +49,16 @@ func renderHeader(devMode bool, subtitle string, _ string) string {
 			commit,
 			versionInfo.Date,
 			versionInfo.GoVersion)
-		appNameLine += versionStyle.Render(versionInfoStr)
+		appNameLine += theme.VersionStyle.Render(versionInfoStr)
 	}
 
 	// Build tagline
 	result := appNameLine + "\n"
-	result += taglineStyle.Render(versionInfo.Tagline)
+	result += theme.TaglineStyle.Render(versionInfo.Tagline)
 
 	// Add subtitle if provided (e.g., dialog form title)
 	if subtitle != "" {
-		result += "\n\n" + subtitleStyle.Render(subtitle)
+		result += "\n\n" + theme.SubtitleStyle.Render(subtitle)
 	}
 
 	result += "\n"

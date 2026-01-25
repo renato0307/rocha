@@ -10,12 +10,12 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 
 	"rocha/internal/config"
 	"rocha/internal/domain"
 	"rocha/internal/logging"
 	"rocha/internal/services"
+	"rocha/internal/theme"
 )
 
 // sessionCreatedMsg is sent when session creation completes
@@ -60,7 +60,7 @@ func NewSessionForm(
 ) *SessionForm {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = theme.SpinnerStyle
 
 	sf := &SessionForm{
 		gitService: gitService,
