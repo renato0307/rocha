@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	adapterclaude "github.com/renato0307/rocha/internal/adapters/claude"
 	adaptereditor "github.com/renato0307/rocha/internal/adapters/editor"
 	adaptergit "github.com/renato0307/rocha/internal/adapters/git"
 	adaptersound "github.com/renato0307/rocha/internal/adapters/sound"
@@ -25,6 +26,7 @@ type Container struct {
 	SessionService      *services.SessionService
 	SettingsService     *services.SettingsService
 	ShellService        *services.ShellService
+	TokenStatsService   *services.TokenStatsService
 
 	// Internal - for cleanup only
 	sessionRepo ports.SessionRepository
@@ -63,6 +65,10 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 	settingsService := services.NewSettingsService(sessionRepo)
 	shellService := services.NewShellService(sessionRepo, sessionRepo, tmuxClient, editorOpener)
 
+	// Create token stats service
+	sessionParser := adapterclaude.NewSessionParser()
+	tokenStatsService := services.NewTokenStatsService(sessionParser)
+
 	return &Container{
 		GitService:          gitService,
 		MigrationService:    migrationService,
@@ -70,6 +76,7 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 		SessionService:      sessionService,
 		SettingsService:     settingsService,
 		ShellService:        shellService,
+		TokenStatsService:   tokenStatsService,
 		sessionRepo:         sessionRepo,
 	}, nil
 }

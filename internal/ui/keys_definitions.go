@@ -22,6 +22,7 @@ var AllKeyDefinitions = []KeyDefinition{
 	{Name: "help", Defaults: []string{"h", "?"}, Help: "help", TipFormat: "press %s to see all shortcuts"},
 	{Name: "quit", Defaults: []string{"q"}, Help: "quit", TipFormat: ""},
 	{Name: "timestamps", Defaults: []string{"t"}, Help: "toggle timestamps", TipFormat: "press %s to toggle timestamp display"},
+	{Name: "token_chart", Defaults: []string{"T"}, Help: "toggle token chart", TipFormat: "press %s to toggle token usage chart"},
 
 	// Navigation keys
 	{Name: "clear_filter", Defaults: []string{"esc"}, Help: "clear filter (press twice within 500ms)", TipFormat: "press %s twice to clear the filter"},

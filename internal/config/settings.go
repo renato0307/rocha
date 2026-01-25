@@ -89,19 +89,20 @@ const DefaultTmuxStatusPosition = "bottom"
 
 // Settings represents the structure of ~/.rocha/settings.json
 type Settings struct {
-	AllowDangerouslySkipPermissions *bool              `json:"allow_dangerously_skip_permissions,omitempty"`
-	Debug                           *bool              `json:"debug,omitempty"`
-	Editor                          string             `json:"editor,omitempty"`
-	ErrorClearDelay                 *int               `json:"error_clear_delay,omitempty"`
-	Keys                            KeyBindingsConfig  `json:"keys,omitempty"`
-	MaxLogFiles                     *int               `json:"max_log_files,omitempty"`
-	ShowTimestamps                  *bool              `json:"show_timestamps,omitempty"`
-	StatusColors                    StringArray        `json:"status_colors,omitempty"`
-	Statuses                        StringArray        `json:"statuses,omitempty"`
-	TipsDisplayDurationSeconds      *int               `json:"tips_display_duration_seconds,omitempty"`
-	TipsEnabled                     *bool              `json:"tips_enabled,omitempty"`
-	TipsShowIntervalSeconds         *int               `json:"tips_show_interval_seconds,omitempty"`
-	TmuxStatusPosition              string             `json:"tmux_status_position,omitempty"`
+	AllowDangerouslySkipPermissions *bool             `json:"allow_dangerously_skip_permissions,omitempty"`
+	Debug                           *bool             `json:"debug,omitempty"`
+	Editor                          string            `json:"editor,omitempty"`
+	ErrorClearDelay                 *int              `json:"error_clear_delay,omitempty"`
+	Keys                            KeyBindingsConfig `json:"keys,omitempty"`
+	MaxLogFiles                     *int              `json:"max_log_files,omitempty"`
+	ShowTimestamps                  *bool             `json:"show_timestamps,omitempty"`
+	ShowTokenChart                  *bool             `json:"show_token_chart,omitempty"`
+	StatusColors                    StringArray       `json:"status_colors,omitempty"`
+	Statuses                        StringArray       `json:"statuses,omitempty"`
+	TipsDisplayDurationSeconds      *int              `json:"tips_display_duration_seconds,omitempty"`
+	TipsEnabled                     *bool             `json:"tips_enabled,omitempty"`
+	TipsShowIntervalSeconds         *int              `json:"tips_show_interval_seconds,omitempty"`
+	TmuxStatusPosition              string            `json:"tmux_status_position,omitempty"`
 }
 
 // StringArray supports both JSON arrays and comma-separated strings

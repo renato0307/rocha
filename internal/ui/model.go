@@ -61,6 +61,7 @@ type Model struct {
 	timestampConfig                        *config.TimestampColorConfig // Timestamp color configuration
 	timestampMode                          TimestampMode
 	tmuxStatusPosition                     string
+	tokenChart                             *TokenChart                  // Token usage chart component
 	width                                  int
 	worktreeRemovalForm                    *Dialog                      // Worktree removal dialog
 }
@@ -72,6 +73,7 @@ func NewModel(
 	timestampConfig *config.TimestampColorConfig,
 	devMode bool,
 	showTimestamps bool,
+	showTokenChart bool,
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
@@ -79,6 +81,7 @@ func NewModel(
 	gitService *services.GitService,
 	sessionService *services.SessionService,
 	shellService *services.ShellService,
+	tokenStatsService *services.TokenStatsService,
 ) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := sessionService.LoadState(context.Background(), false)
@@ -122,6 +125,12 @@ func NewModel(
 		shellService,
 	)
 
+	// Create token chart component
+	tokenChart := NewTokenChart(tokenStatsService)
+	if showTokenChart {
+		tokenChart.SetVisible(true)
+	}
+
 	return &Model{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
 		devMode:                                devMode,
@@ -140,6 +149,7 @@ func NewModel(
 		timestampConfig:                        timestampConfig,
 		timestampMode:                          initialMode,
 		tmuxStatusPosition:                     tmuxStatusPosition,
+		tokenChart:                             tokenChart,
 	}
 }
 
@@ -179,20 +189,18 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Refresh token chart on poll cycle (when visible)
+	if _, ok := msg.(checkStateMsg); ok && m.tokenChart.IsVisible() {
+		m.tokenChart.Refresh()
+	}
+
 	// Handle window size updates
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Calculate available height for SessionList's internal list
-		// Layout: Header (2) + spacing (1) + Legend (1) + spacing (1) + [List] + Bottom section (3)
-		// Bottom section: separator (1) + content (2 lines fixed)
-		// Total overhead: 8 lines
-		listHeight := msg.Height - 8
-		if listHeight < 1 {
-			listHeight = 1
-		}
-		m.sessionList.SetSize(msg.Width, msg.Height, listHeight)
+		// Recalculate list height
+		m.recalculateListHeight()
 	}
 
 	// Handle detach message - session list auto-refreshes via polling
@@ -227,6 +235,14 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.sessionList.timestampMode = m.timestampMode
 		m.sessionList.RefreshFromState()
+		return m, m.sessionList.Init()
+	}
+
+	// Toggle token chart
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && key.Matches(keyMsg, m.keys.Application.TokenChart.Binding) {
+		m.tokenChart.Toggle()
+		// Recalculate list height
+		m.recalculateListHeight()
 		return m, m.sessionList.Init()
 	}
 
@@ -401,6 +417,24 @@ func (m *Model) reloadSessionStateAfterDialog() error {
 	*m.sessionState = *newState
 	m.sessionList.RefreshFromState()
 	return nil
+}
+
+// recalculateListHeight calculates and sets the list height based on current state
+func (m *Model) recalculateListHeight() {
+	// Layout breakdown:
+	// - Header (2 lines) + Legend (1 line) + spacing (1) = 4 lines from SessionList fixed content
+	// - Bottom section: separator (1) + tip/error (2) = 3 lines
+	// - With chart: chart height (includes its leading newline)
+	overhead := 7 // header + legend + spacing + bottom section
+	if m.tokenChart.IsVisible() {
+		overhead += m.tokenChart.Height() // chart (includes leading newline)
+	}
+
+	listHeight := m.height - overhead
+	if listHeight < 1 {
+		listHeight = 1
+	}
+	m.sessionList.SetSize(m.width, m.height, listHeight)
 }
 
 // handleActionResult processes the result from ListActionHandler and takes appropriate action.
@@ -658,18 +692,20 @@ func (m *Model) View() string {
 	case stateList:
 		view := m.sessionList.View()
 
+		// Token chart (if visible)
+		if m.tokenChart.IsVisible() {
+			view += "\n" + m.tokenChart.View() + "\n"
+		}
+
 		// Bottom section - fixed 2 lines (error or tip or empty)
-		// Always reserve 2 lines to prevent layout shift
 		view += "\n"
 		if m.errorManager.HasError() {
 			errorText := formatErrorForDisplay(m.errorManager.GetError(), m.width)
 			view += theme.ErrorStyle.Render(errorText)
-			// Clear tip when error is shown
 			m.sessionList.ClearCurrentTip()
 		} else if tip := m.sessionList.GetCurrentTip(); tip != "" {
 			view += tip + "\n "
 		} else {
-			// Empty lines to maintain fixed 2-line spacing
 			view += " \n "
 		}
 

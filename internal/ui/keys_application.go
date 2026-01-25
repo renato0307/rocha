@@ -14,6 +14,7 @@ type ApplicationKeys struct {
 	Help       KeyWithTip
 	Quit       KeyWithTip
 	Timestamps KeyWithTip
+	TokenChart KeyWithTip
 }
 
 // newApplicationKeys creates application key bindings
@@ -23,6 +24,7 @@ func newApplicationKeys(defaults map[string][]string, customKeys config.KeyBindi
 		Help:       buildBinding("help", defaults, customKeys),
 		Quit:       buildBinding("quit", defaults, customKeys),
 		Timestamps: buildBinding("timestamps", defaults, customKeys),
+		TokenChart: buildBinding("token_chart", defaults, customKeys),
 	}
 }
 
