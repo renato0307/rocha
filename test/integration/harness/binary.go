@@ -112,6 +112,41 @@ func RunCommandWithTimeout(tb testing.TB, env *TestEnvironment, timeout time.Dur
 	}
 }
 
+// RunCommandWithEnv executes the rocha binary with a custom environment.
+// This is useful for tests that need to override HOME or other environment variables.
+func RunCommandWithEnv(tb testing.TB, environ []string, args ...string) CommandResult {
+	tb.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	cmd.Env = environ
+
+	err := cmd.Run()
+
+	exitCode := 0
+	if ctx.Err() == context.DeadlineExceeded {
+		tb.Logf("Command timed out after %v: %v %v", defaultTimeout, binaryPath, args)
+		exitCode = -1
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	} else if err != nil {
+		tb.Logf("Command execution error: %v", err)
+		exitCode = -1
+	}
+
+	return CommandResult{
+		ExitCode: exitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+	}
+}
+
 // findProjectRoot uses go list to find the module root directory.
 func findProjectRoot() (string, error) {
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}")
