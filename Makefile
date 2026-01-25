@@ -1,4 +1,4 @@
-.PHONY: build install clean snapshot help test test-integration test-integration-verbose test-integration-run
+.PHONY: build install clean snapshot help test test-integration test-integration-docker test-integration-docker-build test-integration-docker-shell test-integration-local-dangerous test-integration-verbose test-integration-run
 
 # Build variables
 VERSION ?= dev
@@ -13,14 +13,17 @@ LDFLAGS := -X main.Version=$(VERSION) \
 
 help:
 	@echo "Available targets:"
-	@echo "  build                    - Build rocha binary with version information"
-	@echo "  install                  - Build and install to ~/.local/bin"
-	@echo "  snapshot                 - Test GoReleaser locally (no publish)"
-	@echo "  clean                    - Remove built binaries and dist/"
-	@echo "  test                     - Run all tests (alias for test-integration)"
-	@echo "  test-integration         - Run integration tests"
-	@echo "  test-integration-verbose - Run integration tests with no cache"
-	@echo "  test-integration-run     - Run specific test: make test-integration-run TEST=TestName"
+	@echo "  build                         - Build rocha binary with version information"
+	@echo "  install                       - Build and install to ~/.local/bin"
+	@echo "  snapshot                      - Test GoReleaser locally (no publish)"
+	@echo "  clean                         - Remove built binaries and dist/"
+	@echo "  test                          - Run all tests (defaults to Docker)"
+	@echo "  test-integration              - Run integration tests in Docker (safe, default)"
+	@echo "  test-integration-docker-build - Build the Docker test image"
+	@echo "  test-integration-docker-shell - Open interactive shell in test container"
+	@echo "  test-integration-verbose      - Run integration tests with no cache"
+	@echo "  test-integration-run          - Run specific test: make test-integration-run TEST=TestName"
+	@echo "  test-integration-local-dangerous - Run tests on host (WARNING: modifies system files)"
 
 build:
 	@echo "Building rocha..."
@@ -44,19 +47,39 @@ clean:
 	@rm -rf dist/
 	@echo "Clean complete"
 
+# Docker test configuration
+DOCKER_IMAGE := rocha-integration-tests
+
 # Test targets
+# Default: run integration tests in Docker (safe)
 test: test-integration
 
-test-integration:
-	@echo "Running integration tests..."
-	@cd test/integration && go test -v ./...
-	@echo "Integration tests complete"
+test-integration: test-integration-docker
+
+test-integration-docker-build:
+	@echo "Building integration test Docker image..."
+	docker build -t $(DOCKER_IMAGE) -f test/integration/Dockerfile .
+
+test-integration-docker: test-integration-docker-build
+	@echo "Running integration tests in Docker..."
+	docker run --rm -v $(PWD):/app $(DOCKER_IMAGE) go test -v ./test/integration/...
+
+test-integration-docker-shell: test-integration-docker-build
+	@echo "Starting interactive shell in test container..."
+	docker run --rm -it -v $(PWD):/app $(DOCKER_IMAGE) /bin/bash
+
+# WARNING: Runs tests directly on host - can modify system files!
+# DO NOT use in CI or automated agents
+test-integration-local-dangerous:
+	@echo "WARNING: Running integration tests locally (not in container)"
+	@echo "WARNING: This may modify shell config, create files, etc."
+	@sleep 2
+	cd test/integration && go test -v ./...
 
 test-integration-verbose:
 	@echo "Running integration tests (no cache)..."
-	@cd test/integration && go test -v -count=1 ./...
-	@echo "Integration tests complete"
+	docker run --rm -v $(PWD):/app $(DOCKER_IMAGE) go test -v -count=1 ./test/integration/...
 
 test-integration-run:
 	@echo "Running: $(TEST)"
-	@cd test/integration && go test -v -run $(TEST) ./...
+	docker run --rm -v $(PWD):/app $(DOCKER_IMAGE) go test -v -run $(TEST) ./test/integration/...
