@@ -3,11 +3,12 @@ package ui
 import (
 	"context"
 	"fmt"
-	"rocha/logging"
-	"rocha/storage"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+
+	"rocha/logging"
+	"rocha/ports"
 )
 
 // SessionStatusFormResult contains the result of the status update operation
@@ -26,19 +27,19 @@ type SessionStatusForm struct {
 	result       SessionStatusFormResult
 	selectedItem string // Holds the selected option (status name or "<clear>")
 	sessionName  string
+	sessionRepo  ports.SessionRepository
 	statusConfig *StatusConfig
-	store        *storage.Store
 }
 
 // NewSessionStatusForm creates a new session status form
-func NewSessionStatusForm(store *storage.Store, sessionName string, currentStatus *string, statusConfig *StatusConfig) *SessionStatusForm {
+func NewSessionStatusForm(sessionRepo ports.SessionRepository, sessionName string, currentStatus *string, statusConfig *StatusConfig) *SessionStatusForm {
 	sf := &SessionStatusForm{
 		result: SessionStatusFormResult{
 			SessionName: sessionName,
 		},
 		sessionName:  sessionName,
+		sessionRepo:  sessionRepo,
 		statusConfig: statusConfig,
-		store:        store,
 	}
 
 	// Build status options
@@ -138,7 +139,7 @@ func (sf *SessionStatusForm) updateStatus() error {
 		"status", sf.selectedItem)
 
 	// Update in database
-	if err := sf.store.UpdateSessionStatus(context.Background(), sf.sessionName, newStatus); err != nil {
+	if err := sf.sessionRepo.UpdateStatus(context.Background(), sf.sessionName, newStatus); err != nil {
 		return fmt.Errorf("failed to update session status: %w", err)
 	}
 

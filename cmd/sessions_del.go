@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"rocha/application"
+	"rocha/domain"
 	"rocha/logging"
-	"rocha/operations"
-	"rocha/paths"
-	"rocha/storage"
 	"rocha/tmux"
 )
 
@@ -27,46 +26,47 @@ func (s *SessionsDelCmd) Run(cli *CLI) error {
 	logging.Logger.Info("Executing sessions del command", "session", s.Name, "killTmux", killTmux, "removeWorktree", removeWorktree, "force", s.Force)
 
 	ctx := context.Background()
-	store, err := storage.NewStore(paths.GetDBPath())
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		logging.Logger.Error("Failed to open database", "error", err)
-		return fmt.Errorf("failed to open database: %w", err)
+		logging.Logger.Error("Failed to create container", "error", err)
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
-	sessInfo, err := s.validateSession(ctx, store)
+	session, err := s.validateSession(ctx, container)
 	if err != nil {
 		return err
 	}
 
 	if !s.Force {
-		if !s.confirmDeletion(sessInfo, killTmux, removeWorktree) {
+		if !s.confirmDeletion(session, killTmux, removeWorktree) {
 			return nil
 		}
 	}
 
-	return s.deleteSession(ctx, store, killTmux, removeWorktree)
+	return s.deleteSession(ctx, container, killTmux, removeWorktree)
 }
 
-func (s *SessionsDelCmd) validateSession(ctx context.Context, store *storage.Store) (*storage.SessionInfo, error) {
+func (s *SessionsDelCmd) validateSession(ctx context.Context, container *Container) (*domain.Session, error) {
 	logging.Logger.Debug("Checking if session exists", "session", s.Name)
-	sessInfo, err := store.GetSession(ctx, s.Name)
+	session, err := container.SessionRepository.Get(ctx, s.Name)
 	if err != nil {
 		logging.Logger.Error("Session not found", "session", s.Name, "error", err)
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
-	logging.Logger.Debug("Session found", "session", s.Name, "worktreePath", sessInfo.WorktreePath)
-	return sessInfo, nil
+	logging.Logger.Debug("Session found", "session", s.Name, "worktreePath", session.WorktreePath)
+	return session, nil
 }
 
-func (s *SessionsDelCmd) confirmDeletion(sessInfo *storage.SessionInfo, killTmux, removeWorktree bool) bool {
+func (s *SessionsDelCmd) confirmDeletion(session *domain.Session, killTmux, removeWorktree bool) bool {
 	logging.Logger.Debug("Prompting user for confirmation", "session", s.Name)
 	fmt.Printf("WARNING: This will delete session '%s'\n", s.Name)
 	if killTmux {
 		fmt.Println("  - Kill tmux session")
 	}
-	if removeWorktree && sessInfo.WorktreePath != "" {
-		fmt.Printf("  - Remove worktree at '%s'\n", sessInfo.WorktreePath)
+	if removeWorktree && session.WorktreePath != "" {
+		fmt.Printf("  - Remove worktree at '%s'\n", session.WorktreePath)
 	}
 	fmt.Print("\nContinue? (y/N): ")
 	var response string
@@ -80,14 +80,12 @@ func (s *SessionsDelCmd) confirmDeletion(sessInfo *storage.SessionInfo, killTmux
 	return true
 }
 
-func (s *SessionsDelCmd) deleteSession(ctx context.Context, store *storage.Store, killTmux, removeWorktree bool) error {
-	tmuxClient := tmux.NewClient()
-
+func (s *SessionsDelCmd) deleteSession(ctx context.Context, container *Container, killTmux, removeWorktree bool) error {
 	logging.Logger.Info("Deleting session", "session", s.Name)
-	err := operations.DeleteSession(ctx, s.Name, store, operations.DeleteSessionOptions{
+	err := container.SessionService.DeleteSession(ctx, s.Name, application.DeleteSessionOptions{
 		KillTmux:       killTmux,
 		RemoveWorktree: removeWorktree,
-	}, tmuxClient)
+	})
 	if err != nil {
 		logging.Logger.Error("Failed to delete session", "session", s.Name, "error", err)
 		return fmt.Errorf("failed to delete session: %w", err)

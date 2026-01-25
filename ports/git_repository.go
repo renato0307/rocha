@@ -1,6 +1,10 @@
 package ports
 
-import "rocha/domain"
+import (
+	"context"
+
+	"rocha/domain"
+)
 
 // RepoInspector queries repository information
 type RepoInspector interface {
@@ -31,10 +35,23 @@ type BranchValidator interface {
 	ValidateBranchName(name string) error
 }
 
+// RepoSourceParser parses repository source information
+type RepoSourceParser interface {
+	IsGitURL(source string) bool
+	ParseRepoSource(source string) (*domain.RepoSource, error)
+}
+
+// GitStatsProvider provides git statistics for UI
+type GitStatsProvider interface {
+	FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error)
+}
+
 // GitRepository is the composite interface
 type GitRepository interface {
 	BranchValidator
+	GitStatsProvider
 	RepoCloner
 	RepoInspector
+	RepoSourceParser
 	WorktreeManager
 }

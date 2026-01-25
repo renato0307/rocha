@@ -299,7 +299,7 @@ func GetOrCloneRepository(source, worktreeBase string) (string, *RepoSource, err
 		}
 
 		// Verify remote URL matches
-		existingURL := getRemoteURL(repoRoot)
+		existingURL := GetRemoteURL(repoRoot)
 		if existingURL != "" && !isSameRepo(existingURL, repoSource.Path) {
 			return "", nil, fmt.Errorf(".main directory exists with different remote URL.\nExisting: %s\nRequested: %s", existingURL, repoSource.Path)
 		}
@@ -350,11 +350,6 @@ func GetRemoteURL(repoPath string) string {
 	}
 
 	return strings.TrimSpace(string(output))
-}
-
-// getRemoteURL is kept for backward compatibility (internal use)
-func getRemoteURL(repoPath string) string {
-	return GetRemoteURL(repoPath)
 }
 
 // isSameRepo checks if two URLs point to the same repository

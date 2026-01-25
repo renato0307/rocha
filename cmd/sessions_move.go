@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
+	adapterstorage "rocha/adapters/storage"
+	"rocha/application"
+	"rocha/domain"
 	"rocha/logging"
-	"rocha/operations"
 	"rocha/paths"
-	"rocha/storage"
+	"rocha/ports"
 	"rocha/tmux"
 )
 
@@ -40,25 +41,25 @@ func (s *SessionsMoveCmd) Run(cli *CLI) error {
 		return err
 	}
 
-	sourceStore, destStore, err := s.openStores(sourceHome, destHome)
+	sourceRepo, destRepo, err := s.openRepositories(sourceHome, destHome)
 	if err != nil {
 		return err
 	}
-	defer sourceStore.Close()
-	defer destStore.Close()
+	defer sourceRepo.Close()
+	defer destRepo.Close()
 
-	sessionCount, err := s.countSessionsToMove(sourceStore)
+	sourceSessions, err := s.getSourceSessions(sourceRepo)
 	if err != nil {
 		return err
 	}
 
 	if !s.Force {
-		if !s.confirmMove(sourceHome, destHome, sessionCount) {
+		if !s.confirmMove(sourceHome, destHome, len(sourceSessions)) {
 			return nil
 		}
 	}
 
-	return s.moveRepository(sourceStore, destStore, sourceHome, destHome)
+	return s.moveRepository(sourceSessions, sourceRepo, destRepo, sourceHome, destHome)
 }
 
 func (s *SessionsMoveCmd) validateRepoFormat() error {
@@ -93,41 +94,40 @@ func (s *SessionsMoveCmd) createDestPath(destHome string) error {
 	return nil
 }
 
-func (s *SessionsMoveCmd) openStores(sourceHome, destHome string) (*storage.Store, *storage.Store, error) {
-	sourceDBPath := filepath.Join(sourceHome, "state.db")
-	destDBPath := filepath.Join(destHome, "state.db")
-	logging.Logger.Debug("Opening databases", "source", sourceDBPath, "dest", destDBPath)
+func (s *SessionsMoveCmd) openRepositories(sourceHome, destHome string) (ports.SessionRepository, ports.SessionRepository, error) {
+	logging.Logger.Debug("Opening repositories", "sourceHome", sourceHome, "destHome", destHome)
 
-	sourceStore, err := storage.NewStore(sourceDBPath)
+	sourceRepo, err := adapterstorage.NewSQLiteRepositoryForPath(sourceHome)
 	if err != nil {
-		logging.Logger.Error("Failed to open source database", "path", sourceDBPath, "error", err)
+		logging.Logger.Error("Failed to open source repository", "path", sourceHome, "error", err)
 		return nil, nil, fmt.Errorf("failed to open source database: %w", err)
 	}
 
-	destStore, err := storage.NewStore(destDBPath)
+	destRepo, err := adapterstorage.NewSQLiteRepositoryForPath(destHome)
 	if err != nil {
-		sourceStore.Close()
-		logging.Logger.Error("Failed to open destination database", "path", destDBPath, "error", err)
+		sourceRepo.Close()
+		logging.Logger.Error("Failed to open destination repository", "path", destHome, "error", err)
 		return nil, nil, fmt.Errorf("failed to open destination database: %w", err)
 	}
 
-	return sourceStore, destStore, nil
+	return sourceRepo, destRepo, nil
 }
 
-func (s *SessionsMoveCmd) countSessionsToMove(sourceStore *storage.Store) (int, error) {
-	sessions, err := sourceStore.ListSessions(context.Background(), false)
+func (s *SessionsMoveCmd) getSourceSessions(sourceRepo ports.SessionReader) ([]domain.Session, error) {
+	ctx := context.Background()
+	sessions, err := sourceRepo.List(ctx, false)
 	if err != nil {
 		logging.Logger.Error("Failed to list sessions", "error", err)
-		return 0, fmt.Errorf("failed to list sessions: %w", err)
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
 	}
 
-	count := 0
+	var repoSessions []domain.Session
 	for _, sess := range sessions {
 		if sess.RepoInfo == s.Repo {
-			count++
+			repoSessions = append(repoSessions, sess)
 		}
 	}
-	return count, nil
+	return repoSessions, nil
 }
 
 func (s *SessionsMoveCmd) confirmMove(sourceHome, destHome string, sessionCount int) bool {
@@ -150,17 +150,46 @@ func (s *SessionsMoveCmd) confirmMove(sourceHome, destHome string, sessionCount 
 	return true
 }
 
-func (s *SessionsMoveCmd) moveRepository(sourceStore, destStore *storage.Store, sourceHome, destHome string) error {
+func (s *SessionsMoveCmd) moveRepository(
+	sourceSessions []domain.Session,
+	sourceRepo ports.SessionRepository,
+	destRepo ports.SessionRepository,
+	sourceHome, destHome string,
+) error {
 	ctx := context.Background()
 	tmuxClient := tmux.NewClient()
+
+	// Create a temporary container for the migration service
+	container, err := NewContainer(tmuxClient)
+	if err != nil {
+		logging.Logger.Error("Failed to create container", "error", err)
+		return fmt.Errorf("failed to initialize: %w", err)
+	}
+	defer container.Close()
 
 	fmt.Printf("\nMoving repository: %s\n", s.Repo)
 	logging.Logger.Info("Starting repository move", "repo", s.Repo)
 
-	movedSessions, err := operations.MoveRepository(ctx, s.Repo, sourceStore, destStore, sourceHome, destHome, tmuxClient)
+	movedSessions, err := container.MigrationService.MoveRepository(ctx, application.MoveRepositoryParams{
+		DestRochaHome:   destHome,
+		DestSessionRepo: destRepo,
+		RepoInfo:        s.Repo,
+		SourceRochaHome: sourceHome,
+		SourceSessions:  sourceSessions,
+	})
 	if err != nil {
 		logging.Logger.Error("Failed to move repository", "repo", s.Repo, "error", err)
 		return fmt.Errorf("failed to move repository %s: %w", s.Repo, err)
+	}
+
+	// Delete sessions from source store after successful move
+	fmt.Printf("Cleaning up source database...\n")
+	for _, sessName := range movedSessions {
+		logging.Logger.Debug("Deleting session from source", "session", sessName)
+		if err := sourceRepo.Delete(ctx, sessName); err != nil {
+			logging.Logger.Warn("Failed to delete session from source", "session", sessName, "error", err)
+			fmt.Printf("⚠ Warning: Failed to delete session %s from source: %v\n", sessName, err)
+		}
 	}
 
 	fmt.Printf("Moved repository '%s' (%d session(s))\n", s.Repo, len(movedSessions))

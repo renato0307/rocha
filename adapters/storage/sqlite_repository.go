@@ -25,9 +25,11 @@ func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
 	return &SQLiteRepository{store: store}, nil
 }
 
-// NewSQLiteRepositoryFromStore creates a new SQLiteRepository from an existing store
-func NewSQLiteRepositoryFromStore(store *existingstore.Store) *SQLiteRepository {
-	return &SQLiteRepository{store: store}
+// NewSQLiteRepositoryForPath creates a new SQLiteRepository for a specific ROCHA_HOME path
+// This is useful for operations that need to work with multiple databases (e.g., migrations)
+func NewSQLiteRepositoryForPath(rochaHomePath string) (*SQLiteRepository, error) {
+	dbPath := rochaHomePath + "/state.db"
+	return NewSQLiteRepository(dbPath)
 }
 
 // Close closes the underlying store
@@ -112,4 +114,19 @@ func (r *SQLiteRepository) UpdateStatus(ctx context.Context, name string, status
 // UpdateComment implements SessionMetadataUpdater.UpdateComment
 func (r *SQLiteRepository) UpdateComment(ctx context.Context, name, comment string) error {
 	return r.store.UpdateComment(ctx, name, comment)
+}
+
+// LoadState implements SessionStateLoader.LoadState
+func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error) {
+	state, err := r.store.Load(ctx, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	return sessionStateToDomain(state), nil
+}
+
+// SaveState implements SessionStateLoader.SaveState
+func (r *SQLiteRepository) SaveState(ctx context.Context, state *domain.SessionCollection) error {
+	storageState := domainToSessionState(state)
+	return r.store.Save(ctx, storageState)
 }

@@ -7,7 +7,7 @@ import (
 
 	"rocha/logging"
 	"rocha/paths"
-	"rocha/storage"
+	"rocha/ports"
 )
 
 // DefaultClaudeDir returns the default Claude directory
@@ -30,7 +30,7 @@ func DefaultClaudeDir() string {
 // DetectClaudeDirForRepo finds ClaudeDir from existing sessions
 // of the same repository (for consistency)
 // Returns empty string if no existing sessions found or if they don't have ClaudeDir set
-func DetectClaudeDirForRepo(store *storage.Store, repoInfo string) (string, error) {
+func DetectClaudeDirForRepo(sessionReader ports.SessionReader, repoInfo string) (string, error) {
 	if repoInfo == "" {
 		return "", nil
 	}
@@ -38,7 +38,7 @@ func DetectClaudeDirForRepo(store *storage.Store, repoInfo string) (string, erro
 	logging.Logger.Debug("Detecting ClaudeDir for repo", "repo_info", repoInfo)
 
 	// List all sessions (including archived)
-	sessions, err := store.ListSessions(context.Background(), true)
+	sessions, err := sessionReader.List(context.Background(), true)
 	if err != nil {
 		logging.Logger.Warn("Failed to list sessions for ClaudeDir detection", "error", err)
 		return "", err
@@ -65,7 +65,7 @@ func DetectClaudeDirForRepo(store *storage.Store, repoInfo string) (string, erro
 // 3. Default ~/.claude
 //
 // Always returns an expanded absolute path
-func ResolveClaudeDir(store *storage.Store, repoInfo, userOverride string) string {
+func ResolveClaudeDir(sessionReader ports.SessionReader, repoInfo, userOverride string) string {
 	logging.Logger.Debug("Resolving ClaudeDir",
 		"repo_info", repoInfo,
 		"user_override", userOverride)
@@ -78,8 +78,8 @@ func ResolveClaudeDir(store *storage.Store, repoInfo, userOverride string) strin
 	}
 
 	// 2. Try to detect from existing sessions
-	if store != nil && repoInfo != "" {
-		detected, err := DetectClaudeDirForRepo(store, repoInfo)
+	if sessionReader != nil && repoInfo != "" {
+		detected, err := DetectClaudeDirForRepo(sessionReader, repoInfo)
 		if err == nil && detected != "" {
 			path := paths.ExpandPath(detected)
 			logging.Logger.Info("Using detected ClaudeDir from existing sessions", "path", path)

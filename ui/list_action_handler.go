@@ -8,11 +8,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"rocha/application"
+	"rocha/domain"
 	"rocha/editor"
-	"rocha/git"
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/storage"
 )
 
 // ActionType indicates what action Model should take
@@ -61,12 +60,13 @@ type ListActionHandler struct {
 	devMode                                bool
 	editor                                 string
 	errorManager                           *ErrorManager
+	gitService                             *application.GitService
 	sessionList                            *SessionList
 	sessionOps                             *SessionOperations
+	sessionRepo                            ports.SessionRepository
 	sessionService                         *application.SessionService
-	sessionState                           *storage.SessionState
+	sessionState                           *domain.SessionCollection
 	statusConfig                           *StatusConfig
-	store                                  *storage.Store
 	tmuxClient                             ports.TmuxClient
 	tmuxStatusPosition                     string
 }
@@ -74,8 +74,9 @@ type ListActionHandler struct {
 // NewListActionHandler creates a new ListActionHandler
 func NewListActionHandler(
 	sessionList *SessionList,
-	sessionState *storage.SessionState,
-	store *storage.Store,
+	sessionState *domain.SessionCollection,
+	sessionRepo ports.SessionRepository,
+	gitService *application.GitService,
 	editor string,
 	statusConfig *StatusConfig,
 	errorManager *ErrorManager,
@@ -91,21 +92,22 @@ func NewListActionHandler(
 		devMode:                                devMode,
 		editor:                                 editor,
 		errorManager:                           errorManager,
+		gitService:                             gitService,
 		sessionList:                            sessionList,
 		sessionOps:                             sessionOps,
+		sessionRepo:                            sessionRepo,
 		sessionService:                         sessionService,
 		sessionState:                           sessionState,
 		statusConfig:                           statusConfig,
-		store:                                  store,
 		tmuxClient:                             tmuxClient,
 		tmuxStatusPosition:                     tmuxStatusPosition,
 	}
 }
 
 // getFreshSessionInfo loads fresh session info from the database to avoid stale state issues.
-// Returns the SessionInfo and true if found, or zero value and false if not found.
-func (lah *ListActionHandler) getFreshSessionInfo(sessionName string) (storage.SessionInfo, bool) {
-	freshState, err := lah.store.Load(context.Background(), false)
+// Returns the Session and true if found, or zero value and false if not found.
+func (lah *ListActionHandler) getFreshSessionInfo(sessionName string) (domain.Session, bool) {
+	freshState, err := lah.sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		logging.Logger.Error("Failed to load fresh state", "error", err)
 		// Fall back to cached state
@@ -171,7 +173,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			currentDisplayName = sessionInfo.DisplayName
 		}
 
-		contentForm := NewSessionRenameForm(lah.tmuxClient, lah.store, lah.sessionState, session.Name, currentDisplayName)
+		contentForm := NewSessionRenameForm(lah.tmuxClient, lah.sessionRepo, lah.sessionState, session.Name, currentDisplayName)
 		return ActionResult{
 			ActionType:    ActionShowRenameDialog,
 			DialogTitle:   "Rename Session",
@@ -191,7 +193,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			currentStatus = sessionInfo.Status
 		}
 
-		contentForm := NewSessionStatusForm(lah.store, session.Name, currentStatus, lah.statusConfig)
+		contentForm := NewSessionStatusForm(lah.sessionRepo, session.Name, currentStatus, lah.statusConfig)
 		return ActionResult{
 			ActionType:    ActionShowStatusDialog,
 			DialogTitle:   "Set Status",
@@ -211,7 +213,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 			currentComment = sessionInfo.Comment
 		}
 
-		contentForm := NewSessionCommentForm(lah.store, session.Name, currentComment)
+		contentForm := NewSessionCommentForm(lah.sessionRepo, session.Name, currentComment)
 		return ActionResult{
 			ActionType:    ActionShowCommentDialog,
 			DialogTitle:   "Edit Session Comment",
@@ -267,7 +269,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		session := lah.sessionList.SessionToToggleFlag
 		lah.sessionList.SessionToToggleFlag = nil
 
-		if err := lah.store.ToggleFlag(context.Background(), session.Name); err != nil {
+		if err := lah.sessionRepo.ToggleFlag(context.Background(), session.Name); err != nil {
 			lah.errorManager.SetError(fmt.Errorf("failed to toggle flag: %w", err))
 			return ActionResult{
 				ActionType: ActionNone,
@@ -276,7 +278,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		}
 
 		// Reload session state
-		sessionState, err := lah.store.Load(context.Background(), false)
+		sessionState, err := lah.sessionRepo.LoadState(context.Background(), false)
 		if err != nil {
 			lah.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 			lah.sessionList.RefreshFromState()
@@ -330,8 +332,8 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 		// Pre-fill repo field if starting in a git folder
 		defaultRepoSource := ""
 		cwd, _ := os.Getwd()
-		if isGit, repoPath := git.IsGitRepo(cwd); isGit {
-			if remoteURL := git.GetRemoteURL(repoPath); remoteURL != "" {
+		if isGit, repoPath := lah.gitService.IsGitRepo(cwd); isGit {
+			if remoteURL := lah.gitService.GetRemoteURL(repoPath); remoteURL != "" {
 				defaultRepoSource = remoteURL
 				logging.Logger.Info("Pre-filling repository field with remote URL", "remote_url", remoteURL)
 			} else {
@@ -358,7 +360,7 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 				// Sanitize: remove branch suffix from URL (e.g., #feature-branch)
 				// so the new session form shows only the base repository URL
 				if repoSource != "" {
-					if parsed, err := git.ParseRepoSource(repoSource); err == nil {
+					if parsed, err := lah.gitService.ParseRepoSource(repoSource); err == nil {
 						repoSource = parsed.Path
 						logging.Logger.Debug("Sanitized repo source for template", "original", sessionInfo.RepoSource, "sanitized", repoSource)
 					}
@@ -367,12 +369,12 @@ func (lah *ListActionHandler) ProcessActions() ActionResult {
 				// If RepoSource is empty but RepoPath exists, fetch remote URL and update DB
 				if repoSource == "" && sessionInfo.RepoPath != "" {
 					logging.Logger.Info("RepoSource empty, fetching remote URL from RepoPath", "repo_path", sessionInfo.RepoPath)
-					if remoteURL := git.GetRemoteURL(sessionInfo.RepoPath); remoteURL != "" {
+					if remoteURL := lah.gitService.GetRemoteURL(sessionInfo.RepoPath); remoteURL != "" {
 						repoSource = remoteURL
 						logging.Logger.Info("Fetched remote URL, updating database", "remote_url", remoteURL)
 
 						// Update the session in the database with the fetched RepoSource
-						if err := lah.store.UpdateSessionRepoSource(context.Background(), lah.sessionList.SessionForTemplate.Name, remoteURL); err != nil {
+						if err := lah.sessionRepo.UpdateRepoSource(context.Background(), lah.sessionList.SessionForTemplate.Name, remoteURL); err != nil {
 							logging.Logger.Error("Failed to update RepoSource in database", "error", err)
 						} else {
 							// Also update in-memory state

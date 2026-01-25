@@ -11,7 +11,6 @@ import (
 	"rocha/logging"
 	"rocha/paths"
 	"rocha/ports"
-	"rocha/storage"
 )
 
 // Container holds all dependencies for the application
@@ -22,13 +21,12 @@ type Container struct {
 	TmuxClient        ports.TmuxClient
 
 	// Services
+	GitService          *application.GitService
+	MigrationService    *application.MigrationService
 	NotificationService *application.NotificationService
 	SessionService      *application.SessionService
 	SettingsService     *application.SettingsService
 	ShellService        *application.ShellService
-
-	// Internal - keep reference to underlying store for legacy compatibility
-	store *storage.Store
 }
 
 // NewContainer creates a new Container with all dependencies wired
@@ -45,13 +43,17 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 	claudeDirResolver := NewClaudeDirResolverAdapter(sessionRepo)
 
 	// Create services
+	gitService := application.NewGitService(gitRepo)
+	migrationService := application.NewMigrationService(gitRepo, tmuxClient)
 	notificationService := application.NewNotificationService(sessionRepo, sessionRepo)
+	sessionService := application.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver)
 	settingsService := application.NewSettingsService(sessionRepo)
 	shellService := application.NewShellService(sessionRepo, sessionRepo, tmuxClient)
-	sessionService := application.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver)
 
 	return &Container{
 		GitRepository:       gitRepo,
+		GitService:          gitService,
+		MigrationService:    migrationService,
 		NotificationService: notificationService,
 		SessionRepository:   sessionRepo,
 		SessionService:      sessionService,
@@ -59,33 +61,6 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 		ShellService:        shellService,
 		TmuxClient:          tmuxClient,
 	}, nil
-}
-
-// NewContainerFromStore creates a Container from an existing store (for legacy compatibility)
-func NewContainerFromStore(store *storage.Store, tmuxClient ports.TmuxClient) *Container {
-	// Wrap existing store
-	sessionRepo := adapterstorage.NewSQLiteRepositoryFromStore(store)
-	gitRepo := adaptergit.NewCLIRepository()
-
-	// Create ClaudeDir resolver
-	claudeDirResolver := NewClaudeDirResolverAdapter(sessionRepo)
-
-	// Create services
-	notificationService := application.NewNotificationService(sessionRepo, sessionRepo)
-	settingsService := application.NewSettingsService(sessionRepo)
-	shellService := application.NewShellService(sessionRepo, sessionRepo, tmuxClient)
-	sessionService := application.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver)
-
-	return &Container{
-		GitRepository:       gitRepo,
-		NotificationService: notificationService,
-		SessionRepository:   sessionRepo,
-		SessionService:      sessionService,
-		SettingsService:     settingsService,
-		ShellService:        shellService,
-		store:               store,
-		TmuxClient:          tmuxClient,
-	}
 }
 
 // Close closes all resources held by the container

@@ -3,9 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"rocha/paths"
+
+	"rocha/domain"
 	"rocha/state"
-	"rocha/storage"
+	"rocha/tmux"
 )
 
 // StatusCmd displays session state counts for tmux status bar
@@ -13,16 +14,17 @@ type StatusCmd struct{}
 
 // Run executes the status command
 func (s *StatusCmd) Run(cli *CLI) error {
-	// Open database
-	store, err := storage.NewStore(paths.GetDBPath())
+	// Initialize container
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
 		// Database doesn't exist or can't be opened
 		fmt.Printf("%s:? %s:? %s:?", state.SymbolWaitingUser, state.SymbolIdle, state.SymbolWorking)
 		return nil
 	}
-	defer store.Close()
+	defer container.Close()
 
-	st, err := store.Load(context.Background(), false)
+	st, err := container.SessionRepository.LoadState(context.Background(), false)
 	if err != nil {
 		// No state
 		fmt.Printf("%s:? %s:? %s:?", state.SymbolWaitingUser, state.SymbolIdle, state.SymbolWorking)
@@ -34,11 +36,11 @@ func (s *StatusCmd) Run(cli *CLI) error {
 	waiting, idle, working := 0, 0, 0
 	for _, sess := range st.Sessions {
 		switch sess.State {
-		case state.StateWaitingUser:
+		case domain.StateWaiting:
 			waiting++
-		case state.StateIdle:
+		case domain.StateIdle:
 			idle++
-		case state.StateWorking:
+		case domain.StateWorking:
 			working++
 		}
 	}

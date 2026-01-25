@@ -1,6 +1,8 @@
 package git
 
 import (
+	"context"
+
 	"rocha/domain"
 	gitpkg "rocha/git"
 	"rocha/ports"
@@ -100,4 +102,45 @@ func (r *CLIRepository) ValidateBranchName(name string) error {
 // SanitizeBranchName implements BranchValidator.SanitizeBranchName
 func (r *CLIRepository) SanitizeBranchName(name string) (string, error) {
 	return gitpkg.SanitizeBranchName(name)
+}
+
+// RepoSourceParser methods
+
+// IsGitURL implements RepoSourceParser.IsGitURL
+func (r *CLIRepository) IsGitURL(source string) bool {
+	return gitpkg.IsGitURL(source)
+}
+
+// ParseRepoSource implements RepoSourceParser.ParseRepoSource
+func (r *CLIRepository) ParseRepoSource(source string) (*domain.RepoSource, error) {
+	repoSource, err := gitpkg.ParseRepoSource(source)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.RepoSource{
+		Branch:   repoSource.Branch,
+		IsRemote: repoSource.IsRemote,
+		Owner:    repoSource.Owner,
+		Path:     repoSource.Path,
+		Repo:     repoSource.Repo,
+	}, nil
+}
+
+// GitStatsProvider methods
+
+// FetchGitStats implements GitStatsProvider.FetchGitStats
+func (r *CLIRepository) FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error) {
+	stats, err := gitpkg.FetchGitStats(ctx, worktreePath)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.GitStats{
+		Additions:    stats.Additions,
+		Ahead:        stats.Ahead,
+		Behind:       stats.Behind,
+		ChangedFiles: stats.ChangedFiles,
+		Deletions:    stats.Deletions,
+		Error:        stats.Error,
+		FetchedAt:    stats.FetchedAt,
+	}, nil
 }

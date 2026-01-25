@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"rocha/git"
-	"rocha/paths"
-	"rocha/storage"
+	"rocha/domain"
+	"rocha/tmux"
 )
 
 // SessionsArchiveCmd archives or unarchives a session
@@ -19,13 +18,14 @@ type SessionsArchiveCmd struct {
 
 // Run executes the archive command
 func (s *SessionsArchiveCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(paths.GetDBPath())
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
-	session, err := store.GetSession(context.Background(), s.Name)
+	session, err := container.SessionRepository.Get(context.Background(), s.Name)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
@@ -33,12 +33,12 @@ func (s *SessionsArchiveCmd) Run(cli *CLI) error {
 	isArchiving := !session.IsArchived
 
 	if isArchiving {
-		return s.archiveSession(store, session)
+		return s.archiveSession(container, session)
 	}
-	return s.unarchiveSession(store)
+	return s.unarchiveSession(container)
 }
 
-func (s *SessionsArchiveCmd) archiveSession(store *storage.Store, session *storage.SessionInfo) error {
+func (s *SessionsArchiveCmd) archiveSession(container *Container, session *domain.Session) error {
 	if !s.Force {
 		fmt.Printf("Are you sure you want to archive session '%s'? (y/N): ", s.Name)
 		var response string
@@ -57,25 +57,21 @@ func (s *SessionsArchiveCmd) archiveSession(store *storage.Store, session *stora
 		removeWorktree = (response == "y" || response == "Y")
 	}
 
-	if removeWorktree && session.WorktreePath != "" {
-		if err := git.RemoveWorktree(session.RepoPath, session.WorktreePath); err != nil {
-			fmt.Printf("Warning: Failed to remove worktree: %v\n", err)
-			fmt.Println("Continuing with archiving...")
-		} else {
-			fmt.Printf("Removed worktree at '%s'\n", session.WorktreePath)
-		}
+	ctx := context.Background()
+	if err := container.SessionService.ArchiveSession(ctx, s.Name, removeWorktree); err != nil {
+		return fmt.Errorf("failed to archive session: %w", err)
 	}
 
-	if err := store.ToggleArchive(context.Background(), s.Name); err != nil {
-		return fmt.Errorf("failed to archive session: %w", err)
+	if removeWorktree && session.WorktreePath != "" {
+		fmt.Printf("Removed worktree at '%s'\n", session.WorktreePath)
 	}
 
 	fmt.Printf("Session '%s' archived successfully\n", s.Name)
 	return nil
 }
 
-func (s *SessionsArchiveCmd) unarchiveSession(store *storage.Store) error {
-	if err := store.ToggleArchive(context.Background(), s.Name); err != nil {
+func (s *SessionsArchiveCmd) unarchiveSession(container *Container) error {
+	if err := container.SessionRepository.ToggleArchive(context.Background(), s.Name); err != nil {
 		return fmt.Errorf("failed to unarchive session: %w", err)
 	}
 

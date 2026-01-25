@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"rocha/logging"
-	"rocha/storage"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+
+	"rocha/logging"
+	"rocha/ports"
 )
 
 // SessionCommentFormResult contains the result of the comment operation
@@ -28,15 +28,15 @@ type SessionCommentForm struct {
 	form           *huh.Form
 	result         SessionCommentFormResult
 	sessionName    string
-	store          *storage.Store
+	sessionRepo    ports.SessionRepository
 }
 
 // NewSessionCommentForm creates a new session comment form
-func NewSessionCommentForm(store *storage.Store, sessionName, currentComment string) *SessionCommentForm {
+func NewSessionCommentForm(sessionRepo ports.SessionRepository, sessionName, currentComment string) *SessionCommentForm {
 	sf := &SessionCommentForm{
 		currentComment: currentComment,
 		sessionName:    sessionName,
-		store:          store,
+		sessionRepo:    sessionRepo,
 		result: SessionCommentFormResult{
 			SessionName: sessionName,
 			NewComment:  currentComment, // Preload the current comment for editing
@@ -113,8 +113,8 @@ func (sf *SessionCommentForm) updateComment() error {
 		"session_name", sf.sessionName,
 		"comment_length", len(newComment))
 
-	// Update store (empty string = delete comment)
-	if err := sf.store.UpdateComment(context.Background(), sf.sessionName, newComment); err != nil {
+	// Update repository (empty string = delete comment)
+	if err := sf.sessionRepo.UpdateComment(context.Background(), sf.sessionName, newComment); err != nil {
 		return fmt.Errorf("failed to update session comment: %w", err)
 	}
 

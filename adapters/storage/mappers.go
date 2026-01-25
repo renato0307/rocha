@@ -13,6 +13,15 @@ func sessionInfoToDomain(info existingstore.SessionInfo) domain.Session {
 		shellSession = &converted
 	}
 
+	// GitStats is not persisted - it's populated at runtime by the UI
+	// Type assertion to convert from interface{} to *domain.GitStats
+	var gitStats *domain.GitStats
+	if info.GitStats != nil {
+		if stats, ok := info.GitStats.(*domain.GitStats); ok {
+			gitStats = stats
+		}
+	}
+
 	return domain.Session{
 		AllowDangerouslySkipPermissions: info.AllowDangerouslySkipPermissions,
 		BranchName:                      info.BranchName,
@@ -20,7 +29,7 @@ func sessionInfoToDomain(info existingstore.SessionInfo) domain.Session {
 		Comment:                         info.Comment,
 		DisplayName:                     info.DisplayName,
 		ExecutionID:                     info.ExecutionID,
-		GitStats:                        info.GitStats,
+		GitStats:                        gitStats,
 		IsArchived:                      info.IsArchived,
 		IsFlagged:                       info.IsFlagged,
 		LastUpdated:                     info.LastUpdated,
@@ -62,5 +71,45 @@ func domainToSessionInfo(session domain.Session) existingstore.SessionInfo {
 		State:                           string(session.State),
 		Status:                          session.Status,
 		WorktreePath:                    session.WorktreePath,
+	}
+}
+
+// sessionStateToDomain converts storage.SessionState to domain.SessionCollection
+func sessionStateToDomain(state *existingstore.SessionState) *domain.SessionCollection {
+	if state == nil {
+		return &domain.SessionCollection{
+			OrderedNames: []string{},
+			Sessions:     make(map[string]domain.Session),
+		}
+	}
+
+	sessions := make(map[string]domain.Session)
+	for name, info := range state.Sessions {
+		sessions[name] = sessionInfoToDomain(info)
+	}
+
+	return &domain.SessionCollection{
+		OrderedNames: state.OrderedSessionNames,
+		Sessions:     sessions,
+	}
+}
+
+// domainToSessionState converts domain.SessionCollection to storage.SessionState
+func domainToSessionState(collection *domain.SessionCollection) *existingstore.SessionState {
+	if collection == nil {
+		return &existingstore.SessionState{
+			OrderedSessionNames: []string{},
+			Sessions:            make(map[string]existingstore.SessionInfo),
+		}
+	}
+
+	sessions := make(map[string]existingstore.SessionInfo)
+	for name, session := range collection.Sessions {
+		sessions[name] = domainToSessionInfo(session)
+	}
+
+	return &existingstore.SessionState{
+		OrderedSessionNames: collection.OrderedNames,
+		Sessions:            sessions,
 	}
 }

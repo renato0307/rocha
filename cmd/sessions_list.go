@@ -7,8 +7,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"rocha/paths"
-	"rocha/storage"
+	"rocha/domain"
+	"rocha/tmux"
 )
 
 // SessionsListCmd lists all sessions
@@ -19,13 +19,14 @@ type SessionsListCmd struct {
 
 // Run executes the list command
 func (s *SessionsListCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(paths.GetDBPath())
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
-	sessions, err := store.ListSessions(context.Background(), s.ShowArchived)
+	sessions, err := container.SessionRepository.List(context.Background(), s.ShowArchived)
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}
@@ -36,7 +37,7 @@ func (s *SessionsListCmd) Run(cli *CLI) error {
 	return s.printTable(sessions)
 }
 
-func (s *SessionsListCmd) printJSON(sessions []storage.SessionInfo) error {
+func (s *SessionsListCmd) printJSON(sessions []domain.Session) error {
 	data, err := json.MarshalIndent(sessions, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -45,7 +46,7 @@ func (s *SessionsListCmd) printJSON(sessions []storage.SessionInfo) error {
 	return nil
 }
 
-func (s *SessionsListCmd) printTable(sessions []storage.SessionInfo) error {
+func (s *SessionsListCmd) printTable(sessions []domain.Session) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tDISPLAY NAME\tSTATE\tBRANCH\tREPO\tARCHIVED\tLAST UPDATED")
 	for _, sess := range sessions {

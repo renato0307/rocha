@@ -35,11 +35,18 @@ type SessionMetadataUpdater interface {
 	UpdateStatus(ctx context.Context, name string, status *string) error
 }
 
+// SessionStateLoader loads full session state for UI
+type SessionStateLoader interface {
+	LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error)
+	SaveState(ctx context.Context, state *domain.SessionCollection) error
+}
+
 // SessionRepository is the composite interface
 type SessionRepository interface {
 	SessionReader
 	SessionWriter
 	SessionStateUpdater
 	SessionMetadataUpdater
+	SessionStateLoader
 	Close() error
 }

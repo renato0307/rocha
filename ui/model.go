@@ -11,10 +11,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"rocha/application"
-	"rocha/git"
+	"rocha/domain"
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/storage"
 )
 
 var (
@@ -80,6 +79,7 @@ type Model struct {
 	errorManager                           *ErrorManager                // Error display and auto-clearing
 	formRemoveWorktree                     *bool                        // Worktree removal decision (pointer to persist across updates)
 	formRemoveWorktreeArchive              *bool                        // Worktree removal decision for archive (pointer to persist across updates)
+	gitService                             *application.GitService      // Git operations service
 	height                                 int
 	helpScreen                             *Dialog                      // Help screen dialog
 	keys                                   KeyMap                       // Keyboard shortcuts
@@ -90,15 +90,15 @@ type Model struct {
 	sessionList                            *SessionList                 // Session list component
 	sessionOps                             *SessionOperations           // Session lifecycle operations
 	sessionRenameForm                      *Dialog                      // Session rename dialog
+	sessionRepo                            ports.SessionRepository      // Session repository
 	sessionService                         *application.SessionService  // Session lifecycle service
-	sessionState                           *storage.SessionState        // State data for git metadata and status
+	sessionState                           *domain.SessionCollection    // State data for git metadata and status
 	sessionStatusForm                      *Dialog                      // Session status dialog
 	sessionToArchive                       *ports.TmuxSession           // Session being archived (for worktree removal)
 	sessionToKill                          *ports.TmuxSession           // Session being killed (for worktree removal)
 	shellService                           *application.ShellService    // Shell session service
 	state                                  uiState
 	statusConfig                           *StatusConfig                // Status configuration for implementation statuses
-	store                                  *storage.Store               // Storage for persistent state
 	timestampConfig                        *TimestampColorConfig        // Timestamp color configuration
 	timestampMode                          TimestampMode
 	tmuxClient                             ports.TmuxClient
@@ -109,7 +109,7 @@ type Model struct {
 
 func NewModel(
 	tmuxClient ports.TmuxClient,
-	store *storage.Store,
+	sessionRepo ports.SessionRepository,
 	editor string,
 	errorClearDelay time.Duration,
 	statusConfig *StatusConfig,
@@ -119,16 +119,17 @@ func NewModel(
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
+	gitService *application.GitService,
 	sessionService *application.SessionService,
 	shellService *application.ShellService,
 ) *Model {
 	// Load session state - this is the source of truth
-	sessionState, stateErr := store.Load(context.Background(), false)
+	sessionState, stateErr := sessionRepo.LoadState(context.Background(), false)
 	errorManager := NewErrorManager(errorClearDelay)
 	if stateErr != nil {
 		log.Printf("Warning: failed to load session state: %v", stateErr)
 		errorManager.SetError(fmt.Errorf("failed to load state: %w", stateErr))
-		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
+		sessionState = &domain.SessionCollection{Sessions: make(map[string]domain.Session)}
 	}
 
 	// Convert showTimestamps flag to TimestampMode
@@ -143,16 +144,17 @@ func NewModel(
 	keys := NewKeyMap()
 
 	// Create session operations component
-	sessionOps := NewSessionOperations(errorManager, store, tmuxClient, tmuxStatusPosition, sessionService, shellService)
+	sessionOps := NewSessionOperations(errorManager, sessionRepo, tmuxClient, tmuxStatusPosition, sessionService, shellService)
 
 	// Create session list component
-	sessionList := NewSessionList(tmuxClient, store, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
+	sessionList := NewSessionList(tmuxClient, sessionRepo, gitService, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
 
 	// Create list action handler
 	listActionHandler := NewListActionHandler(
 		sessionList,
 		sessionState,
-		store,
+		sessionRepo,
+		gitService,
 		editor,
 		statusConfig,
 		errorManager,
@@ -169,16 +171,17 @@ func NewModel(
 		devMode:                                devMode,
 		editor:                                 editor,
 		errorManager:                           errorManager,
+		gitService:                             gitService,
 		keys:                                   keys,
 		listActionHandler:                      listActionHandler,
 		sessionList:                            sessionList,
 		sessionOps:                             sessionOps,
+		sessionRepo:                            sessionRepo,
 		sessionService:                         sessionService,
 		sessionState:                           sessionState,
 		shellService:                           shellService,
 		state:                                  stateList,
 		statusConfig:                           statusConfig,
-		store:                                  store,
 		timestampConfig:                        timestampConfig,
 		timestampMode:                          initialMode,
 		tmuxClient:                             tmuxClient,
@@ -437,7 +440,7 @@ func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
 // reloadSessionStateAfterDialog reloads state and refreshes list.
 // Eliminates the 8 duplications of reload pattern across dialog handlers.
 func (m *Model) reloadSessionStateAfterDialog() error {
-	newState, err := m.store.Load(context.Background(), false)
+	newState, err := m.sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		return fmt.Errorf("failed to refresh sessions: %w", err)
 	}
@@ -512,7 +515,7 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		logging.Logger.Debug("Creating new session dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.sessionService, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionRepo, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()
@@ -521,7 +524,7 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 		logging.Logger.Debug("Creating new session from template dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.sessionService, m.store, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionRepo, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()
@@ -635,7 +638,7 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 			var worktreeErr bool
 			if removeWorktree {
 				logging.Logger.Info("Removing worktree", "path", worktreePath, "repo", repoPath)
-				if err := git.RemoveWorktree(repoPath, worktreePath); err != nil {
+				if err := m.gitService.RemoveWorktree(repoPath, worktreePath); err != nil {
 					m.errorManager.SetError(fmt.Errorf("failed to remove worktree: %w", err))
 					logging.Logger.Error("Failed to remove worktree", "error", err, "path", worktreePath)
 					worktreeErr = true

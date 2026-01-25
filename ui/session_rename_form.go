@@ -8,9 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 
+	"rocha/domain"
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/storage"
 	"rocha/tmux"
 )
 
@@ -33,12 +33,12 @@ type SessionRenameForm struct {
 	oldTmuxName        string // Immutable - the session we're renaming
 	result             SessionRenameFormResult
 	sessionManager     ports.TmuxSessionLifecycle
-	sessionState       *storage.SessionState
-	store              *storage.Store
+	sessionRepo        ports.SessionRepository
+	sessionState       *domain.SessionCollection
 }
 
 // NewSessionRenameForm creates a new session rename form
-func NewSessionRenameForm(sessionManager ports.TmuxSessionLifecycle, store *storage.Store, sessionState *storage.SessionState, oldTmuxName, currentDisplayName string) *SessionRenameForm {
+func NewSessionRenameForm(sessionManager ports.TmuxSessionLifecycle, sessionRepo ports.SessionRepository, sessionState *domain.SessionCollection, oldTmuxName, currentDisplayName string) *SessionRenameForm {
 	sf := &SessionRenameForm{
 		currentDisplayName: currentDisplayName,
 		oldTmuxName:        oldTmuxName,
@@ -46,8 +46,8 @@ func NewSessionRenameForm(sessionManager ports.TmuxSessionLifecycle, store *stor
 			OldTmuxName: oldTmuxName,
 		},
 		sessionManager: sessionManager,
+		sessionRepo:    sessionRepo,
 		sessionState:   sessionState,
-		store:          store,
 	}
 
 	// Build form with single input field
@@ -141,18 +141,18 @@ func (sf *SessionRenameForm) renameSession() error {
 	}
 
 	// Update state (re-key the map)
-	if sessionInfo, exists := sf.sessionState.Sessions[sf.oldTmuxName]; exists {
-		// Update the session info with new names
-		sessionInfo.Name = newTmuxName
-		sessionInfo.DisplayName = newDisplayName
-		sessionInfo.LastUpdated = time.Now().UTC()
+	if session, exists := sf.sessionState.Sessions[sf.oldTmuxName]; exists {
+		// Update the session with new names
+		session.Name = newTmuxName
+		session.DisplayName = newDisplayName
+		session.LastUpdated = time.Now().UTC()
 
 		// Re-key the map
 		delete(sf.sessionState.Sessions, sf.oldTmuxName)
-		sf.sessionState.Sessions[newTmuxName] = sessionInfo
+		sf.sessionState.Sessions[newTmuxName] = session
 
-		// Save to database (OrderedSessionNames will be repopulated on next Load)
-		if err := sf.store.Save(context.Background(), sf.sessionState); err != nil {
+		// Save to database (OrderedNames will be repopulated on next LoadState)
+		if err := sf.sessionRepo.SaveState(context.Background(), sf.sessionState); err != nil {
 			// Try to rename back in tmux if state update fails
 			sf.sessionManager.RenameSession(newTmuxName, sf.oldTmuxName)
 			return fmt.Errorf("failed to update session state: %w", err)

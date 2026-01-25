@@ -4,53 +4,22 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"rocha/logging"
 	"strconv"
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"rocha/domain"
+	"rocha/logging"
+
 	"golang.org/x/sync/errgroup"
 )
 
-// GitStats holds detailed git statistics for a worktree
-type GitStats struct {
-	Additions     int       // Lines added in working directory
-	Ahead         int       // Commits ahead of tracking branch
-	Behind        int       // Commits behind tracking branch
-	ChangedFiles  int       // Number of changed files in working directory
-	CommitHash    string    // Last commit hash (short)
-	CommitMessage string    // Last commit message (truncated)
-	Deletions     int       // Lines deleted in working directory
-	Error         error     // Error during fetching (if any)
-	FetchedAt     time.Time // When these stats were fetched
-}
-
-// GitStatsRequest represents a request to fetch git stats
-type GitStatsRequest struct {
-	SessionName  string
-	WorktreePath string
-	Priority     int // Higher priority = fetched first
-}
-
-// GitStatsReadyMsg is sent when git stats are successfully fetched
-type GitStatsReadyMsg struct {
-	SessionName string
-	Stats       *GitStats
-}
-
-// GitStatsErrorMsg is sent when git stats fetching fails
-type GitStatsErrorMsg struct {
-	SessionName string
-	Err         error
-}
-
 // FetchGitStats fetches all git statistics for the given worktree path
 // Uses errgroup for concurrent fetching with context cancellation
-func FetchGitStats(ctx context.Context, worktreePath string) (*GitStats, error) {
+func FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error) {
 	logging.Logger.Debug("Fetching git stats", "path", worktreePath)
 
-	stats := &GitStats{
+	stats := &domain.GitStats{
 		FetchedAt: time.Now(),
 	}
 
@@ -222,29 +191,3 @@ func getLastCommit(ctx context.Context, path string) (hash string, message strin
 }
 
 
-// StartGitStatsFetcher starts an async worker that fetches git stats
-// Returns a tea.Cmd that will send GitStatsReadyMsg or GitStatsErrorMsg
-func StartGitStatsFetcher(request GitStatsRequest) tea.Cmd {
-	return func() tea.Msg {
-		// Create context with 3 second timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-
-		// Fetch stats
-		stats, err := FetchGitStats(ctx, request.WorktreePath)
-		if err != nil {
-			logging.Logger.Warn("Failed to fetch git stats",
-				"session", request.SessionName,
-				"error", err)
-			return GitStatsErrorMsg{
-				SessionName: request.SessionName,
-				Err:         err,
-			}
-		}
-
-		return GitStatsReadyMsg{
-			SessionName: request.SessionName,
-			Stats:       stats,
-		}
-	}
-}

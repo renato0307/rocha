@@ -218,6 +218,71 @@ func (s *SessionService) KillSession(
 	return nil
 }
 
+// DeleteSessionOptions configures session deletion behavior
+type DeleteSessionOptions struct {
+	KillTmux       bool // Kill tmux sessions before deleting
+	RemoveWorktree bool // Remove worktree from filesystem
+}
+
+// DeleteSession removes a session from database with optional tmux kill and worktree removal
+func (s *SessionService) DeleteSession(
+	ctx context.Context,
+	sessionName string,
+	opts DeleteSessionOptions,
+) error {
+	logging.Logger.Info("Deleting session",
+		"session", sessionName,
+		"killTmux", opts.KillTmux,
+		"removeWorktree", opts.RemoveWorktree)
+
+	// Get session info before deleting (to get worktree path and shell session)
+	session, err := s.sessionRepo.Get(ctx, sessionName)
+	if err != nil {
+		logging.Logger.Error("Failed to get session for deletion", "session", sessionName, "error", err)
+		return fmt.Errorf("failed to get session %s: %w", sessionName, err)
+	}
+
+	// Kill tmux sessions if requested
+	if opts.KillTmux {
+		logging.Logger.Debug("Killing tmux sessions", "session", sessionName)
+		// Kill shell session if exists
+		if session.ShellSession != nil {
+			logging.Logger.Debug("Killing shell session", "session", session.ShellSession.Name)
+			if err := s.tmuxClient.KillSession(session.ShellSession.Name); err != nil {
+				logging.Logger.Warn("Failed to kill shell session", "session", session.ShellSession.Name, "error", err)
+				fmt.Printf("⚠ Warning: Failed to kill shell session %s: %v\n", session.ShellSession.Name, err)
+			}
+		}
+
+		// Kill main session
+		if err := s.tmuxClient.KillSession(sessionName); err != nil {
+			logging.Logger.Warn("Failed to kill tmux session", "session", sessionName, "error", err)
+			fmt.Printf("⚠ Warning: Failed to kill tmux session %s: %v\n", sessionName, err)
+		}
+	}
+
+	// Delete from database (cascade deletes extension tables)
+	logging.Logger.Debug("Deleting session from database", "session", sessionName)
+	if err := s.sessionRepo.Delete(ctx, sessionName); err != nil {
+		logging.Logger.Error("Failed to delete session from database", "session", sessionName, "error", err)
+		return fmt.Errorf("failed to delete session %s from database: %w", sessionName, err)
+	}
+
+	// Remove worktree if requested and exists
+	if opts.RemoveWorktree && session.WorktreePath != "" && session.RepoPath != "" {
+		logging.Logger.Info("Removing worktree", "session", sessionName, "path", session.WorktreePath)
+		if err := s.gitRepo.RemoveWorktree(session.RepoPath, session.WorktreePath); err != nil {
+			logging.Logger.Warn("Failed to remove worktree", "session", sessionName, "path", session.WorktreePath, "error", err)
+			fmt.Printf("⚠ Warning: Failed to remove worktree for %s: %v\n", sessionName, err)
+		} else {
+			logging.Logger.Info("Worktree removed successfully", "session", sessionName)
+		}
+	}
+
+	logging.Logger.Info("Session deleted successfully", "session", sessionName)
+	return nil
+}
+
 // ArchiveSession archives a session and optionally removes its worktree
 func (s *SessionService) ArchiveSession(
 	ctx context.Context,

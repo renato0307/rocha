@@ -12,11 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"rocha/config"
+	"rocha/domain"
 	"rocha/logging"
-	"rocha/paths"
 	"rocha/ports"
 	"rocha/state"
-	"rocha/storage"
 	"rocha/tmux"
 	"rocha/ui"
 )
@@ -197,19 +196,19 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	os.Setenv("ROCHA_EXECUTION_ID", executionID)
 	logging.Logger.Info("Generated new execution ID", "execution_id", executionID)
 
-	// Open database
-	store, err := storage.NewStore(paths.GetDBPath())
+	// Create container with all services
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("failed to create container: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
 	// Load state for initial session info
-	st, err := store.Load(context.Background(), false)
+	st, err := container.SessionRepository.LoadState(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load session state: %v", err)
 		logging.Logger.Warn("Failed to load session state", "error", err)
-		st = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
+		st = &domain.SessionCollection{Sessions: make(map[string]domain.Session)}
 	}
 	logging.Logger.Debug("State loaded", "existing_sessions", len(st.Sessions))
 
@@ -227,7 +226,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		// Update execution ID for running sessions without changing last_updated timestamp
 		for _, sessionName := range runningNames {
 			if _, exists := st.Sessions[sessionName]; exists {
-				if err := store.UpdateExecutionID(context.Background(), sessionName, executionID); err != nil {
+				if err := container.SessionRepository.UpdateState(context.Background(), sessionName, domain.StateIdle, executionID); err != nil {
 					logging.Logger.Error("Failed to update execution ID", "error", err, "session", sessionName)
 				} else {
 					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
@@ -244,9 +243,6 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	}
 	logging.Logger.Debug("Allow dangerously skip permissions default from settings",
 		"value", allowDangerouslySkipPermissionsDefault)
-
-	// Create container with all services
-	container := NewContainerFromStore(store, tmuxClient)
 
 	// Set terminal to raw mode for proper input handling
 	logging.Logger.Debug("Initializing Bubble Tea program")
@@ -267,7 +263,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	p := tea.NewProgram(
 		ui.NewModel(
 			tmuxClient,
-			store,
+			container.SessionRepository,
 			r.Editor,
 			errorClearDelay,
 			statusConfig,
@@ -277,6 +273,7 @@ func (r *RunCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 			r.TmuxStatusPosition,
 			allowDangerouslySkipPermissionsDefault,
 			tipsConfig,
+			container.GitService,
 			container.SessionService,
 			container.ShellService,
 		),

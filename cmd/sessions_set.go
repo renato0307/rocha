@@ -6,10 +6,7 @@ import (
 	"strings"
 
 	"rocha/logging"
-	"rocha/operations"
-	"rocha/paths"
 	"rocha/ports"
-	"rocha/storage"
 	"rocha/tmux"
 )
 
@@ -43,53 +40,41 @@ func (s *SessionSetCmd) Run(cli *CLI) error {
 	logging.Logger.Info("Executing session set command",
 		"name", s.Name, "variable", s.Variable, "value", s.Value, "all", s.All, "killTmux", s.KillTmux)
 
-	store, err := s.openStore()
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
+	if err != nil {
+		logging.Logger.Error("Failed to create container", "error", err)
+		return fmt.Errorf("failed to initialize: %w", err)
+	}
+	defer container.Close()
+
+	sessionNames, err := s.getSessionNames(ctx, container)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
 
-	sessionNames, err := s.getSessionNames(ctx, store)
-	if err != nil {
-		return err
-	}
-
-	updater, err := s.createUpdater(store)
+	updater, err := s.createUpdater(container)
 	if err != nil {
 		return err
 	}
 
 	successCount, failedSessions := updateAllSessions(ctx, sessionNames, updater)
 
-	s.handleTmuxSessions(sessionNames, failedSessions)
+	s.handleTmuxSessions(container.TmuxClient, sessionNames, failedSessions)
 
 	s.printSummary(successCount, len(sessionNames))
 
 	return nil
 }
 
-func (s *SessionSetCmd) openStore() (*storage.Store, error) {
-	dbPath := paths.GetDBPath()
-	logging.Logger.Debug("Opening database", "path", dbPath)
-
-	store, err := storage.NewStore(dbPath)
-	if err != nil {
-		logging.Logger.Error("Failed to open database", "path", dbPath, "error", err)
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	logging.Logger.Debug("Database opened successfully")
-	return store, nil
-}
-
-func (s *SessionSetCmd) getSessionNames(ctx context.Context, store *storage.Store) ([]string, error) {
+func (s *SessionSetCmd) getSessionNames(ctx context.Context, container *Container) ([]string, error) {
 	if !s.All {
 		logging.Logger.Debug("Updating single session", "session", s.Name)
 		return []string{s.Name}, nil
 	}
 
 	logging.Logger.Info("Updating all sessions", "variable", s.Variable)
-	sessions, err := store.ListSessions(ctx, false)
+	sessions, err := container.SessionRepository.List(ctx, false)
 	if err != nil {
 		logging.Logger.Error("Failed to list sessions", "error", err)
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
@@ -105,11 +90,11 @@ func (s *SessionSetCmd) getSessionNames(ctx context.Context, store *storage.Stor
 	return names, nil
 }
 
-func (s *SessionSetCmd) createUpdater(store *storage.Store) (sessionUpdater, error) {
+func (s *SessionSetCmd) createUpdater(container *Container) (sessionUpdater, error) {
 	switch s.Variable {
 	case "claudedir":
 		return func(ctx context.Context, name string) error {
-			return operations.SetSessionClaudeDir(ctx, name, s.Value, store)
+			return container.SettingsService.SetClaudeDir(ctx, name, s.Value)
 		}, nil
 
 	case "allow-dangerously-skip-permissions":
@@ -119,7 +104,7 @@ func (s *SessionSetCmd) createUpdater(store *storage.Store) (sessionUpdater, err
 			return nil, fmt.Errorf("invalid value for allow-dangerously-skip-permissions: %w (use: true/false, yes/no, 1/0)", err)
 		}
 		return func(ctx context.Context, name string) error {
-			return operations.SetSessionSkipPermissions(ctx, name, skipPermissions, store)
+			return container.SettingsService.SetSkipPermissions(ctx, name, skipPermissions)
 		}, nil
 
 	default:
@@ -127,8 +112,7 @@ func (s *SessionSetCmd) createUpdater(store *storage.Store) (sessionUpdater, err
 	}
 }
 
-func (s *SessionSetCmd) handleTmuxSessions(sessionNames, failedSessions []string) {
-	tmuxClient := tmux.NewClient()
+func (s *SessionSetCmd) handleTmuxSessions(tmuxClient ports.TmuxClient, sessionNames, failedSessions []string) {
 	successfulSessions := filterSuccessfulSessions(sessionNames, failedSessions)
 
 	if s.KillTmux {
@@ -228,10 +212,30 @@ func killTmuxSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []stri
 func warnAboutRunningSessions(tmuxClient ports.TmuxSessionLifecycle, sessionNames []string, restartCmd string) {
 	logging.Logger.Debug("Checking for running tmux sessions")
 
-	runningSessions, err := operations.GetRunningTmuxSessions(sessionNames, tmuxClient)
+	// Get all running tmux sessions
+	allRunningSessions, err := tmuxClient.ListSessions()
 	if err != nil {
-		logging.Logger.Warn("Failed to check running tmux sessions", "error", err)
+		logging.Logger.Debug("No tmux sessions running or tmux error", "error", err)
 		return
+	}
+
+	// Build map of running session names
+	runningMap := make(map[string]bool)
+	for _, sess := range allRunningSessions {
+		runningMap[sess.Name] = true
+	}
+
+	// Filter to only sessions we care about
+	var runningSessions []string
+	for _, name := range sessionNames {
+		if runningMap[name] {
+			runningSessions = append(runningSessions, name)
+		}
+		// Also check for shell session
+		shellName := name + "-shell"
+		if runningMap[shellName] {
+			runningSessions = append(runningSessions, shellName)
+		}
 	}
 
 	if len(runningSessions) == 0 {

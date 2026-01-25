@@ -89,3 +89,25 @@ func (s *ShellService) GetOrCreateShellSession(
 	logging.Logger.Info("Shell session created", "name", shellSessionName, "parent", parentSessionName)
 	return shellSessionName, nil
 }
+
+// GetRunningTmuxSessions returns a map of session names that are currently running in tmux
+func (s *ShellService) GetRunningTmuxSessions(ctx context.Context) (map[string]bool, error) {
+	logging.Logger.Debug("Getting running tmux sessions")
+
+	// Get all running tmux sessions
+	sessions, err := s.tmuxClient.ListSessions()
+	if err != nil {
+		// List returns error if no sessions exist
+		logging.Logger.Debug("No tmux sessions running or tmux error", "error", err)
+		return make(map[string]bool), nil
+	}
+
+	// Build map for quick lookup
+	runningSessions := make(map[string]bool)
+	for _, session := range sessions {
+		runningSessions[session.Name] = true
+	}
+
+	logging.Logger.Debug("Found running tmux sessions", "count", len(runningSessions))
+	return runningSessions, nil
+}

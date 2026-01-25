@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"rocha/paths"
-	"rocha/storage"
+	"rocha/domain"
+	"rocha/tmux"
 )
 
 // SessionsViewCmd views a specific session
@@ -17,13 +17,14 @@ type SessionsViewCmd struct {
 
 // Run executes the view command
 func (s *SessionsViewCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(paths.GetDBPath())
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
-	session, err := store.GetSession(context.Background(), s.Name)
+	session, err := container.SessionRepository.Get(context.Background(), s.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
@@ -34,7 +35,7 @@ func (s *SessionsViewCmd) Run(cli *CLI) error {
 	return s.printTable(session)
 }
 
-func (s *SessionsViewCmd) printJSON(session *storage.SessionInfo) error {
+func (s *SessionsViewCmd) printJSON(session *domain.Session) error {
 	data, err := json.MarshalIndent(session, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -43,7 +44,7 @@ func (s *SessionsViewCmd) printJSON(session *storage.SessionInfo) error {
 	return nil
 }
 
-func (s *SessionsViewCmd) printTable(session *storage.SessionInfo) error {
+func (s *SessionsViewCmd) printTable(session *domain.Session) error {
 	fmt.Printf("Session: %s\n", session.Name)
 	fmt.Printf("Display Name: %s\n", session.DisplayName)
 	fmt.Printf("State: %s\n", session.State)

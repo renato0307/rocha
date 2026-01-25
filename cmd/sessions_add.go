@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"rocha/paths"
-	"rocha/storage"
+	"rocha/domain"
+	"rocha/tmux"
 )
 
 // SessionsAddCmd adds a new session
@@ -25,18 +25,19 @@ type SessionsAddCmd struct {
 
 // Run executes the add command
 func (s *SessionsAddCmd) Run(cli *CLI) error {
-	store, err := storage.NewStore(paths.GetDBPath())
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
 	displayName := s.DisplayName
 	if displayName == "" {
 		displayName = s.Name
 	}
 
-	sessInfo := storage.SessionInfo{
+	session := domain.Session{
 		AllowDangerouslySkipPermissions: s.AllowDangerouslySkipPermissions,
 		BranchName:                      s.BranchName,
 		DisplayName:                     displayName,
@@ -45,11 +46,11 @@ func (s *SessionsAddCmd) Run(cli *CLI) error {
 		Name:                            s.Name,
 		RepoInfo:                        s.RepoInfo,
 		RepoPath:                        s.RepoPath,
-		State:                           s.State,
+		State:                           domain.SessionState(s.State),
 		WorktreePath:                    s.WorktreePath,
 	}
 
-	if err := store.AddSession(context.Background(), sessInfo); err != nil {
+	if err := container.SessionRepository.Add(context.Background(), session); err != nil {
 		return fmt.Errorf("failed to add session: %w", err)
 	}
 

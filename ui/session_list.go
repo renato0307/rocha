@@ -15,11 +15,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"rocha/git"
+	"rocha/application"
+	"rocha/domain"
 	"rocha/logging"
 	"rocha/ports"
 	"rocha/state"
-	"rocha/storage"
 )
 
 const escTimeout = 500 * time.Millisecond
@@ -60,13 +60,13 @@ func (i SessionItem) Description() string {
 
 // SessionDelegate is a custom delegate for rendering session items
 type SessionDelegate struct {
-	sessionState    *storage.SessionState
+	sessionState    *domain.SessionCollection
 	statusConfig    *StatusConfig
 	timestampConfig *TimestampColorConfig
 	timestampMode   TimestampMode
 }
 
-func newSessionDelegate(sessionState *storage.SessionState, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, timestampMode TimestampMode) SessionDelegate {
+func newSessionDelegate(sessionState *domain.SessionCollection, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, timestampMode TimestampMode) SessionDelegate {
 	return SessionDelegate{
 		sessionState:    sessionState,
 		statusConfig:    statusConfig,
@@ -223,11 +223,12 @@ type SessionList struct {
 	editor             string // Editor to open sessions in
 	err                error
 	fetchingGitStats   bool // Prevent concurrent fetches
+	gitService         *application.GitService // Git operations service
 	keys               KeyMap
 	list               list.Model
-	sessionState       *storage.SessionState
+	sessionRepo        ports.SessionRepository // Session repository
+	sessionState       *domain.SessionCollection
 	statusConfig       *StatusConfig
-	store              *storage.Store // Storage for persistent state
 	timestampMode      TimestampMode
 	tmuxClient         ports.TmuxClient
 	tmuxStatusPosition string
@@ -268,12 +269,12 @@ type SessionList struct {
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(tmuxClient ports.TmuxClient, store *storage.Store, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
+func NewSessionList(tmuxClient ports.TmuxClient, sessionRepo ports.SessionRepository, gitService *application.GitService, editor string, statusConfig *StatusConfig, timestampConfig *TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
-	sessionState, err := store.Load(context.Background(), false)
+	sessionState, err := sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load session state", "error", err)
-		sessionState = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
+		sessionState = &domain.SessionCollection{Sessions: make(map[string]domain.Session)}
 	}
 
 	// Build items from state
@@ -302,11 +303,12 @@ func NewSessionList(tmuxClient ports.TmuxClient, store *storage.Store, editor st
 		devMode:            devMode,
 		editor:             editor,
 		err:                err,
+		gitService:         gitService,
 		keys:               keys,
 		list:               l,
+		sessionRepo:        sessionRepo,
 		sessionState:       sessionState,
 		statusConfig:       statusConfig,
-		store:              store,
 		timestampConfig:    timestampConfig,
 		timestampMode:      timestampMode,
 		tipsConfig:         tipsConfig,
@@ -332,10 +334,20 @@ func (sl *SessionList) Init() tea.Cmd {
 // Update handles messages for the session list component
 func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case git.GitStatsReadyMsg:
-		// Git stats successfully fetched
+	case GitStatsReadyMsg:
+		// Git stats successfully fetched - convert to domain type
 		if info, exists := sl.sessionState.Sessions[msg.SessionName]; exists {
-			info.GitStats = msg.Stats
+			if msg.Stats != nil {
+				info.GitStats = &domain.GitStats{
+					Additions:    msg.Stats.Additions,
+					Ahead:        msg.Stats.Ahead,
+					Behind:       msg.Stats.Behind,
+					ChangedFiles: msg.Stats.ChangedFiles,
+					Deletions:    msg.Stats.Deletions,
+					Error:        msg.Stats.Error,
+					FetchedAt:    msg.Stats.FetchedAt,
+				}
+			}
 			sl.sessionState.Sessions[msg.SessionName] = info
 		}
 
@@ -357,7 +369,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Don't schedule new poll - one is already running
 		return sl, cmd
 
-	case git.GitStatsErrorMsg:
+	case GitStatsErrorMsg:
 		// Git stats fetch failed - log and continue
 		logging.Logger.Debug("Git stats fetch failed", "session", msg.SessionName, "error", msg.Err)
 		sl.fetchingGitStats = false
@@ -376,7 +388,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Auto-refresh: Check if state has changed (showArchived=false - TUI never shows archived)
-		newState, err := sl.store.Load(context.Background(), false)
+		newState, err := sl.sessionRepo.LoadState(context.Background(), false)
 		if err != nil {
 			// Continue polling even on error
 			return sl, pollStateCmd()
@@ -714,7 +726,7 @@ func (sl *SessionList) SetSize(width, height, listHeight int) {
 
 // RefreshFromState reloads the session list from state
 func (sl *SessionList) RefreshFromState() {
-	sessionState, err := sl.store.Load(context.Background(), false)
+	sessionState, err := sl.sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		logging.Logger.Error("Failed to refresh session state", "error", err)
@@ -747,8 +759,8 @@ func pollStateCmd() tea.Cmd {
 	})
 }
 
-// buildListItems converts SessionState to list items
-func buildListItems(sessionState *storage.SessionState, tmuxClient ports.TmuxClient, statusConfig *StatusConfig) []list.Item {
+// buildListItems converts SessionCollection to list items
+func buildListItems(sessionState *domain.SessionCollection, tmuxClient ports.TmuxClient, statusConfig *StatusConfig) []list.Item {
 	var items []list.Item
 
 	// Build sessions from state
@@ -761,12 +773,12 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient ports.TmuxCli
 		}
 	}
 
-	// Build ordered sessions list using OrderedSessionNames from database
+	// Build ordered sessions list using OrderedNames from database
 	var sessions []*ports.TmuxSession
 	orderedSet := make(map[string]bool)
 
 	// Add sessions in database order
-	for _, name := range sessionState.OrderedSessionNames {
+	for _, name := range sessionState.OrderedNames {
 		if session, exists := sessionsMap[name]; exists {
 			sessions = append(sessions, session)
 			orderedSet[name] = true
@@ -809,22 +821,21 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient ports.TmuxCli
 
 		// Append git stats if available
 		if info.GitStats != nil {
-			if stats, ok := info.GitStats.(*git.GitStats); ok {
-				if stats.Error != nil {
-					// Log the error to help debug why some repos don't show info
-					logging.Logger.Debug("Git stats error for session",
-						"session", session.Name,
-						"error", stats.Error)
-				} else {
-					// Add ahead/behind (if non-zero)
-					if stats.Ahead > 0 || stats.Behind > 0 {
-						gitRef += fmt.Sprintf(" | ↑%d ↓%d", stats.Ahead, stats.Behind)
-					}
+			stats := info.GitStats
+			if stats.Error != nil {
+				// Log the error to help debug why some repos don't show info
+				logging.Logger.Debug("Git stats error for session",
+					"session", session.Name,
+					"error", stats.Error)
+			} else {
+				// Add ahead/behind (if non-zero)
+				if stats.Ahead > 0 || stats.Behind > 0 {
+					gitRef += fmt.Sprintf(" | ↑%d ↓%d", stats.Ahead, stats.Behind)
+				}
 
-					// Add file stats (if non-zero)
-					if stats.ChangedFiles > 0 || stats.Additions > 0 || stats.Deletions > 0 {
-						gitRef += fmt.Sprintf(" | %d files +%d -%d", stats.ChangedFiles, stats.Additions, stats.Deletions)
-					}
+				// Add file stats (if non-zero)
+				if stats.ChangedFiles > 0 || stats.Additions > 0 || stats.Deletions > 0 {
+					gitRef += fmt.Sprintf(" | %d files +%d -%d", stats.ChangedFiles, stats.Additions, stats.Deletions)
 				}
 			}
 		}
@@ -837,7 +848,7 @@ func buildListItems(sessionState *storage.SessionState, tmuxClient ports.TmuxCli
 			IsFlagged:       info.IsFlagged,
 			LastUpdated:     info.LastUpdated,
 			Session:         session,
-			State:           info.State,
+			State:           string(info.State),
 			Status:          info.Status,
 		})
 	}
@@ -962,7 +973,7 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 		"total_items", len(items))
 
 	// Swap positions in database
-	if err := sl.store.SwapPositions(context.Background(), movedItemName, prevItem.Session.Name); err != nil {
+	if err := sl.sessionRepo.SwapPositions(context.Background(), movedItemName, prevItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
 		return nil
 	}
@@ -1034,7 +1045,7 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 		"total_items", len(items))
 
 	// Swap positions in database
-	if err := sl.store.SwapPositions(context.Background(), movedItemName, nextItem.Session.Name); err != nil {
+	if err := sl.sessionRepo.SwapPositions(context.Background(), movedItemName, nextItem.Session.Name); err != nil {
 		logging.Logger.Warn("Failed to swap session positions", "error", err)
 		return nil
 	}
@@ -1090,7 +1101,7 @@ func (sl *SessionList) requestGitStatsForVisible() tea.Cmd {
 	}
 
 	// Collect requests for sessions that need stats
-	var requests []git.GitStatsRequest
+	var requests []GitStatsRequest
 	selectedIndex := sl.list.Index()
 
 	for i, item := range visibleItems {
@@ -1130,10 +1141,8 @@ func (sl *SessionList) requestGitStatsForVisible() tea.Cmd {
 
 		// Check if stats are fresh (< 5 seconds old)
 		if info.GitStats != nil {
-			if stats, ok := info.GitStats.(*git.GitStats); ok {
-				if time.Since(stats.FetchedAt) < 5*time.Second {
-					continue // Stats are fresh, skip
-				}
+			if time.Since(info.GitStats.FetchedAt) < 5*time.Second {
+				continue // Stats are fresh, skip
 			}
 		}
 
@@ -1143,7 +1152,7 @@ func (sl *SessionList) requestGitStatsForVisible() tea.Cmd {
 			priority = 1
 		}
 
-		requests = append(requests, git.GitStatsRequest{
+		requests = append(requests, GitStatsRequest{
 			SessionName:  sessionItem.Session.Name,
 			WorktreePath: gitPath, // Use gitPath which can be either worktree or repo path
 			Priority:     priority,
@@ -1176,7 +1185,7 @@ func (sl *SessionList) requestGitStatsForVisible() tea.Cmd {
 	// Start fetchers for all requests in parallel
 	var cmds []tea.Cmd
 	for _, req := range requests {
-		cmds = append(cmds, git.StartGitStatsFetcher(req))
+		cmds = append(cmds, StartGitStatsFetcher(sl.gitService, req))
 	}
 
 	return tea.Batch(cmds...)
@@ -1194,7 +1203,7 @@ func (sl *SessionList) cycleSessionStatus(sessionName string) tea.Cmd {
 	nextStatus := sl.statusConfig.GetNextStatus(currentStatus)
 
 	// Update in database
-	if err := sl.store.UpdateSessionStatus(context.Background(), sessionName, nextStatus); err != nil {
+	if err := sl.sessionRepo.UpdateStatus(context.Background(), sessionName, nextStatus); err != nil {
 		logging.Logger.Error("Failed to cycle session status", "error", err, "session", sessionName)
 		return nil
 	}

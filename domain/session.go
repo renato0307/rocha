@@ -20,7 +20,7 @@ type Session struct {
 	Comment                         string
 	DisplayName                     string
 	ExecutionID                     string
-	GitStats                        any
+	GitStats                        *GitStats
 	IsArchived                      bool
 	IsFlagged                       bool
 	LastUpdated                     time.Time

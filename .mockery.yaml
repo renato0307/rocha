@@ -7,10 +7,11 @@ disable-version-string: true
 resolve-type-alias: false
 issue-845-fix: true
 packages:
-  rocha/tmux:
+  rocha/ports:
     interfaces:
-      SessionManager:
-      Attacher:
-      PaneOperations:
-      Configurator:
-      Client:
+      TmuxClient:
+      TmuxSessionLifecycle:
+      SessionRepository:
+      SessionReader:
+      SessionWriter:
+      GitRepository:

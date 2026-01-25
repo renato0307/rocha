@@ -9,8 +9,7 @@ import (
 	"syscall"
 
 	"rocha/logging"
-	"rocha/paths"
-	"rocha/storage"
+	"rocha/tmux"
 )
 
 // StartClaudeCmd starts Claude Code with hooks configured
@@ -36,17 +35,20 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 	var claudeDir string
 	var executionID string
 	var allowDangerouslySkipPermissions bool
-	store, err := storage.NewStore(paths.GetDBPath())
+
+	tmuxClient := tmux.NewClient()
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		logging.Logger.Warn("Failed to open database for execution ID", "error", err)
+		logging.Logger.Warn("Failed to initialize container for execution ID", "error", err)
 		// Fall back to environment variable
 		executionID = os.Getenv("ROCHA_EXECUTION_ID")
 		if executionID == "" {
 			executionID = "unknown"
 		}
 	} else {
-		defer store.Close()
-		st, err := store.Load(context.Background(), false)
+		defer container.Close()
+		ctx := context.Background()
+		st, err := container.SessionRepository.LoadState(ctx, false)
 		if err != nil {
 			logging.Logger.Warn("Failed to load state for execution ID", "error", err)
 			executionID = os.Getenv("ROCHA_EXECUTION_ID")

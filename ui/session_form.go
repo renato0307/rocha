@@ -14,9 +14,9 @@ import (
 
 	"rocha/application"
 	"rocha/config"
-	"rocha/git"
+	"rocha/domain"
 	"rocha/logging"
-	"rocha/storage"
+	"rocha/ports"
 )
 
 // sessionCreatedMsg is sent when session creation completes
@@ -42,19 +42,21 @@ type SessionForm struct {
 	cancelled          bool
 	creating           bool // True when session creation is in progress
 	form               *huh.Form
+	gitService         *application.GitService
 	result             SessionFormResult
+	sessionRepo        ports.SessionRepository
 	sessionService     *application.SessionService
-	sessionState       *storage.SessionState
+	sessionState       *domain.SessionCollection
 	spinner            spinner.Model
-	store              *storage.Store
 	tmuxStatusPosition string
 }
 
 // NewSessionForm creates a new session creation form
 func NewSessionForm(
+	gitService *application.GitService,
 	sessionService *application.SessionService,
-	store *storage.Store,
-	sessionState *storage.SessionState,
+	sessionRepo ports.SessionRepository,
+	sessionState *domain.SessionCollection,
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	defaultRepoSource string,
@@ -64,14 +66,15 @@ func NewSessionForm(
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	sf := &SessionForm{
+		gitService: gitService,
 		result: SessionFormResult{
 			AllowDangerouslySkipPermissions: allowDangerouslySkipPermissionsDefault,
 			RepoSource:                      defaultRepoSource,
 		},
+		sessionRepo:        sessionRepo,
 		sessionService:     sessionService,
 		sessionState:       sessionState,
 		spinner:            s,
-		store:              store,
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
 
@@ -81,13 +84,13 @@ func NewSessionForm(
 
 	// Check if we're in a git repository
 	cwd, _ := os.Getwd()
-	isGit, repo := git.IsGitRepo(cwd)
+	isGit, repo := sf.gitService.IsGitRepo(cwd)
 
 	// Determine default ClaudeDir for display purposes
 	var defaultClaudeDir string
 	if isGit {
-		repoInfo := git.GetRepoInfo(repo)
-		defaultClaudeDir = config.ResolveClaudeDir(store, repoInfo, "")
+		repoInfo := sf.gitService.GetRepoInfo(repo)
+		defaultClaudeDir = config.ResolveClaudeDir(sessionRepo, repoInfo, "")
 	} else {
 		defaultClaudeDir = config.DefaultClaudeDir()
 	}
@@ -101,7 +104,7 @@ func NewSessionForm(
 		Value(&sf.result.SessionName).
 		DescriptionFunc(func() string {
 			if sf.result.SessionName != "" {
-				if sanitized, err := git.SanitizeBranchName(sf.result.SessionName); err == nil {
+				if sanitized, err := sf.gitService.SanitizeBranchName(sf.result.SessionName); err == nil {
 					return fmt.Sprintf("Suggested branch name: %s", sanitized)
 				}
 			}
@@ -122,7 +125,7 @@ func NewSessionForm(
 				if sf.result.RepoSource == "" {
 					return "Git remote URL. Leave empty for current directory."
 				}
-				if repoSource, err := git.ParseRepoSource(sf.result.RepoSource); err == nil && repoSource.Branch != "" {
+				if repoSource, err := sf.gitService.ParseRepoSource(sf.result.RepoSource); err == nil && repoSource.Branch != "" {
 					return fmt.Sprintf("Detected branch: %s", repoSource.Branch)
 				}
 				return "Tip: Add #branch-name to specify a remote branch (e.g., https://github.com/owner/repo#main)"
@@ -137,7 +140,7 @@ func NewSessionForm(
 				if idx := strings.Index(s, "#"); idx >= 0 {
 					checkPath = s[:idx]
 				}
-				if git.IsGitURL(checkPath) {
+				if sf.gitService.IsGitURL(checkPath) {
 					return nil
 				}
 				return fmt.Errorf("must be a git URL (e.g., https://github.com/owner/repo or git@github.com:owner/repo)")
@@ -153,8 +156,8 @@ func NewSessionForm(
 				if s == "" {
 					return nil
 				}
-				if err := git.ValidateBranchName(s); err != nil {
-					sanitized, sanitizeErr := git.SanitizeBranchName(s)
+				if err := sf.gitService.ValidateBranchName(s); err != nil {
+					sanitized, sanitizeErr := sf.gitService.SanitizeBranchName(s)
 					if sanitizeErr == nil {
 						return fmt.Errorf("invalid branch name: %v (suggestion: %s)", err, sanitized)
 					}
@@ -281,21 +284,7 @@ func (sf *SessionForm) createSession() error {
 
 	// Update sessionState with the new session (for UI refresh)
 	if result.Session != nil {
-		sessionInfo := storage.SessionInfo{
-			AllowDangerouslySkipPermissions: result.Session.AllowDangerouslySkipPermissions,
-			BranchName:                      result.Session.BranchName,
-			ClaudeDir:                       result.Session.ClaudeDir,
-			DisplayName:                     result.Session.DisplayName,
-			ExecutionID:                     result.Session.ExecutionID,
-			LastUpdated:                     result.Session.LastUpdated,
-			Name:                            result.Session.Name,
-			RepoInfo:                        result.Session.RepoInfo,
-			RepoPath:                        result.Session.RepoPath,
-			RepoSource:                      result.Session.RepoSource,
-			State:                           string(result.Session.State),
-			WorktreePath:                    result.Session.WorktreePath,
-		}
-		sf.sessionState.Sessions[result.Session.Name] = sessionInfo
+		sf.sessionState.Sessions[result.Session.Name] = *result.Session
 	}
 
 	logging.Logger.Info("Session created",

@@ -8,18 +8,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"rocha/application"
+	"rocha/domain"
 	"rocha/logging"
 	"rocha/ports"
-	"rocha/storage"
 )
 
 // SessionOperations handles session lifecycle operations.
 // Responsible for kill, archive, attach, and shell session management.
 type SessionOperations struct {
 	errorManager       *ErrorManager
+	sessionRepo        ports.SessionRepository
 	sessionService     *application.SessionService
 	shellService       *application.ShellService
-	store              *storage.Store
 	tmuxClient         ports.TmuxClient
 	tmuxStatusPosition string
 }
@@ -27,7 +27,7 @@ type SessionOperations struct {
 // NewSessionOperations creates a new SessionOperations component.
 func NewSessionOperations(
 	errorManager *ErrorManager,
-	store *storage.Store,
+	sessionRepo ports.SessionRepository,
 	tmuxClient ports.TmuxClient,
 	tmuxStatusPosition string,
 	sessionService *application.SessionService,
@@ -35,9 +35,9 @@ func NewSessionOperations(
 ) *SessionOperations {
 	return &SessionOperations{
 		errorManager:       errorManager,
+		sessionRepo:        sessionRepo,
 		sessionService:     sessionService,
 		shellService:       shellService,
-		store:              store,
 		tmuxClient:         tmuxClient,
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
@@ -69,7 +69,7 @@ func (so *SessionOperations) AttachToSession(sessionName string) tea.Cmd {
 // Returns empty string on error (error stored in errorManager).
 func (so *SessionOperations) GetOrCreateShellSession(
 	session *ports.TmuxSession,
-	sessionState *storage.SessionState,
+	sessionState *domain.SessionCollection,
 ) string {
 	shellName, err := so.shellService.GetOrCreateShellSession(
 		context.Background(),
@@ -82,7 +82,7 @@ func (so *SessionOperations) GetOrCreateShellSession(
 	}
 
 	// Reload session state to get updated shell info
-	newState, err := so.store.Load(context.Background(), false)
+	newState, err := so.sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		logging.Logger.Warn("Failed to reload state after shell creation", "error", err)
 	} else {
@@ -96,7 +96,7 @@ func (so *SessionOperations) GetOrCreateShellSession(
 // Updates sessionState and sessionList, returns tea.Cmd.
 func (so *SessionOperations) KillSession(
 	session *ports.TmuxSession,
-	sessionState *storage.SessionState,
+	sessionState *domain.SessionCollection,
 	sessionList *SessionList,
 ) tea.Cmd {
 	logging.Logger.Info("Killing session", "name", session.Name)
@@ -106,7 +106,7 @@ func (so *SessionOperations) KillSession(
 	}
 
 	// Reload session state
-	newState, err := so.store.Load(context.Background(), false)
+	newState, err := so.sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		log.Printf("Warning: failed to load state: %v", err)
 	} else {
@@ -122,7 +122,7 @@ func (so *SessionOperations) KillSession(
 func (so *SessionOperations) ArchiveSession(
 	session *ports.TmuxSession,
 	removeWorktree bool,
-	sessionState *storage.SessionState,
+	sessionState *domain.SessionCollection,
 	sessionList *SessionList,
 ) tea.Cmd {
 	logging.Logger.Info("Archiving session", "name", session.Name, "removeWorktree", removeWorktree)
@@ -133,7 +133,7 @@ func (so *SessionOperations) ArchiveSession(
 	}
 
 	// Reload session state
-	newState, err := so.store.Load(context.Background(), false)
+	newState, err := so.sessionRepo.LoadState(context.Background(), false)
 	if err != nil {
 		so.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
 		sessionList.RefreshFromState()

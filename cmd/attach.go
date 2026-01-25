@@ -9,12 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"rocha/git"
+	"rocha/domain"
 	"rocha/logging"
-	"rocha/paths"
 	"rocha/ports"
-	"rocha/state"
-	"rocha/storage"
 	"rocha/tmux"
 )
 
@@ -41,12 +38,12 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		}
 	}
 
-	// Open database
-	store, err := storage.NewStore(paths.GetDBPath())
+	// Initialize container
+	container, err := NewContainer(tmuxClient)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
-	defer store.Close()
+	defer container.Close()
 
 	// Step 1: Auto-detect parameters from current directory
 	cwd, err := os.Getwd()
@@ -57,17 +54,17 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 	var repoPath, branchName, repoInfo, worktreePath, sessionName string
 
 	// Check if in git repo
-	isGit, _ := git.IsGitRepo(cwd)
+	isGit, _ := container.GitRepository.IsGitRepo(cwd)
 	if isGit {
 		// Get main repo path (handles worktrees correctly)
-		mainRepoPath, err := git.GetMainRepoPath(cwd)
+		mainRepoPath, err := container.GitRepository.GetMainRepoPath(cwd)
 		if err != nil {
 			logging.Logger.Warn("Failed to get main repo path, using detected path", "error", err)
 			mainRepoPath = cwd
 		}
 		repoPath = mainRepoPath
-		branchName = git.GetBranchName(cwd)
-		repoInfo = git.GetRepoInfo(repoPath)
+		branchName = container.GitRepository.GetBranchName(cwd)
+		repoInfo = container.GitRepository.GetRepoInfo(repoPath)
 		worktreePath = cwd
 		sessionName = branchName // Use branch as default session name
 	} else {
@@ -104,7 +101,8 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		"worktree_path", worktreePath)
 
 	// Step 3.5: Check for duplicate sessions with same branch or worktree
-	st, err := store.Load(context.Background(), false)
+	ctx := context.Background()
+	st, err := container.SessionRepository.LoadState(ctx, false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state for duplicate check", "error", err)
 	}
@@ -143,12 +141,12 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 
 	// Step 5: Update database
 	// Reload state in case it changed
-	st, err = store.Load(context.Background(), false)
+	st, err = container.SessionRepository.LoadState(ctx, false)
 	if err != nil {
 		logging.Logger.Warn("Failed to load state", "error", err)
 	}
 	if st == nil {
-		st = &storage.SessionState{Sessions: make(map[string]storage.SessionInfo)}
+		st = &domain.SessionCollection{Sessions: make(map[string]domain.Session)}
 	}
 
 	// Create or update session info - preserve DisplayName and State if session exists
@@ -176,7 +174,7 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 		executionID := uuid.New().String()
 		logging.Logger.Info("Creating new session with execution ID", "execution_id", executionID)
 
-		sessionInfo = storage.SessionInfo{
+		sessionInfo = domain.Session{
 			AllowDangerouslySkipPermissions: a.AllowDangerouslySkipPermissions,
 			BranchName:                      branchName,
 			DisplayName:                     sessionName,
@@ -185,14 +183,14 @@ func (a *AttachCmd) Run(tmuxClient ports.TmuxClient, cli *CLI) error {
 			Name:                            sessionName,
 			RepoInfo:                        repoInfo,
 			RepoPath:                        repoPath,
-			State:                           state.StateIdle,
+			State:                           domain.StateIdle,
 			WorktreePath:                    worktreePath,
 		}
 	}
 
 	st.Sessions[sessionName] = sessionInfo
 
-	if err := store.Save(context.Background(), st); err != nil {
+	if err := container.SessionRepository.SaveState(ctx, st); err != nil {
 		logging.Logger.Error("Failed to save state", "error", err)
 		// Continue anyway - session is created
 	}
