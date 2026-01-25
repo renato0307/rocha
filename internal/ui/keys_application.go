@@ -1,6 +1,12 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+
+	"github.com/renato0307/rocha/internal/config"
+)
 
 // ApplicationKeys defines key bindings for application-level actions
 type ApplicationKeys struct {
@@ -11,33 +17,38 @@ type ApplicationKeys struct {
 }
 
 // newApplicationKeys creates application key bindings
-func newApplicationKeys() ApplicationKeys {
+func newApplicationKeys(defaults map[string][]string, customKeys config.KeyBindingsConfig) ApplicationKeys {
 	return ApplicationKeys{
-		ForceQuit: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("ctrl+c"),
-				key.WithHelp("ctrl+c", "quit"),
-			),
-		},
-		Help: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("h", "?"),
-				key.WithHelp("h/?", "help"),
-			),
-			Tip: newTip("press %s to see all shortcuts", "?"),
-		},
-		Quit: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("q"),
-				key.WithHelp("q", "quit"),
-			),
-		},
-		Timestamps: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("t"),
-				key.WithHelp("t", "toggle timestamps"),
-			),
-			Tip: newTip("press %s to toggle timestamp display", "t"),
-		},
+		ForceQuit:  buildBinding("force_quit", defaults, customKeys),
+		Help:       buildBinding("help", defaults, customKeys),
+		Quit:       buildBinding("quit", defaults, customKeys),
+		Timestamps: buildBinding("timestamps", defaults, customKeys),
 	}
+}
+
+// buildBinding creates a KeyWithTip from the key definition, using custom keys if provided.
+func buildBinding(name string, defaults map[string][]string, customKeys config.KeyBindingsConfig) KeyWithTip {
+	def := GetKeyDefinition(name)
+	if def == nil {
+		panic("unknown key definition: " + name)
+	}
+
+	keys := defaults[name]
+	if custom, ok := customKeys[name]; ok && len(custom) > 0 {
+		keys = custom
+	}
+	helpKeys := strings.Join(keys, "/")
+
+	result := KeyWithTip{
+		Binding: key.NewBinding(
+			key.WithKeys(keys...),
+			key.WithHelp(helpKeys, def.Help),
+		),
+	}
+
+	if def.TipFormat != "" && len(keys) > 0 {
+		result.Tip = newTip(def.TipFormat, keys[0])
+	}
+
+	return result
 }

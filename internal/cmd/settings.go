@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"github.com/renato0307/rocha/internal/config"
 	"text/tabwriter"
+
+	"github.com/renato0307/rocha/internal/config"
 )
 
 // SettingsCmd manages settings
 type SettingsCmd struct {
+	Keys SettingsKeysCmd `cmd:"keys" help:"Manage keyboard shortcuts"`
 	Meta SettingsMetaCmd `cmd:"meta" help:"Show settings file location and available options" default:"1"`
 }
 

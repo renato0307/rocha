@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"github.com/renato0307/rocha/internal/theme"
-
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/renato0307/rocha/internal/theme"
 )
 
 // HelpScreen displays keyboard shortcuts organized by category
@@ -66,7 +66,7 @@ func buildHelpContent(keys *KeyMap) string {
 
 	// Inside Session Shortcuts (tmux-level)
 	content += "\n" + theme.HelpGroupStyle.Render("Inside Session Shortcuts") + "\n"
-	content += renderShortcut("ctrl+q", "quick return to list")
+	content += renderShortcut(keys.SessionActions.Detach.Binding.Help().Key, "quick return to list")
 	content += renderShortcut("ctrl+]", "swap between claude and shell sessions")
 	content += renderShortcut("ctrl+b then d", "standard tmux detach (also works)")
 
@@ -130,8 +130,7 @@ func (h *HelpScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return h, nil
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc", "q", "h", "?":
+		if msg.String() == "esc" || key.Matches(msg, h.keys.Application.Quit.Binding, h.keys.Application.Help.Binding) {
 			h.Completed = true
 			return h, nil
 		}

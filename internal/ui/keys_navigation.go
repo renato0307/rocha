@@ -1,6 +1,8 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"github.com/renato0307/rocha/internal/config"
+)
 
 // NavigationKeys defines key bindings for navigating the session list
 type NavigationKeys struct {
@@ -13,46 +15,13 @@ type NavigationKeys struct {
 }
 
 // newNavigationKeys creates navigation key bindings
-func newNavigationKeys() NavigationKeys {
+func newNavigationKeys(defaults map[string][]string, customKeys config.KeyBindingsConfig) NavigationKeys {
 	return NavigationKeys{
-		ClearFilter: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("esc"),
-				key.WithHelp("esc", "clear filter (press twice within 500ms)"),
-			),
-			Tip: newTip("press %s twice to clear the filter", "esc"),
-		},
-		Down: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("down", "j"),
-				key.WithHelp("↓/j", "down"),
-			),
-		},
-		Filter: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("/"),
-				key.WithHelp("/", "filter"),
-			),
-			Tip: newTip("press %s to filter sessions by name or branch", "/"),
-		},
-		MoveDown: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("J", "shift+down"),
-				key.WithHelp("shift+↓/j", "move session down"),
-			),
-		},
-		MoveUp: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("K", "shift+up"),
-				key.WithHelp("shift+↑/k", "move session up"),
-			),
-			Tip: newTip("press %s to reorder sessions in the list", "shift+↑"),
-		},
-		Up: KeyWithTip{
-			Binding: key.NewBinding(
-				key.WithKeys("up", "k"),
-				key.WithHelp("↑/k", "up"),
-			),
-		},
+		ClearFilter: buildBinding("clear_filter", defaults, customKeys),
+		Down:        buildBinding("down", defaults, customKeys),
+		Filter:      buildBinding("filter", defaults, customKeys),
+		MoveDown:    buildBinding("move_down", defaults, customKeys),
+		MoveUp:      buildBinding("move_up", defaults, customKeys),
+		Up:          buildBinding("up", defaults, customKeys),
 	}
 }
