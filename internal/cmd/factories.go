@@ -22,6 +22,7 @@ import (
 type Container struct {
 	// Services
 	GitService          *services.GitService
+	HookStatsService    *services.HookStatsService
 	MigrationService    *services.MigrationService
 	NotificationService *services.NotificationService
 	SessionService      *services.SessionService
@@ -68,8 +69,13 @@ func NewContainer() (*Container, error) {
 	sessionParser := adapterclaude.NewSessionParser()
 	tokenStatsService := services.NewTokenStatsService(sessionParser)
 
+	// Create hook stats service
+	hookParser := adapterclaude.NewHookParser(sessionRepo)
+	hookStatsService := services.NewHookStatsService(hookParser)
+
 	return &Container{
 		GitService:          gitService,
+		HookStatsService:    hookStatsService,
 		MigrationService:    migrationService,
 		NotificationService: notificationService,
 		SessionService:      sessionService,
