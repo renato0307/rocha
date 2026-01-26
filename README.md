@@ -91,7 +91,6 @@ For example:
 
 - `?` - show all key bindings
 - `n` - new session
-- `O` - open command palette for session actions
 - `Ctrl+Q` - return to session list (when inside a session)
 
 ### Custom Key Bindings

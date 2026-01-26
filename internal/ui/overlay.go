@@ -4,9 +4,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/renato0307/rocha/internal/theme"
 )
+
+// Dim style for background when overlay is shown
+var dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 // compositeOverlay renders an overlay centered on top of a dimmed background.
 // The background content is visible but dimmed, with the overlay rendered on top.
@@ -30,7 +31,7 @@ func compositeOverlay(background, overlay string, width, height int) string {
 	for i := range bgLines {
 		// Strip existing ANSI codes and apply dim style
 		plainText := stripAnsi(bgLines[i])
-		dimmedLine := theme.OverlayDimStyle.Render(plainText)
+		dimmedLine := dimStyle.Render(plainText)
 
 		// Pad to full width if needed
 		visibleWidth := lipgloss.Width(dimmedLine)
@@ -71,13 +72,13 @@ func compositeOverlay(background, overlay string, width, height int) string {
 				overlayLineWidth := lipgloss.Width(overlayLine)
 
 				// Build the line: dimmed left bg + overlay + dimmed right bg
-				leftPad := theme.OverlayDimStyle.Render(strings.Repeat(" ", startX))
+				leftPad := dimStyle.Render(strings.Repeat(" ", startX))
 
 				rightPadWidth := width - startX - overlayLineWidth
 				if rightPadWidth < 0 {
 					rightPadWidth = 0
 				}
-				rightPad := theme.OverlayDimStyle.Render(strings.Repeat(" ", rightPadWidth))
+				rightPad := dimStyle.Render(strings.Repeat(" ", rightPadWidth))
 
 				result[y] = leftPad + overlayLine + rightPad
 			} else {
@@ -135,7 +136,7 @@ func bottomAnchoredOverlay(background, overlay string, width, height, overlayHei
 	// Dim each background line and pad to full width
 	for i := range bgLines {
 		plainText := stripAnsi(bgLines[i])
-		dimmedLine := theme.OverlayDimStyle.Render(plainText)
+		dimmedLine := dimStyle.Render(plainText)
 
 		visibleWidth := lipgloss.Width(dimmedLine)
 		if visibleWidth < width {

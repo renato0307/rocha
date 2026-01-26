@@ -24,12 +24,12 @@ type SessionMetadataKeys struct {
 
 // SessionActionsKeys defines key bindings for session actions (open, shell, editor, quick open)
 type SessionActionsKeys struct {
-	CommandPalette KeyWithTip
-	Detach         KeyWithTip
-	Open           KeyWithTip
-	OpenEditor     KeyWithTip
-	OpenShell      KeyWithTip
-	QuickOpen      KeyWithTip
+	Detach      KeyWithTip
+	Open        KeyWithTip
+	OpenEditor  KeyWithTip
+	OpenShell   KeyWithTip
+	OptionsMenu KeyWithTip
+	QuickOpen   KeyWithTip
 }
 
 // newSessionManagementKeys creates session management key bindings
@@ -57,11 +57,11 @@ func newSessionMetadataKeys(defaults map[string][]string, customKeys config.KeyB
 // newSessionActionsKeys creates session action key bindings
 func newSessionActionsKeys(defaults map[string][]string, customKeys config.KeyBindingsConfig) SessionActionsKeys {
 	return SessionActionsKeys{
-		CommandPalette: buildBinding("command_palette", defaults, customKeys),
-		Detach:         buildBinding("detach", defaults, customKeys),
-		Open:           buildBinding("open", defaults, customKeys),
-		OpenEditor:     buildBinding("open_editor", defaults, customKeys),
-		OpenShell:      buildBinding("open_shell", defaults, customKeys),
-		QuickOpen:      buildBinding("quick_open", defaults, customKeys),
+		Detach:      buildBinding("detach", defaults, customKeys),
+		Open:        buildBinding("open", defaults, customKeys),
+		OpenEditor:  buildBinding("open_editor", defaults, customKeys),
+		OpenShell:   buildBinding("open_shell", defaults, customKeys),
+		OptionsMenu: buildBinding("options_menu", defaults, customKeys),
+		QuickOpen:   buildBinding("quick_open", defaults, customKeys),
 	}
 }

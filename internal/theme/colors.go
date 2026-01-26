@@ -49,22 +49,5 @@ const (
 	ColorTokenOutput Color = "33" // Blue - output tokens
 )
 
-// Overlay colors
-const (
-	ColorOverlayDim Color = "240" // Dimmed background
-)
-
-// Command palette colors
-const (
-	ColorPaletteBorder          Color = "99"  // Purple - border
-	ColorPaletteDescription     Color = "243" // Gray - descriptions
-	ColorPaletteFooter          Color = "241" // Gray - footer hints
-	ColorPaletteHeader          Color = "99"  // Purple - header
-	ColorPaletteItem            Color = "250" // Light gray - item text
-	ColorPaletteSelectedBg      Color = "62"  // Purple background
-	ColorPaletteSelectedText    Color = "255" // White - selected item text
-	ColorPaletteSeparator       Color = "241" // Gray - separators
-)
-
 // DefaultStatusColors is the default color palette for implementation statuses
 var DefaultStatusColors = []string{"141", "33", "214", "226", "46"}
