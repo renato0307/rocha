@@ -31,6 +31,7 @@ graph TB
         TC[TmuxClient]
         EO[EditorOpener]
         SP[SoundPlayer]
+        PI[ProcessInspector]
         TUR[TokenUsageReader]
     end
 
@@ -40,6 +41,7 @@ graph TB
         TMUXCLI[Tmux CLI Adapter<br/>tmux/]
         EDITOR[Editor Adapter<br/>editor/]
         SOUND[Sound Adapter<br/>sound/]
+        PROCESS[Process Adapter<br/>process/]
         CLAUDE[Claude Session Parser<br/>claude/]
     end
 
@@ -49,6 +51,7 @@ graph TB
         TMUX[tmux CLI]
         VSCODE[VS Code/Editor]
         AUDIO[Audio System]
+        OS[OS Processes]
         JSONL[(Claude Session JSONL)]
     end
 
@@ -67,6 +70,7 @@ graph TB
     SS --> SR
     SS --> GR
     SS --> TC
+    SS --> PI
     GS --> GR
     SHS --> SR
     SHS --> TC
@@ -83,6 +87,7 @@ graph TB
     TC -.-> TMUXCLI
     EO -.-> EDITOR
     SP -.-> SOUND
+    PI -.-> PROCESS
     TUR -.-> CLAUDE
 
     SQLITE --> DB
@@ -90,6 +95,7 @@ graph TB
     TMUXCLI --> TMUX
     EDITOR --> VSCODE
     SOUND --> AUDIO
+    PROCESS --> OS
     CLAUDE --> JSONL
 ```
 
@@ -180,6 +186,7 @@ internal/
 │   ├── tmux/      # Tmux CLI operations
 │   ├── editor/    # Editor integration
 │   ├── sound/     # Sound playback
+│   ├── process/   # Process inspection
 │   └── claude/    # Claude session file parsing
 ├── config/        # Configuration and paths
 └── logging/       # Structured logging
@@ -206,6 +213,7 @@ internal/
 | TmuxClient | CreateSession, KillSession, ListSessions, SendKeys |
 | EditorOpener | Open |
 | SoundPlayer | Play |
+| ProcessInspector | GetClaudeSettings |
 | TokenUsageReader | GetTodayUsage |
 
 ## Dependencies

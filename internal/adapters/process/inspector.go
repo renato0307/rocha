@@ -21,7 +21,9 @@ func NewOSProcessInspector() *OSProcessInspector {
 	return &OSProcessInspector{}
 }
 
-// GetClaudeSettings extracts --settings JSON from running Claude process
+// GetClaudeSettings extracts --settings JSON from a running Claude process
+// by finding the tmux pane PID, locating the Claude child process,
+// and parsing its command-line arguments
 func (i *OSProcessInspector) GetClaudeSettings(sessionName string) (string, error) {
 	// 1. Get tmux pane PID
 	panePID, err := i.getTmuxPanePID(sessionName)
@@ -55,6 +57,7 @@ func (i *OSProcessInspector) GetClaudeSettings(sessionName string) (string, erro
 }
 
 func (i *OSProcessInspector) getTmuxPanePID(sessionName string) (string, error) {
+	logging.Logger.Debug("Getting tmux pane PID", "session", sessionName)
 	cmd := exec.Command("tmux", "list-panes", "-t", sessionName, "-F", "#{pane_pid}")
 	output, err := cmd.Output()
 	if err != nil {
@@ -95,14 +98,19 @@ func (i *OSProcessInspector) getProcessCommandLine(pid string) (string, error) {
 }
 
 func (i *OSProcessInspector) extractSettingsFromCommandLine(commandLine string) (string, error) {
-	// Pattern: --settings {JSON}
-	// JSON starts with { and we find matching }
+	logging.Logger.Debug("Extracting settings from command line", "command_line_length", len(commandLine))
+
+	// Pattern: Matches --settings followed by JSON object
+	// Uses greedy matching (.+) to capture everything between the first { and last }
+	// Example: --settings {"hooks":{"Stop":[...]}}
 	re := regexp.MustCompile(`--settings\s+(\{.+\})`)
 	matches := re.FindStringSubmatch(commandLine)
 
 	if len(matches) < 2 {
+		logging.Logger.Debug("Settings flag not found in command line")
 		return "", fmt.Errorf("--settings flag not found in command line")
 	}
 
+	logging.Logger.Debug("Extracted settings JSON", "json_length", len(matches[1]))
 	return matches[1], nil
 }

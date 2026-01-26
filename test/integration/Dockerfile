@@ -17,6 +17,7 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Create mock claude command for testing
 # This mock accepts --settings flag and stays running to simulate real Claude
+# Enables process inspection tests (view-agent-settings command)
 RUN printf '#!/bin/bash\n\
 # Mock claude command for integration tests\n\
 # Parse --settings flag and stay running\n\
