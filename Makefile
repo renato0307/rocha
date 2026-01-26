@@ -62,11 +62,11 @@ test-integration-docker-build:
 
 test-integration-docker: test-integration-docker-build
 	@echo "Running integration tests in Docker..."
-	docker run --rm $(DOCKER_IMAGE) go test -v ./test/integration/...
+	docker run --rm -v $(PWD):/app $(DOCKER_IMAGE) go test -v ./test/integration/...
 
 test-integration-docker-shell: test-integration-docker-build
 	@echo "Starting interactive shell in test container..."
-	docker run --rm -it $(DOCKER_IMAGE) /bin/bash
+	docker run --rm -it -v $(PWD):/app $(DOCKER_IMAGE) /bin/bash
 
 # WARNING: Runs tests directly on host - can modify system files!
 # DO NOT use in CI or automated agents
@@ -78,8 +78,8 @@ test-integration-local-dangerous:
 
 test-integration-verbose:
 	@echo "Running integration tests (no cache)..."
-	docker run --rm $(DOCKER_IMAGE) go test -v -count=1 ./test/integration/...
+	docker run --rm -v $(PWD):/app $(DOCKER_IMAGE) go test -v -count=1 ./test/integration/...
 
 test-integration-run:
 	@echo "Running: $(TEST)"
-	docker run --rm $(DOCKER_IMAGE) go test -v -run $(TEST) ./test/integration/...
+	docker run --rm -v $(PWD):/app $(DOCKER_IMAGE) go test -v -run $(TEST) ./test/integration/...
