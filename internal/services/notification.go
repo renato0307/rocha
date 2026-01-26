@@ -42,14 +42,25 @@ func (s *NotificationService) HandleEvent(
 	switch eventType {
 	case "stop":
 		sessionState = domain.StateIdle // Claude finished working
-	case "notification":
-		sessionState = domain.StateWaiting // Claude is idle and waiting for user input
+	case "notification", "permission-request":
+		// Keep both for backward compatibility
+		sessionState = domain.StateWaiting // Claude is waiting for user input or permission
 	case "start":
 		sessionState = domain.StateIdle // Session started and ready for input
 	case "prompt":
 		sessionState = domain.StateWorking // User submitted prompt
 	case "working":
 		sessionState = domain.StateWorking // Claude is actively working
+	case "tool-failure":
+		sessionState = domain.StateWorking // Tool failed, Claude continues
+	case "subagent-start":
+		sessionState = domain.StateWorking // Spawning subagent
+	case "subagent-stop":
+		sessionState = domain.StateWorking // Subagent finished
+	case "pre-compact":
+		sessionState = domain.StateWorking // Context compression
+	case "setup":
+		sessionState = domain.StateWorking // Init/maintenance work
 	case "end":
 		sessionState = domain.StateExited // Claude has exited
 	default:
@@ -109,8 +120,10 @@ func (s *NotificationService) ResolveExecutionID(
 // ShouldPlaySound determines if a sound should be played for the event type
 func (s *NotificationService) ShouldPlaySound(eventType string) bool {
 	switch eventType {
-	case "stop", "start", "notification", "end":
-		return true
+	case "stop", "start", "notification", "permission-request", "end":
+		return true // User-facing events
+	case "tool-failure", "subagent-start", "subagent-stop", "pre-compact", "setup":
+		return false // Internal operations
 	default:
 		return false
 	}
