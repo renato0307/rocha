@@ -548,6 +548,14 @@ func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Check if command palette completed
 	if m.commandPalette.Completed {
+		// Check cancelled FIRST, before resetting
+		if m.commandPalette.Cancelled {
+			m.state = stateList
+			m.commandPalette = nil
+			m.sessionForPalette = ""
+			return m, m.sessionList.Init()
+		}
+
 		selectedAction := m.commandPalette.SelectedAction
 		sessionName := m.sessionForPalette
 
@@ -555,11 +563,6 @@ func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateList
 		m.commandPalette = nil
 		m.sessionForPalette = ""
-
-		// If cancelled, just return to list
-		if m.commandPalette != nil && m.commandPalette.Cancelled {
-			return m, m.sessionList.Init()
-		}
 
 		// Handle the selected action
 		return m.handlePaletteAction(selectedAction, sessionName)

@@ -49,5 +49,11 @@ const (
 	ColorTokenOutput Color = "33" // Blue - output tokens
 )
 
+// Command palette colors
+const (
+	ColorPaletteDesc       Color = "243" // Gray - command descriptions
+	ColorPaletteSelectedBg Color = "62"  // Purple/blue - selected item background
+)
+
 // DefaultStatusColors is the default color palette for implementation statuses
 var DefaultStatusColors = []string{"141", "33", "214", "226", "46"}

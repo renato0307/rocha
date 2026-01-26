@@ -9,12 +9,10 @@ import (
 // Dim style for background when overlay is shown
 var dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
-// compositeOverlay renders an overlay centered on top of a dimmed background.
-// The background content is visible but dimmed, with the overlay rendered on top.
-func compositeOverlay(background, overlay string, width, height int) string {
-	// Split both into lines
+// prepareBackgroundLines takes background content and returns dimmed lines
+// padded to fill the screen. This is shared logic for all overlay types.
+func prepareBackgroundLines(background string, width, height int) []string {
 	bgLines := strings.Split(background, "\n")
-	overlayLines := strings.Split(overlay, "\n")
 
 	// Use actual background height, but ensure minimum of terminal height
 	actualHeight := len(bgLines)
@@ -29,17 +27,24 @@ func compositeOverlay(background, overlay string, width, height int) string {
 
 	// Dim each background line and pad to full width
 	for i := range bgLines {
-		// Strip existing ANSI codes and apply dim style
 		plainText := stripAnsi(bgLines[i])
 		dimmedLine := dimStyle.Render(plainText)
 
-		// Pad to full width if needed
 		visibleWidth := lipgloss.Width(dimmedLine)
 		if visibleWidth < width {
 			dimmedLine = dimmedLine + strings.Repeat(" ", width-visibleWidth)
 		}
 		bgLines[i] = dimmedLine
 	}
+
+	return bgLines
+}
+
+// compositeOverlay renders an overlay centered on top of a dimmed background.
+// The background content is visible but dimmed, with the overlay rendered on top.
+func compositeOverlay(background, overlay string, width, height int) string {
+	bgLines := prepareBackgroundLines(background, width, height)
+	overlayLines := strings.Split(overlay, "\n")
 
 	// Calculate overlay dimensions
 	overlayWidth := 0
@@ -118,38 +123,11 @@ func stripAnsi(s string) string {
 // bottomAnchoredOverlay renders an overlay anchored to the bottom of a dimmed background.
 // The background content is visible but dimmed, with the overlay rendered at the bottom.
 func bottomAnchoredOverlay(background, overlay string, width, height, overlayHeight int) string {
-	// Split both into lines
-	bgLines := strings.Split(background, "\n")
+	bgLines := prepareBackgroundLines(background, width, height)
 	overlayLines := strings.Split(overlay, "\n")
 
-	// Use actual background height, but ensure minimum of terminal height
-	actualHeight := len(bgLines)
-	if height > actualHeight {
-		actualHeight = height
-	}
-
-	// Ensure background has enough lines to fill the screen
-	for len(bgLines) < actualHeight {
-		bgLines = append(bgLines, "")
-	}
-
-	// Dim each background line and pad to full width
-	for i := range bgLines {
-		plainText := stripAnsi(bgLines[i])
-		dimmedLine := dimStyle.Render(plainText)
-
-		visibleWidth := lipgloss.Width(dimmedLine)
-		if visibleWidth < width {
-			dimmedLine = dimmedLine + strings.Repeat(" ", width-visibleWidth)
-		}
-		bgLines[i] = dimmedLine
-	}
-
 	// Calculate bottom-anchored position
-	startY := height - overlayHeight
-	if startY < 0 {
-		startY = 0
-	}
+	startY := max(height-overlayHeight, 0)
 
 	// Composite the overlay onto the dimmed background at the bottom
 	result := make([]string, len(bgLines))

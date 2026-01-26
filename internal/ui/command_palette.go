@@ -10,6 +10,7 @@ import (
 	"github.com/sahilm/fuzzy"
 
 	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/theme"
 )
 
 // Command palette actions (reusing from options_menu for consistency)
@@ -40,35 +41,6 @@ type CommandPalette struct {
 	textInput      textinput.Model
 	width          int
 }
-
-// Styles for the command palette
-var (
-	paletteBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("99")).
-				Padding(0, 1)
-
-	paletteItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("250"))
-
-	paletteSelectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("255")).
-				Background(lipgloss.Color("62")).
-				Bold(true)
-
-	paletteFooterStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
-
-	paletteHeaderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("99")).
-				Bold(true)
-
-	paletteSeparatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
-
-	paletteDescStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("243"))
-)
 
 // NewCommandPalette creates a new command palette for a session
 func NewCommandPalette(sessionName string) *CommandPalette {
@@ -204,22 +176,22 @@ func (cp *CommandPalette) View() string {
 	var content strings.Builder
 
 	// Header with session name
-	content.WriteString(paletteHeaderStyle.Render("Session: " + cp.sessionName))
+	content.WriteString(theme.PaletteHeaderStyle.Render("Session: " + cp.sessionName))
 	content.WriteString("\n")
 	separatorWidth := max(cp.width-4, 20)
-	content.WriteString(paletteSeparatorStyle.Render(strings.Repeat("─", separatorWidth)))
+	content.WriteString(theme.PaletteSeparatorStyle.Render(strings.Repeat("─", separatorWidth)))
 	content.WriteString("\n")
 
 	// Command list (rendered above the input)
 	nameColWidth := 24 // Fixed width for name column
 	for i, item := range cp.filteredItems {
 		prefix := "  "
-		nameStyle := paletteItemStyle
-		descStyle := paletteDescStyle
+		nameStyle := theme.PaletteItemStyle
+		descStyle := theme.PaletteDescStyle
 		if i == cp.selectedIndex {
 			prefix = "> "
-			nameStyle = paletteSelectedStyle
-			descStyle = paletteSelectedStyle
+			nameStyle = theme.PaletteSelectedStyle
+			descStyle = theme.PaletteSelectedStyle
 		}
 
 		// Pad name to fixed width for alignment
@@ -244,12 +216,12 @@ func (cp *CommandPalette) View() string {
 
 	// Empty state
 	if len(cp.filteredItems) == 0 {
-		content.WriteString(paletteItemStyle.Render("  No matching commands"))
+		content.WriteString(theme.PaletteItemStyle.Render("  No matching commands"))
 		content.WriteString("\n")
 	}
 
 	// Separator line before input
-	content.WriteString(paletteSeparatorStyle.Render(strings.Repeat("─", separatorWidth)))
+	content.WriteString(theme.PaletteSeparatorStyle.Render(strings.Repeat("─", separatorWidth)))
 	content.WriteString("\n")
 
 	// Input field
@@ -257,10 +229,10 @@ func (cp *CommandPalette) View() string {
 	content.WriteString("\n")
 
 	// Footer with navigation hints
-	content.WriteString(paletteFooterStyle.Render("↑↓ navigate • ⏎ select • esc cancel"))
+	content.WriteString(theme.PaletteFooterStyle.Render("↑↓ navigate • ⏎ select • esc cancel"))
 
 	// Wrap in border
-	return paletteBorderStyle.Render(content.String())
+	return theme.PaletteBorderStyle.Render(content.String())
 }
 
 // GetHeight returns the rendered height of the palette (for overlay positioning)

@@ -134,3 +134,32 @@ var (
 	TokenChartLegendStyle = lipgloss.NewStyle().
 				Foreground(ColorSubtle)
 )
+
+// Command palette styles
+var (
+	PaletteBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorPrimary).
+				Padding(0, 1)
+
+	PaletteDescStyle = lipgloss.NewStyle().
+				Foreground(ColorPaletteDesc)
+
+	PaletteFooterStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	PaletteHeaderStyle = lipgloss.NewStyle().
+				Foreground(ColorPrimary).
+				Bold(true)
+
+	PaletteItemStyle = lipgloss.NewStyle().
+				Foreground(ColorNormal)
+
+	PaletteSelectedStyle = lipgloss.NewStyle().
+				Foreground(ColorHighlight).
+				Background(ColorPaletteSelectedBg).
+				Bold(true)
+
+	PaletteSeparatorStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+)
