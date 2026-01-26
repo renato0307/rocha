@@ -537,7 +537,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, nil
 			}
 
-		case key.Matches(msg, sl.keys.SessionActions.OptionsMenu.Binding):
+		case key.Matches(msg, sl.keys.SessionActions.CommandPalette.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				sl.RequestCommandPalette = true
 				sl.SessionForCommandPalette = item.Session

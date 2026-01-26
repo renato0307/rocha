@@ -63,7 +63,7 @@ func buildHelpContent(keys *KeyMap) string {
 	content += renderBinding(keys.SessionActions.QuickOpen.Binding)
 	content += renderBinding(keys.SessionActions.OpenShell.Binding)
 	content += renderBinding(keys.SessionActions.OpenEditor.Binding)
-	content += renderBinding(keys.SessionActions.OptionsMenu.Binding)
+	content += renderBinding(keys.SessionActions.CommandPalette.Binding)
 
 	// Inside Session Shortcuts (tmux-level)
 	content += "\n" + theme.HelpGroupStyle.Render("Inside Session Shortcuts") + "\n"

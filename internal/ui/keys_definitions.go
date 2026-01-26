@@ -51,7 +51,7 @@ var AllKeyDefinitions = []KeyDefinition{
 	{Name: "open", Defaults: []string{"enter"}, Help: "open", TipFormat: ""},
 	{Name: "open_editor", Defaults: []string{"o"}, Help: "editor", TipFormat: "press %s to open the session's folder in your editor"},
 	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", TipFormat: "press %s to open a shell session alongside claude"},
-	{Name: "options_menu", Defaults: []string{"O"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
+	{Name: "command_palette", Defaults: []string{"O"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
 	{Name: "quick_open", Defaults: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}, Help: "quick open (0=10th)", TipFormat: "press %s to quickly open sessions by their number"},
 }
 
