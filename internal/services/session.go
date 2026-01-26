@@ -18,6 +18,7 @@ import (
 type SessionService struct {
 	claudeDirResolver ClaudeDirResolver
 	gitRepo           ports.GitRepository
+	processInspector  ports.ProcessInspector
 	sessionRepo       ports.SessionRepository
 	tmuxClient        ports.TmuxSessionLifecycle
 }
@@ -28,10 +29,12 @@ func NewSessionService(
 	gitRepo ports.GitRepository,
 	tmuxClient ports.TmuxSessionLifecycle,
 	claudeDirResolver ClaudeDirResolver,
+	processInspector ports.ProcessInspector,
 ) *SessionService {
 	return &SessionService{
 		claudeDirResolver: claudeDirResolver,
 		gitRepo:           gitRepo,
+		processInspector:  processInspector,
 		sessionRepo:       sessionRepo,
 		tmuxClient:        tmuxClient,
 	}
@@ -496,4 +499,23 @@ func (s *SessionService) CreateTmuxSession(name, worktreePath, claudeDir, tmuxSt
 // KillTmuxSession kills a tmux session without affecting the database
 func (s *SessionService) KillTmuxSession(name string) error {
 	return s.tmuxClient.KillSession(name)
+}
+
+// GetAgentSettings retrieves actual agent settings from running Claude process
+func (s *SessionService) GetAgentSettings(ctx context.Context, sessionName string) (string, error) {
+	logging.Logger.Debug("Getting agent settings from running process", "session", sessionName)
+
+	// Verify session exists
+	_, err := s.sessionRepo.Get(ctx, sessionName)
+	if err != nil {
+		return "", fmt.Errorf("session not found: %w", err)
+	}
+
+	// Use process inspector port to extract settings
+	settingsJSON, err := s.processInspector.GetClaudeSettings(sessionName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get agent settings: %w", err)
+	}
+
+	return settingsJSON, nil
 }

@@ -8,6 +8,7 @@ import (
 	adapterclaude "github.com/renato0307/rocha/internal/adapters/claude"
 	adaptereditor "github.com/renato0307/rocha/internal/adapters/editor"
 	adaptergit "github.com/renato0307/rocha/internal/adapters/git"
+	adapterprocess "github.com/renato0307/rocha/internal/adapters/process"
 	adaptersound "github.com/renato0307/rocha/internal/adapters/sound"
 	adapterstorage "github.com/renato0307/rocha/internal/adapters/storage"
 	adaptertmux "github.com/renato0307/rocha/internal/adapters/tmux"
@@ -33,7 +34,7 @@ type Container struct {
 }
 
 // NewContainer creates a new Container with all dependencies wired
-func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
+func NewContainer() (*Container, error) {
 	// Create adapters
 	sessionRepo, err := adapterstorage.NewSQLiteRepository(config.GetDBPath())
 	if err != nil {
@@ -41,12 +42,10 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 	}
 
 	// Create default tmux client if not provided
-	if tmuxClient == nil {
-		tmuxClient = adaptertmux.NewClient()
-	}
-
+	tmuxClient := adaptertmux.NewClient()
 	editorOpener := adaptereditor.NewOpener()
 	gitRepo := adaptergit.NewCLIRepository()
+	processInspector := adapterprocess.NewOSProcessInspector()
 	soundPlayer := adaptersound.NewPlayer()
 
 	// Create ClaudeDir resolver
@@ -61,7 +60,7 @@ func NewContainer(tmuxClient ports.TmuxClient) (*Container, error) {
 	gitService := services.NewGitService(gitRepo)
 	migrationService := services.NewMigrationService(gitRepo, tmuxClient, repoFactory)
 	notificationService := services.NewNotificationService(sessionRepo, sessionRepo, soundPlayer)
-	sessionService := services.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver)
+	sessionService := services.NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
 	settingsService := services.NewSettingsService(sessionRepo)
 	shellService := services.NewShellService(sessionRepo, sessionRepo, tmuxClient, editorOpener)
 

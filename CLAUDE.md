@@ -17,6 +17,7 @@ Tmux-based session manager for Claude Code CLI written in Go. Enables developers
 - **internal/adapters/git/** - Git worktree operations
 - **internal/adapters/editor/** - Platform-specific editor integration
 - **internal/adapters/sound/** - Notification sounds
+- **internal/adapters/process/** - Process inspection (reading command-line arguments from running processes)
 - **test/integration/** - CLI integration tests
 
 ## Detailed Documentation
