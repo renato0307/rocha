@@ -160,8 +160,15 @@ sequenceDiagram
 |------------|-----------|--------|---------|
 | `SessionStart` | `StateIdle` | ○ (yellow) | Session initialized |
 | `UserPromptSubmit` | `StateWorking` | ● (green) | User submitted prompt |
+| `PreToolUse` (AskUserQuestion) | `StateWaiting` | ◐ (red) | Claude asking question |
+| `PostToolUse` (AskUserQuestion) | `StateWorking` | ● (green) | User answered question |
+| `PostToolUseFailure` | `StateWorking` | ● (green) | Tool failed, continuing |
+| `PermissionRequest` | `StateWaiting` | ◐ (red) | Needs user permission |
+| `SubagentStart` | `StateWorking` | ● (green) | Delegating to subagent |
+| `SubagentStop` | `StateWorking` | ● (green) | Subagent completed |
+| `PreCompact` | `StateWorking` | ● (green) | Compressing context |
+| `Setup` | `StateWorking` | ● (green) | Repository setup |
 | `Stop` | `StateIdle` | ○ (yellow) | Claude finished |
-| `Notification` | `StateWaitingUser` | ◐ (red) | Needs user input |
 | `SessionEnd` | `StateExited` | ■ (gray) | Claude exited |
 
 ## Package Structure
