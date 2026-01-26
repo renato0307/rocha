@@ -63,7 +63,7 @@ func TestSessionsViewAgentSettings(t *testing.T) {
 					"UserPromptSubmit",
 					"SessionStart",
 					"SessionEnd",
-					"Notification",
+					"PermissionRequest",
 					"PreToolUse",
 					"PostToolUse",
 				}
@@ -215,15 +215,12 @@ func TestSessionsViewAgentSettingsHooksStructure(t *testing.T) {
 		t.Error("Expected at least one SessionStart hook")
 	}
 
-	// Test Notification hook with matcher
-	notificationHooks := hooks["Notification"].([]any)
-	if len(notificationHooks) == 0 {
-		t.Error("Expected at least one Notification hook")
+	// Test PermissionRequest hook (no matcher - top-level hook)
+	permissionRequestHooks := hooks["PermissionRequest"].([]any)
+	if len(permissionRequestHooks) == 0 {
+		t.Error("Expected at least one PermissionRequest hook")
 	}
-	notificationHook := notificationHooks[0].(map[string]any)
-	if notificationHook["matcher"] != "permission_prompt" {
-		t.Errorf("Expected matcher 'permission_prompt', got %v", notificationHook["matcher"])
-	}
+	// PermissionRequest doesn't use a matcher - it's a top-level hook
 
 	// Test PreToolUse hook with matcher
 	preToolUseHooks := hooks["PreToolUse"].([]any)
@@ -298,10 +295,8 @@ func TestSessionsViewAgentSettingsCommandFormat(t *testing.T) {
 			expectedSuffix: "end",
 		},
 		{
-			hookName:        "Notification",
-			expectedSuffix:  "notification",
-			requiresMatcher: true,
-			matcherValue:    "permission_prompt",
+			hookName:       "PermissionRequest",
+			expectedSuffix: "permission-request",
 		},
 		{
 			hookName:        "PreToolUse",
