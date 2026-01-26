@@ -535,6 +535,13 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 }
 
 func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Guard against nil command palette
+	if m.commandPalette == nil {
+		logging.Logger.Warn("updateCommandPalette called with nil commandPalette")
+		m.state = stateList
+		return m, m.sessionList.Init()
+	}
+
 	// Handle window resize
 	if wmsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wmsg.Width
@@ -591,10 +598,11 @@ func (m *Model) handlePaletteAction(action, sessionName string) (tea.Model, tea.
 		return m, m.sessionList.Init()
 
 	case PaletteActionArchive:
-		// Trigger archive flow through existing mechanism
+		// Trigger archive flow through action handler
 		if session, ok := m.findSessionByName(sessionName); ok {
 			m.sessionList.SessionToArchive = session
-			return m.updateList(nil)
+			result := m.listActionHandler.ProcessActions()
+			return m.handleActionResult(result, m.sessionList.Init())
 		}
 		return m, m.sessionList.Init()
 
