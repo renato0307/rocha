@@ -13,7 +13,7 @@ import (
 // NOTE: Field order matters for Kong positional args - SessionName must come before EventType
 type NotifyCmd struct {
 	SessionName string `arg:"" help:"Name of the session triggering the notification"`
-	EventType   string `arg:"" help:"Type of event: stop, prompt, working, start, notification, end" default:"stop"`
+	EventType   string `arg:"" help:"Type of event: stop, prompt, working, start, notification, end, permission-request, tool-failure, subagent-start, subagent-stop, pre-compact, setup" default:"stop"`
 	ExecutionID string `help:"Execution ID from parent rocha TUI" optional:""`
 }
 

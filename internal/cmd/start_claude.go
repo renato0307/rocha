@@ -108,14 +108,13 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					},
 				},
 			},
-			// Notification: Catch permission_prompt (when Claude needs user permission)
-			"Notification": []map[string]interface{}{
+			// PermissionRequest: When Claude needs user permission (replaces Notification hook)
+			"PermissionRequest": []map[string]interface{}{
 				{
-					"matcher": "permission_prompt",
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s notification --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify %s permission-request --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -151,6 +150,61 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 						{
 							"type":    "command",
 							"command": fmt.Sprintf("%s notify %s working --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// PostToolUseFailure: When a tool fails and Claude continues
+			"PostToolUseFailure": []map[string]interface{}{
+				{
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s tool-failure --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// SubagentStart: When Claude spawns a subagent
+			"SubagentStart": []map[string]interface{}{
+				{
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s subagent-start --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// SubagentStop: When a subagent finishes
+			"SubagentStop": []map[string]interface{}{
+				{
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s subagent-stop --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// PreCompact: When Claude compresses context
+			"PreCompact": []map[string]interface{}{
+				{
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s pre-compact --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+			},
+			// Setup: When Claude does initialization or maintenance work
+			"Setup": []map[string]interface{}{
+				{
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify %s setup --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
