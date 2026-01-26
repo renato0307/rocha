@@ -28,6 +28,7 @@ type CLI struct {
 	Run         RunCmd         `cmd:"" help:"Start the rocha TUI (default)" default:"1"`
 	Setup       SetupCmd       `cmd:"setup" help:"Configure tmux status bar integration automatically"`
 	Stats       StatsCmd       `cmd:"stats" help:"Show token usage statistics"`
+	Hooks       HooksCmd       `cmd:"hooks" help:"View Claude Code hook events"`
 	Status      StatusCmd      `cmd:"status" help:"Show session state counts for tmux status bar" hidden:""`
 	Attach      AttachCmd      `cmd:"attach" help:"Attach to tmux session (creates if needed)"`
 	StartClaude StartClaudeCmd `cmd:"start-claude" help:"Start Claude Code with hooks configured" hidden:""`
