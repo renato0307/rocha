@@ -31,6 +31,7 @@ func TestSessionsViewAgentSettings(t *testing.T) {
 				result := harness.RunCommand(t, env,
 					"sessions", "add", "agent-settings-test",
 					"--display-name", "Agent Settings Test",
+					"--start-claude",
 				)
 				harness.AssertSuccess(t, result)
 
@@ -89,8 +90,13 @@ func TestSessionsViewAgentSettings(t *testing.T) {
 			setup: func(t *testing.T, env *harness.TestEnvironment) string {
 				result := harness.RunCommand(t, env,
 					"sessions", "add", "exec-id-test",
+					"--start-claude",
 				)
 				harness.AssertSuccess(t, result)
+
+				// Give Claude a moment to start
+				time.Sleep(2 * time.Second)
+
 				return "exec-id-test"
 			},
 			wantExitCode: 0,
@@ -157,8 +163,12 @@ func TestSessionsViewAgentSettingsHooksStructure(t *testing.T) {
 	// Create a session
 	result := harness.RunCommand(t, env,
 		"sessions", "add", "hooks-structure-test",
+		"--start-claude",
 	)
 	harness.AssertSuccess(t, result)
+
+	// Give Claude a moment to start
+	time.Sleep(2 * time.Second)
 
 	// View agent settings
 	result = harness.RunCommand(t, env,
@@ -242,8 +252,12 @@ func TestSessionsViewAgentSettingsCommandFormat(t *testing.T) {
 	// Create a session
 	result := harness.RunCommand(t, env,
 		"sessions", "add", "command-format-test",
+		"--start-claude",
 	)
 	harness.AssertSuccess(t, result)
+
+	// Give Claude a moment to start
+	time.Sleep(2 * time.Second)
 
 	// View agent settings
 	result = harness.RunCommand(t, env,

@@ -92,7 +92,7 @@ func (c *CLI) AfterApply() error {
 
 	// Create container AFTER logging is initialized
 	// This fixes the nil pointer panic when GORM's logger calls logging.Logger.Debug()
-	container, err := NewContainer(nil)
+	container, err := NewContainer()
 	if err != nil {
 		return fmt.Errorf("failed to initialize container: %w", err)
 	}

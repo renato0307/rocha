@@ -15,15 +15,15 @@ type StatsCmd struct {
 }
 
 // Run executes the stats command
-func (s *StatsCmd) Run(container *Container) error {
+func (s *StatsCmd) Run(cli *CLI) error {
 	// Get today's hourly usage
-	hourly, err := container.TokenStatsService.GetTodayHourlyUsage()
+	hourly, err := cli.Container.TokenStatsService.GetTodayHourlyUsage()
 	if err != nil {
 		return fmt.Errorf("failed to get token usage: %w", err)
 	}
 
 	// Get today's totals
-	totals, err := container.TokenStatsService.GetTodayTotals()
+	totals, err := cli.Container.TokenStatsService.GetTodayTotals()
 	if err != nil {
 		return fmt.Errorf("failed to get token totals: %w", err)
 	}

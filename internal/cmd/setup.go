@@ -13,13 +13,6 @@ type SetupCmd struct {
 }
 
 const (
-	tmuxConfig = `
-# Rocha status bar configuration
-set -g status-left-length 50  # Allow longer session names
-set -g status-right "Claude: #(rocha status) | %H:%M"
-set -g status-interval 1  # Update every 1 second
-set -g mouse on  # Enable mouse support (scrolling, pane selection, resizing)
-`
 	pathMarker = "# Added by rocha setup"
 )
 

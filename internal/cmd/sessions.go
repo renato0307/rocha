@@ -12,7 +12,8 @@ type SessionsCmd struct {
 	List      SessionsListCmd      `cmd:"list" help:"List all sessions" default:"1"`
 	Move      SessionsMoveCmd      `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
 	Rename    SessionsRenameCmd    `cmd:"rename" help:"Update session display name"`
-	Set       SessionSetCmd        `cmd:"set" help:"Set session configuration"`
-	Status    SessionsStatusCmd    `cmd:"status" help:"Set or clear implementation status"`
-	View      SessionsViewCmd      `cmd:"view" help:"View a specific session"`
+	Set                SessionSetCmd                `cmd:"set" help:"Set session configuration"`
+	Status             SessionsStatusCmd            `cmd:"status" help:"Set or clear implementation status"`
+	View               SessionsViewCmd              `cmd:"view" help:"View a specific session"`
+	ViewAgentSettings  SessionsViewAgentSettingsCmd `cmd:"view-agent-settings" help:"Inspect agent settings from running process"`
 }
