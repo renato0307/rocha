@@ -8,7 +8,7 @@ import (
 
 	"github.com/renato0307/rocha/internal/domain"
 	"github.com/renato0307/rocha/internal/ports"
-	"github.com/renato0307/rocha/internal/services"
+	"github.com/renato0307/rocha/internal/tools"
 )
 
 // HooksCmd shows Claude Code hook events
@@ -28,14 +28,14 @@ func (h *HooksCmd) Run(cli *CLI) error {
 	var err error
 
 	if h.From != "" {
-		fromTime, err = services.ParseTimeString(h.From)
+		fromTime, err = tools.ParseTimeString(h.From)
 		if err != nil {
 			return fmt.Errorf("invalid --from time: %w", err)
 		}
 	}
 
 	if h.To != "" {
-		toTime, err = services.ParseTimeString(h.To)
+		toTime, err = tools.ParseTimeString(h.To)
 		if err != nil {
 			return fmt.Errorf("invalid --to time: %w", err)
 		}
