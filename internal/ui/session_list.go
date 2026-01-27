@@ -246,23 +246,7 @@ type SessionList struct {
 	// Timestamp configuration
 	timestampConfig *config.TimestampColorConfig
 
-	// Result fields - set by component, read by Model
-	RequestHelp           bool               // User pressed 'h' or '?'
-	RequestNewSession     bool               // User pressed 'n'
-	RequestNewSessionFrom bool               // User pressed 'shift+n' (new from same repo)
-	RequestTestError      bool               // User pressed 'alt+e' (test command)
-	SelectedSession       *ports.TmuxSession // Session user wants to attach to
-	SessionForTemplate    *ports.TmuxSession // Session to use as template for new session
-	SelectedShellSession  *ports.TmuxSession // Session user wants shell session for
-	SessionToArchive      *ports.TmuxSession // Session user wants to archive
-	SessionToComment      *ports.TmuxSession // Session user wants to comment
-	SessionToKill         *ports.TmuxSession // Session user wants to kill
-	SessionToOpenEditor   *ports.TmuxSession // Session user wants to open in editor
-	SessionToRename       *ports.TmuxSession // Session user wants to rename
-	SessionToSendText     *ports.TmuxSession // Session user wants to send text to
-	SessionToSetStatus    *ports.TmuxSession // Session user wants to set status for
-	SessionToToggleFlag   *ports.TmuxSession // Session user wants to toggle flag
-	ShouldQuit            bool               // User pressed 'q' or Ctrl+C
+	// All action fields migrated to messages in Phase 1-3 refactoring
 }
 
 // NewSessionList creates a new session list component
@@ -476,22 +460,17 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal shortcut processing when NOT filtering
 		switch {
 		case key.Matches(msg, sl.keys.Application.Quit.Binding, sl.keys.Application.ForceQuit.Binding):
-			sl.ShouldQuit = true
-			return sl, nil
+			return sl, func() tea.Msg { return QuitMsg{} }
 
 		case key.Matches(msg, sl.keys.Application.Help.Binding):
-			sl.RequestHelp = true
-			return sl, nil
+			return sl, func() tea.Msg { return ShowHelpMsg{} }
 
 		case key.Matches(msg, sl.keys.SessionManagement.New.Binding):
-			sl.RequestNewSession = true
-			return sl, nil
+			return sl, func() tea.Msg { return NewSessionMsg{} }
 
 		case key.Matches(msg, sl.keys.SessionManagement.NewFromRepo.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.RequestNewSessionFrom = true
-				sl.SessionForTemplate = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return NewSessionFromTemplateMsg{TemplateSessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionActions.Open.Binding):
@@ -501,50 +480,42 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't schedule new poll - one is already running
 					return sl, nil
 				}
-				sl.SelectedSession = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return AttachSessionMsg{Session: item.Session} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionManagement.Kill.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToKill = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return KillSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionManagement.Rename.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToRename = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return RenameSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.Comment.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToComment = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return CommentSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.SendText.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToSendText = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return SendTextSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionActions.OpenEditor.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToOpenEditor = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return OpenEditorSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.Flag.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToToggleFlag = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return ToggleFlagSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionManagement.Archive.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToArchive = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return ArchiveSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.StatusCycle.Binding):
@@ -556,8 +527,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, sl.keys.SessionMetadata.StatusSetForm.Binding):
 			// Shift+S: Open status form (edit action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToSetStatus = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return SetStatusSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.Navigation.MoveUp.Binding):
@@ -582,8 +552,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Don't schedule new poll - one is already running
 						return sl, nil
 					}
-					sl.SelectedSession = item.Session
-					return sl, nil
+					return sl, func() tea.Msg { return AttachSessionMsg{Session: item.Session} }
 				}
 			}
 
@@ -594,14 +563,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't schedule new poll - one is already running
 					return sl, nil
 				}
-				sl.SelectedShellSession = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return AttachShellSessionMsg{Session: item.Session} }
 			}
 
 		case msg.String() == "alt+e":
 			// Hidden test command: Request Model to generate test error
-			sl.RequestTestError = true
-			return sl, nil
+			return sl, func() tea.Msg { return TestErrorMsg{} }
 
 		case key.Matches(msg, sl.keys.Navigation.ClearFilter.Binding):
 			// Handle double-ESC for filter clearing (only when filtering)
