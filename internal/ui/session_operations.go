@@ -107,8 +107,8 @@ func (so *SessionOperations) KillSession(
 		*sessionState = *newState
 	}
 
-	sessionList.RefreshFromState()
-	return sessionList.Init()
+	refreshCmd := sessionList.RefreshFromState()
+	return tea.Batch(refreshCmd, sessionList.Init())
 }
 
 // ArchiveSession archives a session and optionally removes its worktree.
@@ -130,11 +130,11 @@ func (so *SessionOperations) ArchiveSession(
 	newState, err := so.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		so.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
-		sessionList.RefreshFromState()
-		return tea.Batch(sessionList.Init(), so.errorManager.ClearAfterDelay())
+		refreshCmd := sessionList.RefreshFromState()
+		return tea.Batch(refreshCmd, sessionList.Init(), so.errorManager.ClearAfterDelay())
 	}
 	*sessionState = *newState
 
-	sessionList.RefreshFromState()
-	return sessionList.Init()
+	refreshCmd := sessionList.RefreshFromState()
+	return tea.Batch(refreshCmd, sessionList.Init())
 }

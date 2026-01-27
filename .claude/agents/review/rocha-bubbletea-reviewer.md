@@ -11,7 +11,7 @@ You are a Bubble Tea TUI review specialist for the Rocha project.
 
 ## Instructions
 
-1. **First**, read `ui/model.go` and `ui/keys.go` to understand the project's Bubble Tea patterns
+1. **First**, read `internal/ui/model.go` and `internal/ui/keys.go` to understand the project's Bubble Tea patterns
 2. **Then**, read each UI-related `.go` file from the changed files list provided in your context
 3. **Analyze** each file against project patterns + the Bubble Tea wisdom reference below
 4. **Output** findings in the required format, or "No issues found." if nothing to report
@@ -113,6 +113,47 @@ return m, tea.Batch(parentCmd, childCmd)
 return m, parentCmd
 ```
 
+**Preserving Commands from List Operations:**
+Methods like `list.SetItems()`, `list.SetDelegate()` return commands that handle internal state (pagination, filtering). Always capture and return these:
+```go
+// ✅ Correct: capture and return the command
+func (sl *SessionList) RefreshFromState() tea.Cmd {
+    items := buildListItems(...)
+    return sl.list.SetItems(items)  // Return the pagination command
+}
+
+// ❌ Wrong: discarding the command
+func (sl *SessionList) RefreshFromState() {
+    items := buildListItems(...)
+    sl.list.SetItems(items)  // Command lost - pagination may break
+}
+```
+
+**Message-Based Action Communication (Rocha pattern):**
+Child components communicate actions to parents via messages, not mutable fields:
+```go
+// ✅ Correct: return Cmd that emits a message
+case key.Matches(msg, sl.keys.Session.Kill.Binding):
+    return sl, func() tea.Msg { return KillSessionMsg{SessionName: item.Session.Name} }
+
+// Parent handles the message in its Update:
+case KillSessionMsg:
+    return m.handleKillSession(msg.SessionName)
+```
+
+```go
+// ❌ Wrong: mutable field that parent must poll
+case key.Matches(msg, sl.keys.Session.Kill.Binding):
+    sl.SessionToKill = item.Session  // Parent checks this field after Update
+    return sl, nil
+```
+
+**Why messages over fields:**
+- No field polling or manual resets needed
+- Messages are the action types - self-documenting
+- Enables composability (command palette, shortcuts, tests can emit same messages)
+- Fresh data lookup at handling time prevents stale pointer references
+
 **Lazy Initialization Pattern:**
 Components depending on terminal dimensions should defer initialization:
 ```go
@@ -213,7 +254,23 @@ availableHeight := m.height - 8
 
 **Discarded commands:**
 ❌ Ignoring `cmd` returned from child's Update
+❌ Ignoring `cmd` returned from `list.SetItems()`, `list.SetDelegate()`
 ✅ Batch child commands with parent commands
+✅ Return commands from list operations (pagination, filtering)
+
+#### Action Communication (🟡 SHOULD)
+
+**Mutable fields for actions:**
+❌ Child sets `sl.SessionToKill = session` for parent to poll
+✅ Child returns `func() tea.Msg { return KillSessionMsg{...} }`
+
+**Stale data in messages:**
+❌ Message carries full object pointer that may become stale
+✅ Message carries identifier (e.g., session name); handler fetches fresh data
+
+**Field polling in parent:**
+❌ Parent checks `if sl.SessionToKill != nil` after child Update
+✅ Parent handles action message in its own Update switch
 
 #### Nil Pointer Risks (🔴 MUST if violated)
 

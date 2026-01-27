@@ -26,10 +26,10 @@ import (
 const escTimeout = 500 * time.Millisecond
 
 // Messages for SessionList (exported for Model integration)
-type checkStateMsg struct{} // Triggers state file check - used by Model for token chart refresh
-type hideTipMsg struct{}             // Time to hide the current tip
-type sessionListDetachedMsg struct{} // Session list returned from attached state
-type showTipMsg struct{}             // Time to show a new random tip
+type checkStateMsg struct{}            // Triggers periodic state file check; also used by Model for token chart refresh
+type clearSessionListErrorMsg struct{} // Clear transient error after display period
+type hideTipMsg struct{}               // Time to hide the current tip
+type showTipMsg struct{}               // Time to show a new random tip
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
@@ -217,52 +217,26 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 // SessionList is a Bubble Tea component for displaying and managing sessions
 type SessionList struct {
+	currentTip         *Tip                         // Currently displayed tip (nil = hidden)
 	devMode            bool
-	editor             string // Editor to open sessions in
+	editor             string                       // Editor to open sessions in
 	err                error
-	fetchingGitStats   bool // Prevent concurrent fetches
-	gitService         *services.GitService // Git operations service
+	escPressCount      int                          // Escape handling for filter clearing
+	escPressTime       time.Time
+	fetchingGitStats   bool                         // Prevent concurrent fetches
+	gitService         *services.GitService         // Git operations service
+	height             int
 	keys               KeyMap
 	list               list.Model
-	sessionService     *services.SessionService // Session service
+	listHeight         int                          // Height available for the list component
+	sessionService     *services.SessionService     // Session service
 	sessionState       *domain.SessionCollection
 	statusConfig       *config.StatusConfig
+	timestampConfig    *config.TimestampColorConfig
 	timestampMode      TimestampMode
+	tipsConfig         TipsConfig                   // Tips display configuration
 	tmuxStatusPosition string
-
-	// Tips feature
-	currentTip *Tip       // Currently displayed tip (nil = hidden)
-	tipsConfig TipsConfig // Tips display configuration
-
-	// Escape handling for filter clearing
-	escPressCount int
-	escPressTime  time.Time
-
-	// Window dimensions
-	height     int
-	listHeight int // Height available for the list component
-	width      int
-
-	// Timestamp configuration
-	timestampConfig *config.TimestampColorConfig
-
-	// Result fields - set by component, read by Model
-	RequestHelp           bool               // User pressed 'h' or '?'
-	RequestNewSession     bool               // User pressed 'n'
-	RequestNewSessionFrom bool               // User pressed 'shift+n' (new from same repo)
-	RequestTestError      bool               // User pressed 'alt+e' (test command)
-	SelectedSession       *ports.TmuxSession // Session user wants to attach to
-	SessionForTemplate    *ports.TmuxSession // Session to use as template for new session
-	SelectedShellSession  *ports.TmuxSession // Session user wants shell session for
-	SessionToArchive      *ports.TmuxSession // Session user wants to archive
-	SessionToComment      *ports.TmuxSession // Session user wants to comment
-	SessionToKill         *ports.TmuxSession // Session user wants to kill
-	SessionToOpenEditor   *ports.TmuxSession // Session user wants to open in editor
-	SessionToRename       *ports.TmuxSession // Session user wants to rename
-	SessionToSendText     *ports.TmuxSession // Session user wants to send text to
-	SessionToSetStatus    *ports.TmuxSession // Session user wants to set status for
-	SessionToToggleFlag   *ports.TmuxSession // Session user wants to toggle flag
-	ShouldQuit            bool               // User pressed 'q' or Ctrl+C
+	width              int
 }
 
 // NewSessionList creates a new session list component
@@ -442,17 +416,25 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return sl, nil
 
+	case clearSessionListErrorMsg:
+		// Clear transient error after display period
+		sl.err = nil
+		return sl, nil
+
 	case error:
 		sl.err = msg
-		// Don't schedule new poll - one is already running
-		return sl, nil
+		sl.currentTip = nil // Clear tip when error is set
+		// Return command to clear error after a brief display period
+		return sl, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return clearSessionListErrorMsg{}
+		})
 
 	// Each time you add something here, don't forget to add it to the help screen
 	case tea.KeyMsg:
 		// Guard clause: When actively filtering, bypass shortcuts to allow typing
 		if sl.list.FilterState() == list.Filtering {
 			// ESC is the only key we handle specially during filtering
-			if msg.String() == "esc" {
+			if key.Matches(msg, sl.keys.Navigation.ClearFilter.Binding) {
 				now := time.Now()
 				if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
 					// Second ESC - clear filter
@@ -476,22 +458,17 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal shortcut processing when NOT filtering
 		switch {
 		case key.Matches(msg, sl.keys.Application.Quit.Binding, sl.keys.Application.ForceQuit.Binding):
-			sl.ShouldQuit = true
-			return sl, nil
+			return sl, func() tea.Msg { return QuitMsg{} }
 
 		case key.Matches(msg, sl.keys.Application.Help.Binding):
-			sl.RequestHelp = true
-			return sl, nil
+			return sl, func() tea.Msg { return ShowHelpMsg{} }
 
 		case key.Matches(msg, sl.keys.SessionManagement.New.Binding):
-			sl.RequestNewSession = true
-			return sl, nil
+			return sl, func() tea.Msg { return NewSessionMsg{} }
 
 		case key.Matches(msg, sl.keys.SessionManagement.NewFromRepo.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.RequestNewSessionFrom = true
-				sl.SessionForTemplate = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return NewSessionFromTemplateMsg{TemplateSessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionActions.Open.Binding):
@@ -501,50 +478,42 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't schedule new poll - one is already running
 					return sl, nil
 				}
-				sl.SelectedSession = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return AttachSessionMsg{Session: item.Session} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionManagement.Kill.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToKill = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return KillSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionManagement.Rename.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToRename = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return RenameSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.Comment.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToComment = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return CommentSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.SendText.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToSendText = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return SendTextSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionActions.OpenEditor.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToOpenEditor = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return OpenEditorSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.Flag.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToToggleFlag = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return ToggleFlagSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionManagement.Archive.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToArchive = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return ArchiveSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.SessionMetadata.StatusCycle.Binding):
@@ -556,8 +525,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, sl.keys.SessionMetadata.StatusSetForm.Binding):
 			// Shift+S: Open status form (edit action)
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
-				sl.SessionToSetStatus = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return SetStatusSessionMsg{SessionName: item.Session.Name} }
 			}
 
 		case key.Matches(msg, sl.keys.Navigation.MoveUp.Binding):
@@ -582,8 +550,7 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Don't schedule new poll - one is already running
 						return sl, nil
 					}
-					sl.SelectedSession = item.Session
-					return sl, nil
+					return sl, func() tea.Msg { return AttachSessionMsg{Session: item.Session} }
 				}
 			}
 
@@ -594,14 +561,12 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't schedule new poll - one is already running
 					return sl, nil
 				}
-				sl.SelectedShellSession = item.Session
-				return sl, nil
+				return sl, func() tea.Msg { return AttachShellSessionMsg{Session: item.Session} }
 			}
 
 		case msg.String() == "alt+e":
 			// Hidden test command: Request Model to generate test error
-			sl.RequestTestError = true
-			return sl, nil
+			return sl, func() tea.Msg { return TestErrorMsg{} }
 
 		case key.Matches(msg, sl.keys.Navigation.ClearFilter.Binding):
 			// Handle double-ESC for filter clearing (only when filtering)
@@ -674,12 +639,10 @@ func (sl *SessionList) View() string {
 		s += sl.list.View()
 	}
 
-	// Show SessionList error if any (transient, limited to 2 lines)
+	// Show SessionList error if any (transient, cleared via clearSessionListErrorMsg)
 	if sl.err != nil {
 		errorText := formatErrorForDisplay(sl.err, sl.width)
 		s += "\n" + theme.ErrorStyle.Render(errorText)
-		sl.currentTip = nil // Clear tip when error is shown
-		sl.err = nil
 	}
 
 	// Ensure output is exactly the expected height (4 lines header/legend/spacing + listHeight)
@@ -701,7 +664,7 @@ func (sl *SessionList) GetCurrentTip() string {
 	return RenderTip(*sl.currentTip)
 }
 
-// ClearCurrentTip clears the current tip (called when error is shown)
+// ClearCurrentTip clears the current tip (available for external callers if needed)
 func (sl *SessionList) ClearCurrentTip() {
 	sl.currentTip = nil
 }
@@ -716,13 +679,14 @@ func (sl *SessionList) SetSize(width, height, listHeight int) {
 	sl.list.SetSize(width, listHeight)
 }
 
-// RefreshFromState reloads the session list from state
-func (sl *SessionList) RefreshFromState() {
+// RefreshFromState reloads the session list from state.
+// Returns the command from SetItems which handles pagination updates.
+func (sl *SessionList) RefreshFromState() tea.Cmd {
 	sessionState, err := sl.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		logging.Logger.Error("Failed to refresh session state", "error", err)
-		return
+		return nil
 	}
 
 	// Preserve GitStats cache from old state
@@ -739,9 +703,9 @@ func (sl *SessionList) RefreshFromState() {
 	delegate := newSessionDelegate(sessionState, sl.statusConfig, sl.timestampConfig, sl.timestampMode)
 	sl.list.SetDelegate(delegate)
 
-	// Rebuild items
+	// Rebuild items - return the command from SetItems for pagination updates
 	items := buildListItems(sessionState, sl.sessionService, sl.statusConfig)
-	sl.list.SetItems(items)
+	return sl.list.SetItems(items)
 }
 
 // pollStateCmd returns a command that waits 2 seconds then sends checkStateMsg
@@ -970,7 +934,7 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 	}
 
 	// Reload state and rebuild list
-	sl.RefreshFromState()
+	cmd := sl.RefreshFromState()
 
 	// Find the new index of the moved item by name
 	newItems := sl.list.Items()
@@ -1001,8 +965,8 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 		"selected_index", sl.list.Index(),
 		"expected_name", movedItemName)
 
-	// Don't schedule new poll - one is already running
-	return nil
+	// Return the SetItems command for pagination updates
+	return cmd
 }
 
 // moveSelectedDown moves the currently selected session down one position in the order
@@ -1042,7 +1006,7 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 	}
 
 	// Reload state and rebuild list
-	sl.RefreshFromState()
+	cmd := sl.RefreshFromState()
 
 	// Find the new index of the moved item by name
 	newItems := sl.list.Items()
@@ -1073,8 +1037,8 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 		"selected_index", sl.list.Index(),
 		"expected_name", movedItemName)
 
-	// Don't schedule new poll - one is already running
-	return nil
+	// Return the SetItems command for pagination updates
+	return cmd
 }
 
 // requestGitStatsForVisible fetches git stats for visible sessions
