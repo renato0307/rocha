@@ -26,10 +26,10 @@ import (
 const escTimeout = 500 * time.Millisecond
 
 // Messages for SessionList (exported for Model integration)
-type checkStateMsg struct{} // Triggers state file check - used by Model for token chart refresh
-type hideTipMsg struct{}             // Time to hide the current tip
-type sessionListDetachedMsg struct{} // Session list returned from attached state
-type showTipMsg struct{}             // Time to show a new random tip
+type checkStateMsg struct{}            // Triggers periodic state file check; also used by Model for token chart refresh
+type clearSessionListErrorMsg struct{} // Clear transient error after display period
+type hideTipMsg struct{}               // Time to hide the current tip
+type showTipMsg struct{}               // Time to show a new random tip
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
@@ -217,36 +217,26 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 // SessionList is a Bubble Tea component for displaying and managing sessions
 type SessionList struct {
+	currentTip         *Tip                         // Currently displayed tip (nil = hidden)
 	devMode            bool
-	editor             string // Editor to open sessions in
+	editor             string                       // Editor to open sessions in
 	err                error
-	fetchingGitStats   bool // Prevent concurrent fetches
-	gitService         *services.GitService // Git operations service
+	escPressCount      int                          // Escape handling for filter clearing
+	escPressTime       time.Time
+	fetchingGitStats   bool                         // Prevent concurrent fetches
+	gitService         *services.GitService         // Git operations service
+	height             int
 	keys               KeyMap
 	list               list.Model
-	sessionService     *services.SessionService // Session service
+	listHeight         int                          // Height available for the list component
+	sessionService     *services.SessionService     // Session service
 	sessionState       *domain.SessionCollection
 	statusConfig       *config.StatusConfig
+	timestampConfig    *config.TimestampColorConfig
 	timestampMode      TimestampMode
+	tipsConfig         TipsConfig                   // Tips display configuration
 	tmuxStatusPosition string
-
-	// Tips feature
-	currentTip *Tip       // Currently displayed tip (nil = hidden)
-	tipsConfig TipsConfig // Tips display configuration
-
-	// Escape handling for filter clearing
-	escPressCount int
-	escPressTime  time.Time
-
-	// Window dimensions
-	height     int
-	listHeight int // Height available for the list component
-	width      int
-
-	// Timestamp configuration
-	timestampConfig *config.TimestampColorConfig
-
-	// All action fields migrated to messages in Phase 1-3 refactoring
+	width              int
 }
 
 // NewSessionList creates a new session list component
@@ -426,17 +416,25 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return sl, nil
 
+	case clearSessionListErrorMsg:
+		// Clear transient error after display period
+		sl.err = nil
+		return sl, nil
+
 	case error:
 		sl.err = msg
-		// Don't schedule new poll - one is already running
-		return sl, nil
+		sl.currentTip = nil // Clear tip when error is set
+		// Return command to clear error after a brief display period
+		return sl, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return clearSessionListErrorMsg{}
+		})
 
 	// Each time you add something here, don't forget to add it to the help screen
 	case tea.KeyMsg:
 		// Guard clause: When actively filtering, bypass shortcuts to allow typing
 		if sl.list.FilterState() == list.Filtering {
 			// ESC is the only key we handle specially during filtering
-			if msg.String() == "esc" {
+			if key.Matches(msg, sl.keys.Navigation.ClearFilter.Binding) {
 				now := time.Now()
 				if now.Sub(sl.escPressTime) < escTimeout && sl.escPressCount >= 1 {
 					// Second ESC - clear filter
@@ -641,12 +639,10 @@ func (sl *SessionList) View() string {
 		s += sl.list.View()
 	}
 
-	// Show SessionList error if any (transient, limited to 2 lines)
+	// Show SessionList error if any (transient, cleared via clearSessionListErrorMsg)
 	if sl.err != nil {
 		errorText := formatErrorForDisplay(sl.err, sl.width)
 		s += "\n" + theme.ErrorStyle.Render(errorText)
-		sl.currentTip = nil // Clear tip when error is shown
-		sl.err = nil
 	}
 
 	// Ensure output is exactly the expected height (4 lines header/legend/spacing + listHeight)
@@ -668,7 +664,7 @@ func (sl *SessionList) GetCurrentTip() string {
 	return RenderTip(*sl.currentTip)
 }
 
-// ClearCurrentTip clears the current tip (called when error is shown)
+// ClearCurrentTip clears the current tip (available for external callers if needed)
 func (sl *SessionList) ClearCurrentTip() {
 	sl.currentTip = nil
 }

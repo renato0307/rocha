@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -87,7 +86,7 @@ func NewModel(
 	sessionState, stateErr := sessionService.LoadState(context.Background(), false)
 	errorManager := NewErrorManager(errorClearDelay)
 	if stateErr != nil {
-		log.Printf("Warning: failed to load session state: %v", stateErr)
+		logging.Logger.Warn("Failed to load session state", "error", stateErr)
 		errorManager.SetError(fmt.Errorf("failed to load state: %w", stateErr))
 		sessionState = &domain.SessionCollection{Sessions: make(map[string]domain.Session)}
 	}
@@ -239,7 +238,10 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pre-fill repo field if starting in a git folder
 		defaultRepoSource := msg.DefaultRepoSource
 		if defaultRepoSource == "" {
-			cwd, _ := os.Getwd()
+			cwd, err := os.Getwd()
+			if err != nil {
+				logging.Logger.Debug("Failed to get current working directory", "error", err)
+			}
 			if isGit, repoPath := m.gitService.IsGitRepo(cwd); isGit {
 				if remoteURL := m.gitService.GetRemoteURL(repoPath); remoteURL != "" {
 					defaultRepoSource = remoteURL
@@ -413,7 +415,7 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Use helper - eliminates duplication
 			if err := m.reloadSessionStateAfterDialog(); err != nil {
 				m.errorManager.SetError(err)
-				log.Printf("Warning: failed to reload session state: %v", err)
+				logging.Logger.Warn("Failed to reload session state", "error", err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 			// Select the newly added session (always at position 0)
@@ -655,7 +657,7 @@ type detachedMsg struct{}
 func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+		if key.Matches(keyMsg, m.keys.Navigation.ClearFilter.Binding, m.keys.Application.ForceQuit.Binding) {
 			m.state = stateList
 			m.worktreeRemovalForm = nil
 			m.sessionToArchive = nil
@@ -701,7 +703,7 @@ func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "esc" || keyMsg.String() == "ctrl+c" {
+		if key.Matches(keyMsg, m.keys.Navigation.ClearFilter.Binding, m.keys.Application.ForceQuit.Binding) {
 			m.state = stateList
 			m.worktreeRemovalForm = nil
 			m.sessionToKill = nil
@@ -811,11 +813,11 @@ func (m *Model) View() string {
 		}
 
 		// Bottom section - fixed 2 lines (error or tip or empty)
+		// Error takes priority over tip (tip is hidden while error displays)
 		view += "\n"
 		if m.errorManager.HasError() {
 			errorText := formatErrorForDisplay(m.errorManager.GetError(), m.width)
 			view += theme.ErrorStyle.Render(errorText)
-			m.sessionList.ClearCurrentTip()
 		} else if tip := m.sessionList.GetCurrentTip(); tip != "" {
 			view += tip + "\n "
 		} else {

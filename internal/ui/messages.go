@@ -73,7 +73,7 @@ type KillSessionMsg struct {
 	SessionName string
 }
 
-// TestErrorMsg requests generating a test error (for debugging)
+// TestErrorMsg requests generating a test error (hidden debug feature, triggered by alt+e)
 type TestErrorMsg struct{}
 
 // ToggleFlagSessionMsg requests toggling the flag on a session
