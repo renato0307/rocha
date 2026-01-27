@@ -113,6 +113,31 @@ return m, tea.Batch(parentCmd, childCmd)
 return m, parentCmd
 ```
 
+**Message-Based Action Communication (Rocha pattern):**
+Child components communicate actions to parents via messages, not mutable fields:
+```go
+// ✅ Correct: return Cmd that emits a message
+case key.Matches(msg, sl.keys.Session.Kill.Binding):
+    return sl, func() tea.Msg { return KillSessionMsg{SessionName: item.Session.Name} }
+
+// Parent handles the message in its Update:
+case KillSessionMsg:
+    return m.handleKillSession(msg.SessionName)
+```
+
+```go
+// ❌ Wrong: mutable field that parent must poll
+case key.Matches(msg, sl.keys.Session.Kill.Binding):
+    sl.SessionToKill = item.Session  // Parent checks this field after Update
+    return sl, nil
+```
+
+**Why messages over fields:**
+- No field polling or manual resets needed
+- Messages are the action types - self-documenting
+- Enables composability (command palette, shortcuts, tests can emit same messages)
+- Fresh data lookup at handling time prevents stale pointer references
+
 **Lazy Initialization Pattern:**
 Components depending on terminal dimensions should defer initialization:
 ```go
@@ -214,6 +239,20 @@ availableHeight := m.height - 8
 **Discarded commands:**
 ❌ Ignoring `cmd` returned from child's Update
 ✅ Batch child commands with parent commands
+
+#### Action Communication (🟡 SHOULD)
+
+**Mutable fields for actions:**
+❌ Child sets `sl.SessionToKill = session` for parent to poll
+✅ Child returns `func() tea.Msg { return KillSessionMsg{...} }`
+
+**Stale data in messages:**
+❌ Message carries full object pointer that may become stale
+✅ Message carries identifier (e.g., session name); handler fetches fresh data
+
+**Field polling in parent:**
+❌ Parent checks `if sl.SessionToKill != nil` after child Update
+✅ Parent handles action message in its own Update switch
 
 #### Nil Pointer Risks (🔴 MUST if violated)
 
