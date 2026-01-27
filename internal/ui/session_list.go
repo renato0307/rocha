@@ -679,13 +679,14 @@ func (sl *SessionList) SetSize(width, height, listHeight int) {
 	sl.list.SetSize(width, listHeight)
 }
 
-// RefreshFromState reloads the session list from state
-func (sl *SessionList) RefreshFromState() {
+// RefreshFromState reloads the session list from state.
+// Returns the command from SetItems which handles pagination updates.
+func (sl *SessionList) RefreshFromState() tea.Cmd {
 	sessionState, err := sl.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		sl.err = fmt.Errorf("failed to refresh sessions: %w", err)
 		logging.Logger.Error("Failed to refresh session state", "error", err)
-		return
+		return nil
 	}
 
 	// Preserve GitStats cache from old state
@@ -702,9 +703,9 @@ func (sl *SessionList) RefreshFromState() {
 	delegate := newSessionDelegate(sessionState, sl.statusConfig, sl.timestampConfig, sl.timestampMode)
 	sl.list.SetDelegate(delegate)
 
-	// Rebuild items
+	// Rebuild items - return the command from SetItems for pagination updates
 	items := buildListItems(sessionState, sl.sessionService, sl.statusConfig)
-	sl.list.SetItems(items)
+	return sl.list.SetItems(items)
 }
 
 // pollStateCmd returns a command that waits 2 seconds then sends checkStateMsg
@@ -933,7 +934,7 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 	}
 
 	// Reload state and rebuild list
-	sl.RefreshFromState()
+	cmd := sl.RefreshFromState()
 
 	// Find the new index of the moved item by name
 	newItems := sl.list.Items()
@@ -964,8 +965,8 @@ func (sl *SessionList) moveSelectedUp() tea.Cmd {
 		"selected_index", sl.list.Index(),
 		"expected_name", movedItemName)
 
-	// Don't schedule new poll - one is already running
-	return nil
+	// Return the SetItems command for pagination updates
+	return cmd
 }
 
 // moveSelectedDown moves the currently selected session down one position in the order
@@ -1005,7 +1006,7 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 	}
 
 	// Reload state and rebuild list
-	sl.RefreshFromState()
+	cmd := sl.RefreshFromState()
 
 	// Find the new index of the moved item by name
 	newItems := sl.list.Items()
@@ -1036,8 +1037,8 @@ func (sl *SessionList) moveSelectedDown() tea.Cmd {
 		"selected_index", sl.list.Index(),
 		"expected_name", movedItemName)
 
-	// Don't schedule new poll - one is already running
-	return nil
+	// Return the SetItems command for pagination updates
+	return cmd
 }
 
 // requestGitStatsForVisible fetches git stats for visible sessions

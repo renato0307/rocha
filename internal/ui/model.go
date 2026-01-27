@@ -346,8 +346,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle detach message - session list auto-refreshes via polling
 	if _, ok := msg.(detachedMsg); ok {
 		m.state = stateList
-		m.sessionList.RefreshFromState()
-		return m, m.sessionList.Init()
+		refreshCmd := m.sessionList.RefreshFromState()
+		return m, tea.Batch(refreshCmd, m.sessionList.Init())
 	}
 
 	// Handle errors from attach failures (e.g., tmux nested session errors)
@@ -374,8 +374,8 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timestampMode = TimestampRelative
 		}
 		m.sessionList.timestampMode = m.timestampMode
-		m.sessionList.RefreshFromState()
-		return m, m.sessionList.Init()
+		refreshCmd := m.sessionList.RefreshFromState()
+		return m, tea.Batch(refreshCmd, m.sessionList.Init())
 	}
 
 	// Toggle token chart
@@ -413,13 +413,15 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Use helper - eliminates duplication
-			if err := m.reloadSessionStateAfterDialog(); err != nil {
+			refreshCmd, err := m.reloadSessionStateAfterDialog()
+			if err != nil {
 				m.errorManager.SetError(err)
 				logging.Logger.Warn("Failed to reload session state", "error", err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
 			// Select the newly added session (always at position 0)
 			m.sessionList.list.Select(0)
+			return m, tea.Batch(refreshCmd, m.sessionList.Init())
 		}
 
 		return m, m.sessionList.Init()
@@ -446,10 +448,12 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Use helper - eliminates duplication
-			if err := m.reloadSessionStateAfterDialog(); err != nil {
+			refreshCmd, err := m.reloadSessionStateAfterDialog()
+			if err != nil {
 				m.errorManager.SetError(err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
+			return m, tea.Batch(refreshCmd, m.sessionList.Init())
 		}
 
 		return m, m.sessionList.Init()
@@ -476,10 +480,12 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Use helper - eliminates duplication
-			if err := m.reloadSessionStateAfterDialog(); err != nil {
+			refreshCmd, err := m.reloadSessionStateAfterDialog()
+			if err != nil {
 				m.errorManager.SetError(err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
+			return m, tea.Batch(refreshCmd, m.sessionList.Init())
 		}
 
 		return m, m.sessionList.Init()
@@ -506,10 +512,12 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Use helper - eliminates duplication
-			if err := m.reloadSessionStateAfterDialog(); err != nil {
+			refreshCmd, err := m.reloadSessionStateAfterDialog()
+			if err != nil {
 				m.errorManager.SetError(err)
 				return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 			}
+			return m, tea.Batch(refreshCmd, m.sessionList.Init())
 		}
 
 		return m, m.sessionList.Init()
@@ -540,16 +548,15 @@ func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// reloadSessionStateAfterDialog reloads state and refreshes list.
-// Eliminates the 8 duplications of reload pattern across dialog handlers.
-func (m *Model) reloadSessionStateAfterDialog() error {
+// reloadSessionStateAfterDialog reloads session state and refreshes the list.
+// Returns the command from RefreshFromState for pagination updates.
+func (m *Model) reloadSessionStateAfterDialog() (tea.Cmd, error) {
 	newState, err := m.sessionService.LoadState(context.Background(), false)
 	if err != nil {
-		return fmt.Errorf("failed to refresh sessions: %w", err)
+		return nil, fmt.Errorf("failed to refresh sessions: %w", err)
 	}
 	*m.sessionState = *newState
-	m.sessionList.RefreshFromState()
-	return nil
+	return m.sessionList.RefreshFromState(), nil
 }
 
 // getFreshSessionInfo loads fresh session info from the database to avoid stale state issues.
@@ -609,14 +616,14 @@ func (m *Model) handleToggleFlag(sessionName string) (tea.Model, tea.Cmd) {
 	newSessionState, err := m.sessionService.LoadState(context.Background(), false)
 	if err != nil {
 		m.errorManager.SetError(fmt.Errorf("failed to refresh sessions: %w", err))
-		m.sessionList.RefreshFromState()
-		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		refreshCmd := m.sessionList.RefreshFromState()
+		return m, tea.Batch(refreshCmd, m.sessionList.Init(), m.errorManager.ClearAfterDelay())
 	}
 	*m.sessionState = *newSessionState
 
 	// Refresh UI
-	m.sessionList.RefreshFromState()
-	return m, m.sessionList.Init()
+	refreshCmd := m.sessionList.RefreshFromState()
+	return m, tea.Batch(refreshCmd, m.sessionList.Init())
 }
 
 // recalculateListHeight calculates and sets the list height based on current state
