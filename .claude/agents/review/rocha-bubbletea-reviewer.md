@@ -113,6 +113,22 @@ return m, tea.Batch(parentCmd, childCmd)
 return m, parentCmd
 ```
 
+**Preserving Commands from List Operations:**
+Methods like `list.SetItems()`, `list.SetDelegate()` return commands that handle internal state (pagination, filtering). Always capture and return these:
+```go
+// ✅ Correct: capture and return the command
+func (sl *SessionList) RefreshFromState() tea.Cmd {
+    items := buildListItems(...)
+    return sl.list.SetItems(items)  // Return the pagination command
+}
+
+// ❌ Wrong: discarding the command
+func (sl *SessionList) RefreshFromState() {
+    items := buildListItems(...)
+    sl.list.SetItems(items)  // Command lost - pagination may break
+}
+```
+
 **Message-Based Action Communication (Rocha pattern):**
 Child components communicate actions to parents via messages, not mutable fields:
 ```go
@@ -238,7 +254,9 @@ availableHeight := m.height - 8
 
 **Discarded commands:**
 ❌ Ignoring `cmd` returned from child's Update
+❌ Ignoring `cmd` returned from `list.SetItems()`, `list.SetDelegate()`
 ✅ Batch child commands with parent commands
+✅ Return commands from list operations (pagination, filtering)
 
 #### Action Communication (🟡 SHOULD)
 
