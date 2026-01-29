@@ -80,3 +80,16 @@ type TestErrorMsg struct{}
 type ToggleFlagSessionMsg struct {
 	SessionName string
 }
+
+// Command palette messages
+
+// ShowCommandPaletteMsg requests showing the command palette
+type ShowCommandPaletteMsg struct{}
+
+// ExecuteActionMsg requests executing an action from the command palette
+type ExecuteActionMsg struct {
+	ActionName string
+}
+
+// CloseCommandPaletteMsg requests closing the command palette
+type CloseCommandPaletteMsg struct{}
