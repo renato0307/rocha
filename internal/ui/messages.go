@@ -93,3 +93,14 @@ type ExecuteActionMsg struct {
 
 // CloseCommandPaletteMsg requests closing the command palette
 type CloseCommandPaletteMsg struct{}
+
+// CycleStatusMsg requests cycling the status of a session
+type CycleStatusMsg struct {
+	SessionName string
+}
+
+// ToggleTimestampsMsg requests toggling timestamp display
+type ToggleTimestampsMsg struct{}
+
+// ToggleTokenChartMsg requests toggling the token chart
+type ToggleTokenChartMsg struct{}
