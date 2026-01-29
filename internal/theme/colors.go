@@ -21,7 +21,7 @@ const (
 
 // UI semantic colors
 const (
-	ColorDimmed          Color = "238" // Dark gray - slight dim overlay (not black)
+	ColorDimmed          Color = "240" // Dark gray - dimmed background content
 	ColorError           Color = "196" // Bright red
 	ColorHighlight       Color = "255" // White - emphasis
 	ColorMuted           Color = "241" // Gray - secondary text

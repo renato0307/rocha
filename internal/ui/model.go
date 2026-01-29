@@ -1001,16 +1001,63 @@ func stripAnsi(s string) string {
 	return result.String()
 }
 
-// compositeOverlay centers the palette over a slightly dimmed background.
-func compositeOverlay(_, palette string, width, height int) string {
-	// Position the palette centered with a dark gray background
-	positioned := lipgloss.Place(
-		width, height,
-		lipgloss.Center, lipgloss.Center,
-		palette,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceBackground(theme.ColorDimmed),
-	)
+// compositeOverlay overlays the palette on top of the dimmed background.
+// This simulates transparency by showing dimmed content around the palette.
+func compositeOverlay(background, palette string, width, height int) string {
+	bgLines := strings.Split(background, "\n")
+	paletteLines := strings.Split(palette, "\n")
 
-	return positioned
+	paletteHeight := len(paletteLines)
+	paletteWidth := lipgloss.Width(palette)
+
+	// Calculate top-left position to center the palette
+	topOffset := (height - paletteHeight) / 2
+	leftOffset := (width - paletteWidth) / 2
+	if topOffset < 0 {
+		topOffset = 0
+	}
+	if leftOffset < 0 {
+		leftOffset = 0
+	}
+
+	// Ensure background has enough lines
+	for len(bgLines) < height {
+		bgLines = append(bgLines, strings.Repeat(" ", width))
+	}
+
+	// Overlay palette onto background
+	for i, paletteLine := range paletteLines {
+		bgLineIdx := topOffset + i
+		if bgLineIdx >= len(bgLines) {
+			break
+		}
+
+		// Get the background line, pad if needed
+		bgLine := bgLines[bgLineIdx]
+		bgRunes := []rune(stripAnsi(bgLine))
+		for len(bgRunes) < width {
+			bgRunes = append(bgRunes, ' ')
+		}
+
+		// Build the composite line: dimmed left + palette + dimmed right
+		leftPart := string(bgRunes[:leftOffset])
+		rightStart := leftOffset + paletteWidth
+		var rightPart string
+		if rightStart < len(bgRunes) {
+			rightPart = string(bgRunes[rightStart:])
+		}
+
+		bgLines[bgLineIdx] = theme.DimmedStyle.Render(leftPart) +
+			paletteLine +
+			theme.DimmedStyle.Render(rightPart)
+	}
+
+	// Dim lines above and below the palette
+	for i := 0; i < len(bgLines); i++ {
+		if i < topOffset || i >= topOffset+paletteHeight {
+			bgLines[i] = theme.DimmedStyle.Render(stripAnsi(bgLines[i]))
+		}
+	}
+
+	return strings.Join(bgLines, "\n")
 }
