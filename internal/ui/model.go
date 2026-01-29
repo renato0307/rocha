@@ -1001,15 +1001,15 @@ func stripAnsi(s string) string {
 	return result.String()
 }
 
-// compositeOverlay centers the palette over the dimmed background.
-func compositeOverlay(background, palette string, width, height int) string {
-	// Position the palette centered
+// compositeOverlay centers the palette over a slightly dimmed background.
+func compositeOverlay(_, palette string, width, height int) string {
+	// Position the palette centered with a dark gray background
 	positioned := lipgloss.Place(
 		width, height,
 		lipgloss.Center, lipgloss.Center,
 		palette,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(theme.ColorDimmed),
+		lipgloss.WithWhitespaceBackground(theme.ColorDimmed),
 	)
 
 	return positioned
