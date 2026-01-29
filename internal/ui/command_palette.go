@@ -11,6 +11,14 @@ import (
 	"github.com/renato0307/rocha/internal/theme"
 )
 
+// paletteExcludedActions lists actions that shouldn't appear in the command palette.
+// These are "quick" actions with dedicated shortcuts that don't benefit from palette discovery.
+var paletteExcludedActions = map[string]bool{
+	"cycle_status": true, // Use 's' for quick cycling, 'S' for form
+	"open":         true, // Use Enter directly
+	"open_shell":   true, // Use dedicated shortcut
+}
+
 // CommandPalette is a searchable action palette overlay.
 type CommandPalette struct {
 	Completed     bool
@@ -37,7 +45,7 @@ type CommandPaletteResult struct {
 // sessionName is the display name to show in the header.
 func NewCommandPalette(session *ports.TmuxSession, sessionName string) *CommandPalette {
 	hasSession := session != nil
-	actions := domain.GetActionsForContext(hasSession)
+	actions := filterActionsForPalette(domain.GetActionsForContext(hasSession))
 
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter..."
@@ -191,6 +199,17 @@ func (cp *CommandPalette) filterActions() {
 	if cp.selectedIndex >= len(cp.actions) {
 		cp.selectedIndex = 0
 	}
+}
+
+// filterActionsForPalette removes actions that shouldn't appear in the palette.
+func filterActionsForPalette(actions []domain.Action) []domain.Action {
+	var filtered []domain.Action
+	for _, action := range actions {
+		if !paletteExcludedActions[action.Name] {
+			filtered = append(filtered, action)
+		}
+	}
+	return filtered
 }
 
 // fuzzyMatch checks if all characters in query appear in order in target.
