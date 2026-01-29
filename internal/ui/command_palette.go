@@ -129,7 +129,7 @@ func (cp *CommandPalette) View() string {
 	maxNameLen := cp.maxActionNameLen()
 
 	for i, action := range cp.actions {
-		name := padRight(action.Name, maxNameLen)
+		name := padRight(action.DisplayName, maxNameLen)
 		desc := action.Description
 
 		if i == cp.selectedIndex {
@@ -224,12 +224,12 @@ func fuzzyMatch(query, target string) bool {
 	return qi == len(query)
 }
 
-// maxActionNameLen returns the maximum action name length for alignment.
+// maxActionNameLen returns the maximum display name length for alignment.
 func (cp *CommandPalette) maxActionNameLen() int {
 	maxLen := 0
 	for _, action := range cp.actions {
-		if len(action.Name) > maxLen {
-			maxLen = len(action.Name)
+		if len(action.DisplayName) > maxLen {
+			maxLen = len(action.DisplayName)
 		}
 	}
 	return maxLen
