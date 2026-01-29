@@ -19,6 +19,7 @@ type CommandPalette struct {
 	allActions    []domain.Action // All available actions for context
 	filterInput   textinput.Model
 	height        int
+	lastQuery     string // Previous filter query (to detect changes)
 	selectedIndex int
 	session       *ports.TmuxSession // Selected session (can be nil)
 	sessionName   string             // Display name for header
@@ -164,6 +165,13 @@ func (cp *CommandPalette) View() string {
 // filterActions filters the action list based on the current input.
 func (cp *CommandPalette) filterActions() {
 	query := strings.ToLower(cp.filterInput.Value())
+
+	// Only refilter if query changed
+	if query == cp.lastQuery {
+		return
+	}
+	cp.lastQuery = query
+
 	if query == "" {
 		cp.actions = cp.allActions
 		cp.selectedIndex = 0
