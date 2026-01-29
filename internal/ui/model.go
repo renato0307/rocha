@@ -1003,6 +1003,7 @@ func stripAnsi(s string) string {
 
 // compositeOverlay overlays the palette on top of the dimmed background.
 // This simulates transparency by showing dimmed content around the palette.
+// The palette is positioned at the bottom of the screen, centered horizontally.
 func compositeOverlay(background, palette string, width, height int) string {
 	bgLines := strings.Split(background, "\n")
 	paletteLines := strings.Split(palette, "\n")
@@ -1010,8 +1011,8 @@ func compositeOverlay(background, palette string, width, height int) string {
 	paletteHeight := len(paletteLines)
 	paletteWidth := lipgloss.Width(palette)
 
-	// Calculate top-left position to center the palette
-	topOffset := (height - paletteHeight) / 2
+	// Position at bottom, centered horizontally
+	topOffset := height - paletteHeight - 1 // -1 for a small margin from bottom
 	leftOffset := (width - paletteWidth) / 2
 	if topOffset < 0 {
 		topOffset = 0
