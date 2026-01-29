@@ -10,21 +10,23 @@ import (
 
 // ApplicationKeys defines key bindings for application-level actions
 type ApplicationKeys struct {
-	ForceQuit  KeyWithTip
-	Help       KeyWithTip
-	Quit       KeyWithTip
-	Timestamps KeyWithTip
-	TokenChart KeyWithTip
+	CommandPalette KeyWithTip
+	ForceQuit      KeyWithTip
+	Help           KeyWithTip
+	Quit           KeyWithTip
+	Timestamps     KeyWithTip
+	TokenChart     KeyWithTip
 }
 
 // newApplicationKeys creates application key bindings
 func newApplicationKeys(defaults map[string][]string, customKeys config.KeyBindingsConfig) ApplicationKeys {
 	return ApplicationKeys{
-		ForceQuit:  buildBinding("force_quit", defaults, customKeys),
-		Help:       buildBinding("help", defaults, customKeys),
-		Quit:       buildBinding("quit", defaults, customKeys),
-		Timestamps: buildBinding("timestamps", defaults, customKeys),
-		TokenChart: buildBinding("token_chart", defaults, customKeys),
+		CommandPalette: buildBinding("command_palette", defaults, customKeys),
+		ForceQuit:      buildBinding("force_quit", defaults, customKeys),
+		Help:           buildBinding("help", defaults, customKeys),
+		Quit:           buildBinding("quit", defaults, customKeys),
+		Timestamps:     buildBinding("timestamps", defaults, customKeys),
+		TokenChart:     buildBinding("token_chart", defaults, customKeys),
 	}
 }
 
