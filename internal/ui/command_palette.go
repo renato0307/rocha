@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -114,21 +115,23 @@ func (cp *CommandPalette) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return cp, cmd
 }
 
-// View renders the command palette.
+// View renders the command palette as a full-width bottom panel.
 func (cp *CommandPalette) View() string {
-	// Build header
-	var header string
-	if cp.sessionName != "" {
-		header = theme.PaletteHeaderStyle.Render("Session: " + cp.sessionName)
-	} else {
-		header = theme.PaletteHeaderStyle.Render("Command Palette")
-	}
+	width := cp.paletteWidth()
 
-	// Build action list
+	// Top border
+	topBorder := theme.PaletteHeaderStyle.Render(strings.Repeat("─", width))
+
+	// Filter input line
+	filterLine := theme.PaletteFilterStyle.Render("> ") + cp.filterInput.View()
+
+	// Build visible action list
 	var items []string
 	maxNameLen := cp.maxActionNameLen()
+	start, end := cp.visibleRange()
 
-	for i, action := range cp.actions {
+	for i := start; i < end; i++ {
+		action := cp.actions[i]
 		name := padRight(action.DisplayName, maxNameLen)
 		desc := action.Description
 
@@ -148,26 +151,21 @@ func (cp *CommandPalette) View() string {
 		items = append(items, theme.PaletteDescStyle.Render("  No matching actions"))
 	}
 
+	// Scroll indicator
+	scrollInfo := ""
+	if len(cp.actions) > maxVisibleItems {
+		scrollInfo = theme.PaletteDescStyle.Render(
+			fmt.Sprintf(" [%d/%d]", cp.selectedIndex+1, len(cp.actions)))
+	}
+
 	actionList := strings.Join(items, "\n")
 
-	// Build filter input
-	filterLine := "> " + cp.filterInput.View()
+	// Combine: border, filter, actions
+	content := topBorder + "\n" +
+		filterLine + scrollInfo + "\n" +
+		actionList
 
-	// Build footer
-	footer := theme.PaletteFooterStyle.Render("↑↓ navigate • ⏎ select • esc cancel")
-
-	// Combine all parts
-	content := header + "\n" +
-		strings.Repeat("─", cp.paletteWidth()-2) + "\n" +
-		actionList + "\n" +
-		strings.Repeat("─", cp.paletteWidth()-2) + "\n" +
-		filterLine + "\n" +
-		footer
-
-	// Apply border
-	bordered := theme.PaletteBorderStyle.Render(content)
-
-	return bordered
+	return content
 }
 
 // filterActions filters the action list based on the current input.
@@ -235,17 +233,35 @@ func (cp *CommandPalette) maxActionNameLen() int {
 	return maxLen
 }
 
-// paletteWidth returns the width of the palette content.
+// paletteWidth returns the full terminal width.
 func (cp *CommandPalette) paletteWidth() int {
-	// Fixed width or responsive based on terminal
-	width := 60
-	if cp.width > 0 && cp.width < 80 {
-		width = cp.width - 10
+	if cp.width > 0 {
+		return cp.width
 	}
-	if width < 40 {
-		width = 40
+	return 80 // fallback
+}
+
+// maxVisibleItems returns the maximum number of items to show at once.
+const maxVisibleItems = 5
+
+// visibleRange returns the start and end indices for visible items.
+func (cp *CommandPalette) visibleRange() (int, int) {
+	total := len(cp.actions)
+	if total <= maxVisibleItems {
+		return 0, total
 	}
-	return width
+
+	// Keep selected item visible with some context
+	start := cp.selectedIndex - maxVisibleItems/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxVisibleItems
+	if end > total {
+		end = total
+		start = end - maxVisibleItems
+	}
+	return start, end
 }
 
 // padRight pads a string to the given width.
