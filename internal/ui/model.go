@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/renato0307/rocha/internal/config"
 	"github.com/renato0307/rocha/internal/domain"
@@ -1003,60 +1002,34 @@ func stripAnsi(s string) string {
 
 // compositeOverlay overlays the palette on top of the dimmed background.
 // This simulates transparency by showing dimmed content around the palette.
-// The palette is positioned at the bottom of the screen, centered horizontally.
-func compositeOverlay(background, palette string, width, height int) string {
+// The palette is positioned at the bottom of the screen, full width.
+func compositeOverlay(background, palette string, _, height int) string {
 	bgLines := strings.Split(background, "\n")
 	paletteLines := strings.Split(palette, "\n")
 
 	paletteHeight := len(paletteLines)
-	paletteWidth := lipgloss.Width(palette)
 
-	// Position at bottom, centered horizontally
-	topOffset := height - paletteHeight - 1 // -1 for a small margin from bottom
-	leftOffset := (width - paletteWidth) / 2
+	// Position at bottom, full width
+	topOffset := height - paletteHeight
 	if topOffset < 0 {
 		topOffset = 0
-	}
-	if leftOffset < 0 {
-		leftOffset = 0
 	}
 
 	// Ensure background has enough lines
 	for len(bgLines) < height {
-		bgLines = append(bgLines, strings.Repeat(" ", width))
+		bgLines = append(bgLines, "")
 	}
 
-	// Overlay palette onto background
+	// Dim lines above the palette
+	for i := 0; i < topOffset && i < len(bgLines); i++ {
+		bgLines[i] = theme.DimmedStyle.Render(stripAnsi(bgLines[i]))
+	}
+
+	// Replace bottom lines with palette (full width, no compositing needed)
 	for i, paletteLine := range paletteLines {
 		bgLineIdx := topOffset + i
-		if bgLineIdx >= len(bgLines) {
-			break
-		}
-
-		// Get the background line, pad if needed
-		bgLine := bgLines[bgLineIdx]
-		bgRunes := []rune(stripAnsi(bgLine))
-		for len(bgRunes) < width {
-			bgRunes = append(bgRunes, ' ')
-		}
-
-		// Build the composite line: dimmed left + palette + dimmed right
-		leftPart := string(bgRunes[:leftOffset])
-		rightStart := leftOffset + paletteWidth
-		var rightPart string
-		if rightStart < len(bgRunes) {
-			rightPart = string(bgRunes[rightStart:])
-		}
-
-		bgLines[bgLineIdx] = theme.DimmedStyle.Render(leftPart) +
-			paletteLine +
-			theme.DimmedStyle.Render(rightPart)
-	}
-
-	// Dim lines above and below the palette
-	for i := 0; i < len(bgLines); i++ {
-		if i < topOffset || i >= topOffset+paletteHeight {
-			bgLines[i] = theme.DimmedStyle.Render(stripAnsi(bgLines[i]))
+		if bgLineIdx < len(bgLines) {
+			bgLines[bgLineIdx] = paletteLine
 		}
 	}
 
