@@ -18,6 +18,7 @@ type KeyDefinition struct {
 // This is the single source of truth for key names, defaults, help text, and tips.
 var AllKeyDefinitions = []KeyDefinition{
 	// Application keys
+	{Name: "command_palette", Defaults: []string{"O"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
 	{Name: "force_quit", Defaults: []string{"ctrl+c"}, Help: "quit", TipFormat: ""},
 	{Name: "help", Defaults: []string{"h", "?"}, Help: "help", TipFormat: "press %s to see all shortcuts"},
 	{Name: "quit", Defaults: []string{"q"}, Help: "quit", TipFormat: ""},
