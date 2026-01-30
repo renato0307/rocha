@@ -22,14 +22,14 @@ var paletteExcludedActions = map[string]bool{
 
 // CommandPalette is a searchable action palette overlay.
 type CommandPalette struct {
+	actions       []domain.Action    // Filtered actions
+	allActions    []domain.Action    // All available actions for context
 	Completed     bool
-	Result        CommandPaletteResult
-	actions       []domain.Action // Filtered actions
-	allActions    []domain.Action // All available actions for context
 	filterInput   textinput.Model
 	height        int
-	keys          KeyMap // Key bindings for navigation
-	lastQuery     string // Previous filter query (to detect changes)
+	keys          KeyMap             // Key bindings for navigation
+	lastQuery     string             // Previous filter query (to detect changes)
+	Result        CommandPaletteResult
 	selectedIndex int
 	session       *ports.TmuxSession // Selected session (can be nil)
 	sessionName   string             // Display name for header
@@ -229,13 +229,14 @@ func filterActionsForPalette(actions []domain.Action) []domain.Action {
 // fuzzyMatch checks if all characters in query appear in order in target.
 func fuzzyMatch(query, target string) bool {
 	target = strings.ToLower(target)
+	queryRunes := []rune(query)
 	qi := 0
 	for _, c := range target {
-		if qi < len(query) && c == rune(query[qi]) {
+		if qi < len(queryRunes) && c == queryRunes[qi] {
 			qi++
 		}
 	}
-	return qi == len(query)
+	return qi == len(queryRunes)
 }
 
 // maxActionNameLen returns the maximum display name length for alignment.
