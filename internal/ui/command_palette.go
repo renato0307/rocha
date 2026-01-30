@@ -166,16 +166,12 @@ func (cp *CommandPalette) View() string {
 	// Filter input line (textinput already has "> " prompt)
 	filterLine := cp.filterInput.View()
 
-	// Footer
-	footer := theme.PaletteFooterStyle.Render("↑↓ navigate • ⏎ select • esc cancel")
-
-	// Combine inner content
-	innerContent := header + "\n" +
+	// Combine inner content (no gap between header and separator, no footer)
+	innerContent := header +
 		separator + "\n" +
 		actionList + "\n" +
 		"\n" +
-		filterLine + "\n" +
-		footer
+		filterLine
 
 	// Apply border around entire palette
 	bordered := theme.PaletteBorderStyle.Width(width - 2).Render(innerContent)
@@ -257,7 +253,7 @@ func (cp *CommandPalette) paletteWidth() int {
 }
 
 // maxVisibleItems returns the maximum number of items to show at once.
-const maxVisibleItems = 4
+const maxVisibleItems = 6
 
 // visibleRange returns the start and end indices for visible items.
 func (cp *CommandPalette) visibleRange() (int, int) {
