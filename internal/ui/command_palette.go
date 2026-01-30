@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -27,6 +28,7 @@ type CommandPalette struct {
 	allActions    []domain.Action // All available actions for context
 	filterInput   textinput.Model
 	height        int
+	keys          KeyMap // Key bindings for navigation
 	lastQuery     string // Previous filter query (to detect changes)
 	selectedIndex int
 	session       *ports.TmuxSession // Selected session (can be nil)
@@ -43,7 +45,8 @@ type CommandPaletteResult struct {
 // NewCommandPalette creates a new command palette.
 // session can be nil if no session is selected.
 // sessionName is the display name to show in the header.
-func NewCommandPalette(session *ports.TmuxSession, sessionName string) *CommandPalette {
+// keys provides the key bindings for navigation.
+func NewCommandPalette(session *ports.TmuxSession, sessionName string, keys KeyMap) *CommandPalette {
 	hasSession := session != nil
 	actions := filterActionsForPalette(domain.GetActionsForContext(hasSession))
 
@@ -57,6 +60,7 @@ func NewCommandPalette(session *ports.TmuxSession, sessionName string) *CommandP
 		actions:       actions,
 		allActions:    actions,
 		filterInput:   ti,
+		keys:          keys,
 		selectedIndex: 0,
 		session:       session,
 		sessionName:   sessionName,
@@ -77,26 +81,27 @@ func (cp *CommandPalette) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return cp, nil
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc", "ctrl+c":
+		switch {
+		case key.Matches(msg, cp.keys.Navigation.ClearFilter.Binding) ||
+			key.Matches(msg, cp.keys.Application.ForceQuit.Binding):
 			cp.Completed = true
 			cp.Result.Cancelled = true
 			return cp, nil
 
-		case "enter":
+		case key.Matches(msg, cp.keys.SessionActions.Open.Binding):
 			if len(cp.actions) > 0 && cp.selectedIndex < len(cp.actions) {
 				cp.Completed = true
 				cp.Result.Action = &cp.actions[cp.selectedIndex]
 			}
 			return cp, nil
 
-		case "up", "ctrl+p":
+		case key.Matches(msg, cp.keys.Navigation.Up.Binding):
 			if cp.selectedIndex > 0 {
 				cp.selectedIndex--
 			}
 			return cp, nil
 
-		case "down", "ctrl+n":
+		case key.Matches(msg, cp.keys.Navigation.Down.Binding):
 			if cp.selectedIndex < len(cp.actions)-1 {
 				cp.selectedIndex++
 			}
