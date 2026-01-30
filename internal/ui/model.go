@@ -182,7 +182,9 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Send initial WindowSizeMsg so viewport can initialize
 		initCmd := m.helpScreen.Init()
 		updatedDialog, sizeCmd := m.helpScreen.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		m.helpScreen = updatedDialog.(*Dialog)
+		if d, ok := updatedDialog.(*Dialog); ok {
+			m.helpScreen = d
+		}
 		return m, tea.Batch(initCmd, sizeCmd)
 	case AttachSessionMsg:
 		return m, m.sessionOps.AttachToSession(msg.Session.Name)
@@ -337,7 +339,7 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sessionName = item.DisplayName
 		}
 
-		m.commandPalette = NewCommandPalette(session, sessionName)
+		m.commandPalette = NewCommandPalette(session, sessionName, m.keys)
 		m.state = stateCommandPalette
 
 		// Send initial window size
@@ -450,7 +452,9 @@ func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to palette
 	updated, cmd := m.commandPalette.Update(msg)
-	m.commandPalette = updated.(*CommandPalette)
+	if cp, ok := updated.(*CommandPalette); ok {
+		m.commandPalette = cp
+	}
 
 	// Check if palette completed
 	if m.commandPalette.Completed {
@@ -486,7 +490,9 @@ func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionForm.Update(msg)
-	m.sessionForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionForm.Content().(*SessionForm); ok && content.Completed {
@@ -521,7 +527,9 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionRenameForm.Update(msg)
-	m.sessionRenameForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionRenameForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok && content.Completed {
@@ -553,7 +561,9 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionStatusForm.Update(msg)
-	m.sessionStatusForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionStatusForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok && content.Completed {
@@ -585,7 +595,9 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionCommentForm.Update(msg)
-	m.sessionCommentForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionCommentForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok && content.Completed {
@@ -617,7 +629,9 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sendTextForm.Update(msg)
-	m.sendTextForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sendTextForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok && content.Completed {
@@ -735,7 +749,9 @@ func (m *Model) recalculateListHeight() {
 func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.helpScreen.Update(msg)
-	m.helpScreen = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.helpScreen = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.helpScreen.Content().(*HelpScreen); ok && content.Completed {
@@ -770,7 +786,9 @@ func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Forward message to Dialog
 	updated, cmd := m.worktreeRemovalForm.Update(msg)
-	m.worktreeRemovalForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.worktreeRemovalForm = d
+	}
 
 	// Access wrapped huh.Form to check completion
 	if form, ok := m.worktreeRemovalForm.Content().(*huh.Form); ok {
@@ -816,7 +834,9 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 
 	// Forward message to Dialog
 	updated, cmd := m.worktreeRemovalForm.Update(msg)
-	m.worktreeRemovalForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.worktreeRemovalForm = d
+	}
 
 	// Access wrapped huh.Form to check completion
 	if form, ok := m.worktreeRemovalForm.Content().(*huh.Form); ok {
@@ -931,7 +951,7 @@ func (m *Model) View() string {
 
 			// Render palette centered
 			palette := m.commandPalette.View()
-			return compositeOverlay(dimmed, palette, m.width, m.height)
+			return compositeOverlay(dimmed, palette, m.height)
 		}
 	case stateCommentingSession:
 		if m.sessionCommentForm != nil {
@@ -1003,7 +1023,7 @@ func stripAnsi(s string) string {
 // compositeOverlay overlays the palette on top of the dimmed background.
 // This simulates transparency by showing dimmed content around the palette.
 // The palette is positioned at the bottom of the screen, full width.
-func compositeOverlay(background, palette string, _, height int) string {
+func compositeOverlay(background, palette string, height int) string {
 	bgLines := strings.Split(background, "\n")
 	paletteLines := strings.Split(palette, "\n")
 
