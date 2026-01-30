@@ -463,6 +463,9 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, sl.keys.Application.Help.Binding):
 			return sl, func() tea.Msg { return ShowHelpMsg{} }
 
+		case key.Matches(msg, sl.keys.Application.CommandPalette.Binding):
+			return sl, func() tea.Msg { return ShowCommandPaletteMsg{} }
+
 		case key.Matches(msg, sl.keys.SessionManagement.New.Binding):
 			return sl, func() tea.Msg { return NewSessionMsg{} }
 
