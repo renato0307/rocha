@@ -26,25 +26,25 @@ var AllKeyDefinitions = []KeyDefinition{
 	// Application keys
 	{Name: "command_palette", Defaults: []string{"O"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
 	{Name: "force_quit", Defaults: []string{"ctrl+c"}, Help: "quit"},
-	{Name: "help", Defaults: []string{"h", "?"}, Help: "help", PaletteName: "help", Msg: ShowHelpMsg{}, TipFormat: "press %s to see all shortcuts"},
-	{Name: "quit", Defaults: []string{"q"}, Help: "quit", PaletteName: "quit", Msg: QuitMsg{}},
+	{Name: "help", Defaults: []string{"h", "?"}, Help: "show keyboard shortcuts", PaletteName: "help", Msg: ShowHelpMsg{}, TipFormat: "press %s to see all shortcuts"},
+	{Name: "quit", Defaults: []string{"q"}, Help: "exit application", PaletteName: "quit", Msg: QuitMsg{}},
 	{Name: "timestamps", Defaults: []string{"t"}, Help: "toggle timestamps", PaletteName: "timestamps", Msg: ToggleTimestampsMsg{}, TipFormat: "press %s to toggle timestamp display"},
 	{Name: "token_chart", Defaults: []string{"T"}, Help: "toggle token chart", PaletteName: "token chart", Msg: ToggleTokenChartMsg{}, TipFormat: "press %s to toggle token usage chart"},
 
 	// Navigation keys
 	{Name: "clear_filter", Defaults: []string{"esc"}, Help: "clear filter (press twice within 500ms)", TipFormat: "press %s twice to clear the filter"},
-	{Name: "down", Defaults: []string{"down", "j"}, Help: "down"},
-	{Name: "filter", Defaults: []string{"/"}, Help: "filter", TipFormat: "press %s to filter sessions by name or branch"},
+	{Name: "down", Defaults: []string{"down", "j"}, Help: "select next session"},
+	{Name: "filter", Defaults: []string{"/"}, Help: "filter session list", TipFormat: "press %s to filter sessions by name or branch"},
 	{Name: "move_down", Defaults: []string{"J", "shift+down"}, Help: "move session down"},
 	{Name: "move_up", Defaults: []string{"K", "shift+up"}, Help: "move session up", TipFormat: "press %s to reorder sessions in the list"},
-	{Name: "up", Defaults: []string{"up", "k"}, Help: "up"},
+	{Name: "up", Defaults: []string{"up", "k"}, Help: "select previous session"},
 
 	// Session management keys
-	{Name: "archive", Defaults: []string{"a"}, Help: "archive", PaletteName: "archive", Msg: ArchiveSessionMsg{}, TipFormat: "press %s to archive a session (hidden from list)"},
-	{Name: "kill", Defaults: []string{"x"}, Help: "kill", PaletteName: "kill", Msg: KillSessionMsg{}, TipFormat: "press %s to kill a session and optionally remove its worktree"},
-	{Name: "new_session", Defaults: []string{"n"}, Help: "new", PaletteName: "new session", Msg: NewSessionMsg{}, TipFormat: "press %s to create a new session"},
+	{Name: "archive", Defaults: []string{"a"}, Help: "archive session", PaletteName: "archive", Msg: ArchiveSessionMsg{}, TipFormat: "press %s to archive a session (hidden from list)"},
+	{Name: "kill", Defaults: []string{"x"}, Help: "kill session and worktree", PaletteName: "kill", Msg: KillSessionMsg{}, TipFormat: "press %s to kill a session and optionally remove its worktree"},
+	{Name: "new_session", Defaults: []string{"n"}, Help: "create new session", PaletteName: "new session", Msg: NewSessionMsg{}, TipFormat: "press %s to create a new session"},
 	{Name: "new_from_repo", Defaults: []string{"N"}, Help: "new from same repo", PaletteName: "new from repo", Msg: NewSessionFromTemplateMsg{}, TipFormat: "press %s to create a new session based on the selected session"},
-	{Name: "rename", Defaults: []string{"r"}, Help: "rename", PaletteName: "rename", Msg: RenameSessionMsg{}, TipFormat: "press %s to rename a session"},
+	{Name: "rename", Defaults: []string{"r"}, Help: "rename session", PaletteName: "rename", Msg: RenameSessionMsg{}, TipFormat: "press %s to rename a session"},
 
 	// Session metadata keys
 	{Name: "comment", Defaults: []string{"c"}, Help: "comment (⌨)", PaletteName: "comment", Msg: CommentSessionMsg{}, TipFormat: "press %s to add a comment to a session"},
@@ -55,8 +55,8 @@ var AllKeyDefinitions = []KeyDefinition{
 
 	// Session action keys
 	{Name: "detach", Defaults: []string{"ctrl+q"}, Help: "detach from session (return to list)", TipFormat: "press %s inside a session to return to the list"},
-	{Name: "open", Defaults: []string{"enter"}, Help: "open", Msg: AttachSessionMsg{}},
-	{Name: "open_editor", Defaults: []string{"o"}, Help: "editor", PaletteName: "open editor", Msg: OpenEditorSessionMsg{}, TipFormat: "press %s to open the session's folder in your editor"},
+	{Name: "open", Defaults: []string{"enter"}, Help: "attach to session", Msg: AttachSessionMsg{}},
+	{Name: "open_editor", Defaults: []string{"o"}, Help: "open session in editor", PaletteName: "open editor", Msg: OpenEditorSessionMsg{}, TipFormat: "press %s to open the session's folder in your editor"},
 	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", Msg: AttachShellSessionMsg{}, TipFormat: "press %s to open a shell session alongside claude"},
 	{Name: "quick_open", Defaults: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}, Help: "quick open (0=10th)", TipFormat: "press %s to quickly open sessions by their number"},
 }
