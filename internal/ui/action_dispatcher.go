@@ -24,12 +24,12 @@ func (d *ActionDispatcher) Dispatch(def KeyDefinition) tea.Msg {
 	if def.Msg == nil {
 		return nil
 	}
-	if def.RequiresSession && d.session == nil {
-		return nil
-	}
 
 	// If message needs session context, call WithSession
 	if sessionMsg, ok := def.Msg.(SessionAwareMsg); ok {
+		if d.session == nil {
+			return nil
+		}
 		return sessionMsg.WithSession(d.session)
 	}
 

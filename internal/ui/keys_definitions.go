@@ -10,13 +10,22 @@ import (
 // KeyDefinition defines the metadata for a configurable key binding.
 // All key bindings are defined here as the single source of truth.
 type KeyDefinition struct {
-	Defaults        []string
-	Help            string
-	Msg             tea.Msg // Prototype message for dispatch (nil if not dispatchable)
-	Name            string
-	PaletteName     string // If non-empty, this key appears in command palette with this name
-	RequiresSession bool   // If true, action only available when a session is selected
-	TipFormat       string
+	Defaults    []string
+	Help        string
+	Msg         tea.Msg // Prototype message for dispatch (nil if not dispatchable)
+	Name        string
+	PaletteName string // If non-empty, this key appears in command palette with this name
+	TipFormat   string
+}
+
+// RequiresSession returns true if this key's action requires a session.
+// Inferred from whether the Msg implements SessionAwareMsg.
+func (k KeyDefinition) RequiresSession() bool {
+	if k.Msg == nil {
+		return false
+	}
+	_, ok := k.Msg.(SessionAwareMsg)
+	return ok
 }
 
 // AllKeyDefinitions contains all configurable key bindings.
@@ -41,24 +50,24 @@ var AllKeyDefinitions = []KeyDefinition{
 	{Name: "up", Defaults: []string{"up", "k"}, Help: "up"},
 
 	// Session management keys
-	{Name: "archive", Defaults: []string{"a"}, Help: "archive", PaletteName: "archive", Msg: ArchiveSessionMsg{}, RequiresSession: true, TipFormat: "press %s to archive a session (hidden from list)"},
-	{Name: "kill", Defaults: []string{"x"}, Help: "kill", PaletteName: "kill", Msg: KillSessionMsg{}, RequiresSession: true, TipFormat: "press %s to kill a session and optionally remove its worktree"},
+	{Name: "archive", Defaults: []string{"a"}, Help: "archive", PaletteName: "archive", Msg: ArchiveSessionMsg{}, TipFormat: "press %s to archive a session (hidden from list)"},
+	{Name: "kill", Defaults: []string{"x"}, Help: "kill", PaletteName: "kill", Msg: KillSessionMsg{}, TipFormat: "press %s to kill a session and optionally remove its worktree"},
 	{Name: "new_session", Defaults: []string{"n"}, Help: "new", PaletteName: "new session", Msg: NewSessionMsg{}, TipFormat: "press %s to create a new session"},
-	{Name: "new_from_repo", Defaults: []string{"N"}, Help: "new from same repo", PaletteName: "new from repo", Msg: NewSessionFromTemplateMsg{}, RequiresSession: true, TipFormat: "press %s to create a new session based on the selected session"},
-	{Name: "rename", Defaults: []string{"r"}, Help: "rename", PaletteName: "rename", Msg: RenameSessionMsg{}, RequiresSession: true, TipFormat: "press %s to rename a session"},
+	{Name: "new_from_repo", Defaults: []string{"N"}, Help: "new from same repo", PaletteName: "new from repo", Msg: NewSessionFromTemplateMsg{}, TipFormat: "press %s to create a new session based on the selected session"},
+	{Name: "rename", Defaults: []string{"r"}, Help: "rename", PaletteName: "rename", Msg: RenameSessionMsg{}, TipFormat: "press %s to rename a session"},
 
 	// Session metadata keys
-	{Name: "comment", Defaults: []string{"c"}, Help: "comment (⌨)", PaletteName: "comment", Msg: CommentSessionMsg{}, RequiresSession: true, TipFormat: "press %s to add a comment to a session"},
-	{Name: "cycle_status", Defaults: []string{"s"}, Help: "cycle status", Msg: CycleStatusMsg{}, RequiresSession: true, TipFormat: "press %s to cycle through implementation statuses"},
-	{Name: "flag", Defaults: []string{"f"}, Help: "flag (⚑)", PaletteName: "flag", Msg: ToggleFlagSessionMsg{}, RequiresSession: true, TipFormat: "press %s to flag a session for attention"},
-	{Name: "send_text", Defaults: []string{"p"}, Help: "send text (prompt)", PaletteName: "send text", Msg: SendTextSessionMsg{}, RequiresSession: true, TipFormat: "press %s to send text to a session (experimental)"},
-	{Name: "set_status", Defaults: []string{"S"}, Help: "set status", PaletteName: "set status", Msg: SetStatusSessionMsg{}, RequiresSession: true, TipFormat: "press %s to pick a specific status"},
+	{Name: "comment", Defaults: []string{"c"}, Help: "comment (⌨)", PaletteName: "comment", Msg: CommentSessionMsg{}, TipFormat: "press %s to add a comment to a session"},
+	{Name: "cycle_status", Defaults: []string{"s"}, Help: "cycle status", Msg: CycleStatusMsg{}, TipFormat: "press %s to cycle through implementation statuses"},
+	{Name: "flag", Defaults: []string{"f"}, Help: "flag (⚑)", PaletteName: "flag", Msg: ToggleFlagSessionMsg{}, TipFormat: "press %s to flag a session for attention"},
+	{Name: "send_text", Defaults: []string{"p"}, Help: "send text (prompt)", PaletteName: "send text", Msg: SendTextSessionMsg{}, TipFormat: "press %s to send text to a session (experimental)"},
+	{Name: "set_status", Defaults: []string{"S"}, Help: "set status", PaletteName: "set status", Msg: SetStatusSessionMsg{}, TipFormat: "press %s to pick a specific status"},
 
 	// Session action keys
 	{Name: "detach", Defaults: []string{"ctrl+q"}, Help: "detach from session (return to list)", TipFormat: "press %s inside a session to return to the list"},
-	{Name: "open", Defaults: []string{"enter"}, Help: "open", Msg: AttachSessionMsg{}, RequiresSession: true},
-	{Name: "open_editor", Defaults: []string{"o"}, Help: "editor", PaletteName: "open editor", Msg: OpenEditorSessionMsg{}, RequiresSession: true, TipFormat: "press %s to open the session's folder in your editor"},
-	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", Msg: AttachShellSessionMsg{}, RequiresSession: true, TipFormat: "press %s to open a shell session alongside claude"},
+	{Name: "open", Defaults: []string{"enter"}, Help: "open", Msg: AttachSessionMsg{}},
+	{Name: "open_editor", Defaults: []string{"o"}, Help: "editor", PaletteName: "open editor", Msg: OpenEditorSessionMsg{}, TipFormat: "press %s to open the session's folder in your editor"},
+	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", Msg: AttachShellSessionMsg{}, TipFormat: "press %s to open a shell session alongside claude"},
 	{Name: "quick_open", Defaults: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}, Help: "quick open (0=10th)", TipFormat: "press %s to quickly open sessions by their number"},
 }
 
@@ -126,7 +135,7 @@ func GetPaletteActions(hasSession bool) []KeyDefinition {
 		if def.PaletteName == "" {
 			continue
 		}
-		if def.RequiresSession && !hasSession {
+		if def.RequiresSession() && !hasSession {
 			continue
 		}
 		actions = append(actions, def)
