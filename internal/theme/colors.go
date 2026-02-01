@@ -44,7 +44,8 @@ const (
 const (
 	ColorAdditions Color = "2"   // Green
 	ColorDeletions Color = "1"   // Red
-	ColorPRLabel   Color = "3"   // Yellow - same as idle icon
+	ColorPRClosed  Color = "241" // Gray - closed PR
+	ColorPRLabel   Color = "3"   // Yellow - open PR
 	ColorPRMerged  Color = "141" // Light purple - merged PR
 )
 

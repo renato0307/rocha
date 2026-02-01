@@ -50,6 +50,9 @@ var (
 	DeletionsStyle = lipgloss.NewStyle().
 			Foreground(ColorDeletions)
 
+	PRClosedStyle = lipgloss.NewStyle().
+			Foreground(ColorPRClosed)
+
 	PRLabelStyle = lipgloss.NewStyle().
 			Foreground(ColorPRLabel)
 

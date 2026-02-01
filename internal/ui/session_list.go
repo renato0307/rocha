@@ -39,6 +39,7 @@ type SessionItem struct {
 	HasShellSession bool // Track if shell session exists
 	IsFlagged       bool
 	LastUpdated     time.Time
+	PRState         string // PR state: OPEN, MERGED, CLOSED
 	Session         *ports.TmuxSession
 	State           string
 	Status          *string // Implementation status
@@ -202,12 +203,17 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 				}
 				parts[i] = strings.Join(words, " ")
 			} else if strings.HasPrefix(part, "PR #") {
-				// Style "PR" - purple if merged, yellow otherwise
-				if strings.Contains(part, "(merged)") {
-					parts[i] = theme.PRMergedStyle.Render("PR") + theme.BranchStyle.Render(part[2:])
-				} else {
-					parts[i] = theme.PRLabelStyle.Render("PR") + theme.BranchStyle.Render(part[2:])
+				// Style "PR" based on state: yellow=open, purple=merged, gray=closed
+				var prStyle lipgloss.Style
+				switch item.PRState {
+				case "MERGED":
+					prStyle = theme.PRMergedStyle
+				case "CLOSED":
+					prStyle = theme.PRClosedStyle
+				default:
+					prStyle = theme.PRLabelStyle
 				}
+				parts[i] = prStyle.Render("PR") + theme.BranchStyle.Render(part[2:])
 			} else {
 				// Apply gray color to non-stat parts (branch name, ahead/behind, etc)
 				parts[i] = theme.BranchStyle.Render(part)
@@ -790,14 +796,12 @@ func buildListItems(sessionState *domain.SessionCollection, sessionService *serv
 		}
 
 		// Add PR number if available (between branch and git stats)
+		// State is stored in SessionItem.PRState for color-coding in Render
+		var prState string
 		if info.PRInfo != nil && info.PRInfo.Number > 0 {
 			prStr := fmt.Sprintf("PR #%d", info.PRInfo.Number)
-			if info.PRInfo.State == "CLOSED" {
-				prStr += " (closed)"
-			} else if info.PRInfo.State == "MERGED" {
-				prStr += " (merged)"
-			}
 			gitRef += " · " + prStr
+			prState = info.PRInfo.State
 		}
 
 		// Append git stats if available
@@ -828,6 +832,7 @@ func buildListItems(sessionState *domain.SessionCollection, sessionService *serv
 			HasShellSession: hasShell,
 			IsFlagged:       info.IsFlagged,
 			LastUpdated:     info.LastUpdated,
+			PRState:         prState,
 			Session:         session,
 			State:           string(info.State),
 			Status:          info.Status,
