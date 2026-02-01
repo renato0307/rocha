@@ -23,6 +23,7 @@ type SessionWriter interface {
 // SessionStateUpdater updates session state
 type SessionStateUpdater interface {
 	UpdateClaudeDir(ctx context.Context, name, claudeDir string) error
+	UpdateExecutionID(ctx context.Context, name, executionID string) error
 	UpdateRepoSource(ctx context.Context, name, repoSource string) error
 	UpdateSkipPermissions(ctx context.Context, name string, skip bool) error
 	UpdateState(ctx context.Context, name string, state domain.SessionState, executionID string) error
