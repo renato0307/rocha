@@ -172,8 +172,8 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 		// Apply colors to +N and -N in the git ref
 		styledGitRef := item.GitRef
 
-		// Split by " | " to process each section
-		parts := strings.Split(styledGitRef, " | ")
+		// Split by " · " to process each section
+		parts := strings.Split(styledGitRef, " · ")
 		for i, part := range parts {
 			// Check if this part contains file stats (starts with +digit or has +digit in it)
 			hasFileStats := false
@@ -201,12 +201,19 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 					}
 				}
 				parts[i] = strings.Join(words, " ")
+			} else if strings.HasPrefix(part, "PR #") {
+				// Style "PR" - purple if merged, yellow otherwise
+				if strings.Contains(part, "(merged)") {
+					parts[i] = theme.PRMergedStyle.Render("PR") + theme.BranchStyle.Render(part[2:])
+				} else {
+					parts[i] = theme.PRLabelStyle.Render("PR") + theme.BranchStyle.Render(part[2:])
+				}
 			} else {
-				// Apply gray color to non-stat parts (branch name, PR, ahead/behind, etc)
+				// Apply gray color to non-stat parts (branch name, ahead/behind, etc)
 				parts[i] = theme.BranchStyle.Render(part)
 			}
 		}
-		styledGitRef = strings.Join(parts, theme.BranchStyle.Render(" | "))
+		styledGitRef = strings.Join(parts, theme.BranchStyle.Render(" · "))
 
 		line2 = theme.BranchStyle.Render(indent) + styledGitRef
 	}
@@ -509,6 +516,11 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sl, func() tea.Msg { return OpenEditorSessionMsg{SessionName: item.Session.Name} }
 			}
 
+		case key.Matches(msg, sl.keys.SessionActions.OpenPR.Binding):
+			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
+				return sl, func() tea.Msg { return OpenPRMsg{SessionName: item.Session.Name} }
+			}
+
 		case key.Matches(msg, sl.keys.SessionMetadata.Flag.Binding):
 			if item, ok := sl.list.SelectedItem().(SessionItem); ok {
 				return sl, func() tea.Msg { return ToggleFlagSessionMsg{SessionName: item.Session.Name} }
@@ -777,6 +789,17 @@ func buildListItems(sessionState *domain.SessionCollection, sessionService *serv
 			hasShell = sessionService.SessionExists(info.ShellSession.Name)
 		}
 
+		// Add PR number if available (between branch and git stats)
+		if info.PRInfo != nil && info.PRInfo.Number > 0 {
+			prStr := fmt.Sprintf("PR #%d", info.PRInfo.Number)
+			if info.PRInfo.State == "CLOSED" {
+				prStr += " (closed)"
+			} else if info.PRInfo.State == "MERGED" {
+				prStr += " (merged)"
+			}
+			gitRef += " · " + prStr
+		}
+
 		// Append git stats if available
 		if info.GitStats != nil {
 			stats := info.GitStats
@@ -788,12 +811,12 @@ func buildListItems(sessionState *domain.SessionCollection, sessionService *serv
 			} else {
 				// Add ahead/behind (if non-zero)
 				if stats.Ahead > 0 || stats.Behind > 0 {
-					gitRef += fmt.Sprintf(" | ↑%d ↓%d", stats.Ahead, stats.Behind)
+					gitRef += fmt.Sprintf(" · ↑%d ↓%d", stats.Ahead, stats.Behind)
 				}
 
 				// Add file stats (if non-zero)
 				if stats.ChangedFiles > 0 || stats.Additions > 0 || stats.Deletions > 0 {
-					gitRef += fmt.Sprintf(" | %d files +%d -%d", stats.ChangedFiles, stats.Additions, stats.Deletions)
+					gitRef += fmt.Sprintf(" · %d files +%d -%d", stats.ChangedFiles, stats.Additions, stats.Deletions)
 				}
 			}
 		}

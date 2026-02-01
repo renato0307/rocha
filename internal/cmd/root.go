@@ -115,6 +115,7 @@ type RunCmd struct {
 	Dev                        bool   `help:"Enable development mode (shows version info in dialogs)"`
 	Editor                     string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 	ErrorClearDelay            int    `help:"Seconds before error messages auto-clear" default:"10"`
+	ShowPRNumber               bool   `help:"Show PR number in git stats (fetched on detach)" default:"true"`
 	ShowTimestamps             bool   `help:"Show relative timestamps for last state changes" default:"false"`
 	ShowTokenChart             bool   `help:"Show token usage chart by default" default:"false"`
 	StatusColors               string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
@@ -210,6 +211,13 @@ func (r *RunCmd) Run(cli *CLI) error {
 				r.ShowTokenChart = true
 			}
 		}
+
+		// Apply ShowPRNumber setting (default is true, so check for explicit false)
+		if r.ShowPRNumber {
+			if cli.settings.ShowPRNumber != nil && !*cli.settings.ShowPRNumber {
+				r.ShowPRNumber = false
+			}
+		}
 	}
 
 	logging.Logger.Info("Starting rocha TUI")
@@ -297,6 +305,7 @@ func (r *RunCmd) Run(cli *CLI) error {
 			r.Dev,
 			r.ShowTimestamps,
 			r.ShowTokenChart,
+			r.ShowPRNumber,
 			r.TmuxStatusPosition,
 			allowDangerouslySkipPermissionsDefault,
 			tipsConfig,

@@ -123,6 +123,18 @@ func (r *CLIRepository) FetchGitStats(ctx context.Context, worktreePath string) 
 	return fetchGitStats(ctx, worktreePath)
 }
 
+// PRInfoProvider methods
+
+// FetchPRInfo implements PRInfoProvider.FetchPRInfo
+func (r *CLIRepository) FetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error) {
+	return fetchPRInfo(ctx, worktreePath, branchName)
+}
+
+// OpenPRInBrowser implements PRInfoProvider.OpenPRInBrowser
+func (r *CLIRepository) OpenPRInBrowser(worktreePath string) error {
+	return openPRInBrowser(worktreePath)
+}
+
 // repoSourceToDomain converts local repoSource to domain.RepoSource
 func repoSourceToDomain(rs *repoSource) *domain.RepoSource {
 	if rs == nil {

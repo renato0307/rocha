@@ -74,3 +74,13 @@ func (s *GitService) GetMainRepoPath(path string) (string, error) {
 func (s *GitService) GetBranchName(path string) string {
 	return s.gitRepo.GetBranchName(path)
 }
+
+// FetchPRInfo fetches PR information for a branch
+func (s *GitService) FetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error) {
+	return s.gitRepo.FetchPRInfo(ctx, worktreePath, branchName)
+}
+
+// OpenPRInBrowser opens the PR URL in the default browser
+func (s *GitService) OpenPRInBrowser(worktreePath string) error {
+	return s.gitRepo.OpenPRInBrowser(worktreePath)
+}

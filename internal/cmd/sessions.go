@@ -11,6 +11,7 @@ type SessionsCmd struct {
 	Flag      SessionsFlagCmd      `cmd:"flag" help:"Toggle session flag"`
 	List      SessionsListCmd      `cmd:"list" help:"List all sessions" default:"1"`
 	Move      SessionsMoveCmd      `cmd:"move" aliases:"mv" help:"Move sessions between ROCHA_HOME directories"`
+	OpenPR    SessionsOpenPRCmd    `cmd:"open-pr" help:"Open PR in browser for a session"`
 	Rename    SessionsRenameCmd    `cmd:"rename" help:"Update session display name"`
 	Set                SessionSetCmd                `cmd:"set" help:"Set session configuration"`
 	Status             SessionsStatusCmd            `cmd:"status" help:"Set or clear implementation status"`

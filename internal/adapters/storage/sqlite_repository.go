@@ -205,6 +205,23 @@ func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
 		}
 	}
 
+	if !migrator.HasTable(&SessionPRInfoModel{}) {
+		if err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS session_pr_info (
+				session_name TEXT PRIMARY KEY,
+				number INTEGER NOT NULL DEFAULT 0,
+				state TEXT NOT NULL DEFAULT '',
+				url TEXT NOT NULL DEFAULT '',
+				checked_at DATETIME,
+				created_at DATETIME,
+				updated_at DATETIME,
+				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
+			)
+		`).Error; err != nil {
+			return nil, fmt.Errorf("failed to create session_pr_info table: %w", err)
+		}
+	}
+
 	// Configure connection pool
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -242,6 +259,7 @@ func (r *SQLiteRepository) Get(ctx context.Context, name string) (*domain.Sessio
 	var archive SessionArchiveModel
 	var agentCLIFlags SessionAgentCLIFlagsModel
 	var nestedAgentCLIFlags SessionAgentCLIFlagsModel
+	var prInfo SessionPRInfoModel
 
 	err := withRetry(func() error {
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -255,6 +273,7 @@ func (r *SQLiteRepository) Get(ctx context.Context, name string) (*domain.Sessio
 			tx.Where("session_name = ?", name).First(&comment)
 			tx.Where("session_name = ?", name).First(&archive)
 			tx.Where("session_name = ?", name).First(&agentCLIFlags)
+			tx.Where("session_name = ?", name).First(&prInfo)
 
 			// Load nested session
 			err := tx.Where("parent_name = ?", name).First(&nestedSession).Error
@@ -278,11 +297,21 @@ func (r *SQLiteRepository) Get(ctx context.Context, name string) (*domain.Sessio
 		statusPtr = &status.Status
 	}
 
-	result := sessionModelToDomain(session, flag.IsFlagged, statusPtr, comment.Comment, archive.IsArchived, agentCLIFlags.AllowDangerouslySkipPermissions)
+	var prInfoPtr *domain.PRInfo
+	if prInfo.Number > 0 || prInfo.URL != "" {
+		prInfoPtr = &domain.PRInfo{
+			CheckedAt: prInfo.CheckedAt,
+			Number:    prInfo.Number,
+			State:     prInfo.State,
+			URL:       prInfo.URL,
+		}
+	}
+
+	result := sessionModelToDomain(session, flag.IsFlagged, statusPtr, comment.Comment, archive.IsArchived, agentCLIFlags.AllowDangerouslySkipPermissions, prInfoPtr)
 
 	// Add nested session if found
 	if nestedSession.Name != "" {
-		nested := sessionModelToDomain(nestedSession, false, nil, "", false, nestedAgentCLIFlags.AllowDangerouslySkipPermissions)
+		nested := sessionModelToDomain(nestedSession, false, nil, "", false, nestedAgentCLIFlags.AllowDangerouslySkipPermissions, nil)
 		result.ShellSession = &nested
 	}
 
@@ -298,6 +327,7 @@ func (r *SQLiteRepository) List(ctx context.Context, includeArchived bool) ([]do
 	var comments []SessionCommentModel
 	var archives []SessionArchiveModel
 	var agentCLIFlags []SessionAgentCLIFlagsModel
+	var prInfos []SessionPRInfoModel
 
 	err := withRetry(func() error {
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -315,6 +345,7 @@ func (r *SQLiteRepository) List(ctx context.Context, includeArchived bool) ([]do
 			tx.Find(&comments)
 			tx.Find(&archives)
 			tx.Find(&agentCLIFlags)
+			tx.Find(&prInfos)
 
 			return nil
 		})
@@ -358,13 +389,23 @@ func (r *SQLiteRepository) List(ctx context.Context, includeArchived bool) ([]do
 		cliMap[f.SessionName] = f.AllowDangerouslySkipPermissions
 	}
 
+	prInfoMap := make(map[string]*domain.PRInfo)
+	for _, p := range prInfos {
+		prInfoMap[p.SessionName] = &domain.PRInfo{
+			CheckedAt: p.CheckedAt,
+			Number:    p.Number,
+			State:     p.State,
+			URL:       p.URL,
+		}
+	}
+
 	// Convert to domain
 	result := make([]domain.Session, len(sessions))
 	for i, sess := range sessions {
-		result[i] = sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name])
+		result[i] = sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name], prInfoMap[sess.Name])
 
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedDomain := sessionModelToDomain(nested, false, nil, "", false, cliMap[nested.Name])
+			nestedDomain := sessionModelToDomain(nested, false, nil, "", false, cliMap[nested.Name], nil)
 			result[i].ShellSession = &nestedDomain
 		}
 	}
@@ -763,6 +804,26 @@ func (r *SQLiteRepository) UpdateComment(ctx context.Context, name, comment stri
 	}, 3)
 }
 
+// UpdatePRInfo implements SessionMetadataUpdater.UpdatePRInfo
+func (r *SQLiteRepository) UpdatePRInfo(ctx context.Context, name string, prInfo *domain.PRInfo) error {
+	return withRetry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if prInfo == nil {
+				tx.Where("session_name = ?", name).Delete(&SessionPRInfoModel{})
+				return nil
+			}
+
+			return tx.Save(&SessionPRInfoModel{
+				CheckedAt:   prInfo.CheckedAt,
+				Number:      prInfo.Number,
+				SessionName: name,
+				State:       prInfo.State,
+				URL:         prInfo.URL,
+			}).Error
+		})
+	}, 3)
+}
+
 // LoadState implements SessionStateLoader.LoadState
 func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error) {
 	var sessions []SessionModel
@@ -771,6 +832,7 @@ func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) 
 	var statuses []SessionStatusModel
 	var archives []SessionArchiveModel
 	var agentCLIFlags []SessionAgentCLIFlagsModel
+	var prInfos []SessionPRInfoModel
 
 	err := withRetry(func() error {
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -787,6 +849,7 @@ func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) 
 			tx.Find(&statuses)
 			tx.Find(&archives)
 			tx.Find(&agentCLIFlags)
+			tx.Find(&prInfos)
 
 			// Normalize positions if needed
 			needsNormalization := false
@@ -843,6 +906,16 @@ func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) 
 		cliMap[f.SessionName] = f.AllowDangerouslySkipPermissions
 	}
 
+	prInfoMap := make(map[string]*domain.PRInfo)
+	for _, p := range prInfos {
+		prInfoMap[p.SessionName] = &domain.PRInfo{
+			CheckedAt: p.CheckedAt,
+			Number:    p.Number,
+			State:     p.State,
+			URL:       p.URL,
+		}
+	}
+
 	// Build result
 	collection := &domain.SessionCollection{
 		OrderedNames: make([]string, len(sessions)),
@@ -852,12 +925,12 @@ func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) 
 	for i, sess := range sessions {
 		collection.OrderedNames[i] = sess.Name
 
-		domainSess := sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name])
+		domainSess := sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name], prInfoMap[sess.Name])
 
 		// Load nested session
 		var nestedSession SessionModel
 		if err := r.db.Where("parent_name = ?", sess.Name).First(&nestedSession).Error; err == nil {
-			nested := sessionModelToDomain(nestedSession, false, nil, "", false, cliMap[nestedSession.Name])
+			nested := sessionModelToDomain(nestedSession, false, nil, "", false, cliMap[nestedSession.Name], nil)
 			domainSess.ShellSession = &nested
 		}
 

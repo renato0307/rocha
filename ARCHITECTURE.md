@@ -236,6 +236,7 @@ graph LR
     subgraph "External Tools"
         TMUX[tmux]
         GIT[git]
+        GH[gh CLI]
         CLAUDE[claude CLI]
     end
 
@@ -244,6 +245,7 @@ graph LR
     APP --> GORM
     APP --> TMUX
     APP --> GIT
+    APP -.-> GH
     APP -.-> CLAUDE
 ```
 

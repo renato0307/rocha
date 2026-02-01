@@ -47,10 +47,17 @@ type GitStatsProvider interface {
 	FetchGitStats(ctx context.Context, worktreePath string) (*domain.GitStats, error)
 }
 
+// PRInfoProvider provides PR information for UI
+type PRInfoProvider interface {
+	FetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error)
+	OpenPRInBrowser(worktreePath string) error
+}
+
 // GitRepository is the composite interface
 type GitRepository interface {
 	BranchValidator
 	GitStatsProvider
+	PRInfoProvider
 	RepoCloner
 	RepoInspector
 	RepoSourceParser

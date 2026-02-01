@@ -1,5 +1,17 @@
 # Testing Guidelines
 
+## When to write Unit Tests
+
+ALWAYS but we seek for writting tests
+for things that are worthwhile not just for
+coverage per se.
+
+Always write tests for a bug, before you fix it.
+
+## When Planning
+
+Include what tests you will include and which you don't and why.
+
 ## Running Unit Tests
 
 ```bash

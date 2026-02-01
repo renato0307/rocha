@@ -49,6 +49,12 @@ var (
 
 	DeletionsStyle = lipgloss.NewStyle().
 			Foreground(ColorDeletions)
+
+	PRLabelStyle = lipgloss.NewStyle().
+			Foreground(ColorPRLabel)
+
+	PRMergedStyle = lipgloss.NewStyle().
+			Foreground(ColorPRMerged)
 )
 
 // Dialog header styles

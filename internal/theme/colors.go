@@ -42,8 +42,10 @@ const (
 
 // Git colors
 const (
-	ColorAdditions Color = "2" // Green
-	ColorDeletions Color = "1" // Red
+	ColorAdditions Color = "2"   // Green
+	ColorDeletions Color = "1"   // Red
+	ColorPRLabel   Color = "3"   // Yellow - same as idle icon
+	ColorPRMerged  Color = "141" // Light purple - merged PR
 )
 
 // Token chart colors
