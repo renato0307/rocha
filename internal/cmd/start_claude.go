@@ -18,11 +18,8 @@ type StartClaudeCmd struct {
 
 // Run executes Claude with hooks configuration
 func (s *StartClaudeCmd) Run(cli *CLI) error {
-	// Get the path to the rocha binary
-	rochaBin, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get rocha executable path: %w", err)
-	}
+	// Use "rocha" from PATH so hooks always use the current installed binary
+	rochaBin := "rocha"
 
 	// Get session name from environment variable
 	sessionName := os.Getenv("ROCHA_SESSION_NAME")
@@ -142,7 +139,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					},
 				},
 			},
-			// PostToolUse: When AskUserQuestion tool completes (user has answered)
+			// PostToolUse: When tools complete (user granted permission or answered question)
 			"PostToolUse": []map[string]interface{}{
 				{
 					"matcher": "AskUserQuestion",
@@ -150,6 +147,15 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 						{
 							"type":    "command",
 							"command": fmt.Sprintf("%s notify handle %s working --execution-id=%s", rochaBin, sessionName, executionID),
+						},
+					},
+				},
+				{
+					"matcher": "Bash|Write|Edit",
+					"hooks": []map[string]interface{}{
+						{
+							"type":    "command",
+							"command": fmt.Sprintf("%s notify handle %s tool-complete --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
