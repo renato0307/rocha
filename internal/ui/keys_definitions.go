@@ -25,7 +25,7 @@ type KeyDefinition struct {
 var AllKeyDefinitions = []KeyDefinition{
 	// Application keys
 	{Name: "command_palette", Defaults: []string{"O"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
-	{Name: "force_quit", Defaults: []string{"ctrl+c"}, Help: "quit"},
+	{Name: "force_quit", Defaults: []string{"ctrl+c"}, Help: "force quit"},
 	{Name: "help", Defaults: []string{"h", "?"}, Help: "show keyboard shortcuts", PaletteName: "help", Msg: ShowHelpMsg{}, TipFormat: "press %s to see all shortcuts"},
 	{Name: "quit", Defaults: []string{"q"}, Help: "exit application", PaletteName: "quit", Msg: QuitMsg{}},
 	{Name: "timestamps", Defaults: []string{"t"}, Help: "toggle timestamps", PaletteName: "timestamps", Msg: ToggleTimestampsMsg{}, TipFormat: "press %s to toggle timestamp display"},
@@ -47,17 +47,17 @@ var AllKeyDefinitions = []KeyDefinition{
 	{Name: "rename", Defaults: []string{"r"}, Help: "rename session", PaletteName: "rename", Msg: RenameSessionMsg{}, TipFormat: "press %s to rename a session"},
 
 	// Session metadata keys
-	{Name: "comment", Defaults: []string{"c"}, Help: "comment (⌨)", PaletteName: "comment", Msg: CommentSessionMsg{}, TipFormat: "press %s to add a comment to a session"},
+	{Name: "comment", Defaults: []string{"c"}, Help: "add/edit comment (⌨)", PaletteName: "comment", Msg: CommentSessionMsg{}, TipFormat: "press %s to add a comment to a session"},
 	{Name: "cycle_status", Defaults: []string{"s"}, Help: "cycle status", Msg: CycleStatusMsg{}, TipFormat: "press %s to cycle through implementation statuses"},
-	{Name: "flag", Defaults: []string{"f"}, Help: "flag (⚑)", PaletteName: "flag", Msg: ToggleFlagSessionMsg{}, TipFormat: "press %s to flag a session for attention"},
+	{Name: "flag", Defaults: []string{"f"}, Help: "toggle flag (⚑)", PaletteName: "flag", Msg: ToggleFlagSessionMsg{}, TipFormat: "press %s to flag a session for attention"},
 	{Name: "send_text", Defaults: []string{"p"}, Help: "send text (prompt)", PaletteName: "send text", Msg: SendTextSessionMsg{}, TipFormat: "press %s to send text to a session (experimental)"},
-	{Name: "set_status", Defaults: []string{"S"}, Help: "set status", PaletteName: "set status", Msg: SetStatusSessionMsg{}, TipFormat: "press %s to pick a specific status"},
+	{Name: "set_status", Defaults: []string{"S"}, Help: "choose status", PaletteName: "set status", Msg: SetStatusSessionMsg{}, TipFormat: "press %s to pick a specific status"},
 
 	// Session action keys
 	{Name: "detach", Defaults: []string{"ctrl+q"}, Help: "detach from session (return to list)", TipFormat: "press %s inside a session to return to the list"},
 	{Name: "open", Defaults: []string{"enter"}, Help: "attach to session", PaletteName: "open", Msg: AttachSessionMsg{}},
 	{Name: "open_editor", Defaults: []string{"o"}, Help: "open session in editor", PaletteName: "open editor", Msg: OpenEditorSessionMsg{}, TipFormat: "press %s to open the session's folder in your editor"},
-	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", PaletteName: "open shell", Msg: AttachShellSessionMsg{}, TipFormat: "press %s to open a shell session alongside claude"},
+	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "open shell session (>_)", PaletteName: "open shell", Msg: AttachShellSessionMsg{}, TipFormat: "press %s to open a shell session alongside claude"},
 	{Name: "quick_open", Defaults: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}, Help: "quick open (0=10th)", TipFormat: "press %s to quickly open sessions by their number"},
 }
 
