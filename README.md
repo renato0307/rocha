@@ -239,6 +239,28 @@ Logs go to:
 - macOS: `~/Library/Logs/rocha/`
 - Windows: `%LOCALAPPDATA%\rocha\logs\`
 
+### Debugging Claude Code Sessions
+
+To enable debug logging specifically for Claude Code (separate from rocha debugging):
+
+```bash
+# Create a session with Claude debug logging enabled
+rocha attach --debug-claude
+
+# Enable debug mode for an existing session
+rocha sessions set my-session --variable=debug-claude --value=true
+
+# Set as default for all new sessions in settings.json
+{
+  "debug_claude": true
+}
+
+# View current debug setting
+rocha sessions view my-session
+```
+
+This adds the `--debug` flag to Claude Code itself, useful for troubleshooting Claude-specific issues.
+
 ## Contributing
 
 ### Requirements

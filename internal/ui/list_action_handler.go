@@ -57,6 +57,7 @@ type ActionResult struct {
 // ListActionHandler processes SessionList action requests
 type ListActionHandler struct {
 	allowDangerouslySkipPermissionsDefault bool
+	debugClaudeDefault                     bool
 	devMode                                bool
 	editor                                 string
 	errorManager                           *ErrorManager
@@ -82,11 +83,13 @@ func NewListActionHandler(
 	tmuxStatusPosition string,
 	devMode bool,
 	allowDangerouslySkipPermissionsDefault bool,
+	debugClaudeDefault bool,
 	sessionService *services.SessionService,
 	shellService *services.ShellService,
 ) *ListActionHandler {
 	return &ListActionHandler{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
+		debugClaudeDefault:                     debugClaudeDefault,
 		devMode:                                devMode,
 		editor:                                 editor,
 		errorManager:                           errorManager,

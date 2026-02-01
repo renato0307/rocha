@@ -34,6 +34,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 	var claudeDir string
 	var executionID string
 	var allowDangerouslySkipPermissions bool
+	var debugClaude bool
 
 	ctx := context.Background()
 	st, err := cli.Container.SessionService.LoadState(ctx, false)
@@ -49,9 +50,14 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 			claudeDir = session.ClaudeDir
 			executionID = session.ExecutionID
 			allowDangerouslySkipPermissions = session.AllowDangerouslySkipPermissions
+			debugClaude = session.DebugClaude
 			logging.Logger.Info("Using execution ID from session", "execution_id", executionID)
 			if allowDangerouslySkipPermissions {
 				logging.Logger.Warn("DANGEROUS MODE ENABLED: Claude will skip permission prompts",
+					"session", sessionName)
+			}
+			if debugClaude {
+				logging.Logger.Warn("DEBUG MODE ENABLED: Claude will output debug logging",
 					"session", sessionName)
 			}
 			if claudeDir != "" {
@@ -70,7 +76,8 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 	logging.Logger.Info("Starting Claude with hooks",
 		"session", sessionName,
 		"execution_id", executionID,
-		"allow_dangerously_skip_permissions", allowDangerouslySkipPermissions)
+		"allow_dangerously_skip_permissions", allowDangerouslySkipPermissions,
+		"debug_claude", debugClaude)
 
 	// Build the hooks configuration with multiple event types
 	hooks := map[string]interface{}{
@@ -176,6 +183,13 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 	if allowDangerouslySkipPermissions {
 		args = append(args, "--allow-dangerously-skip-permissions")
 		logging.Logger.Warn("Adding --allow-dangerously-skip-permissions to Claude command",
+			"session", sessionName)
+	}
+
+	// Add --debug flag if enabled for this session
+	if debugClaude {
+		args = append(args, "--debug")
+		logging.Logger.Warn("Adding --debug to Claude command",
 			"session", sessionName)
 	}
 

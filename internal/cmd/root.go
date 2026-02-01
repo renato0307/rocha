@@ -261,6 +261,14 @@ func (r *RunCmd) Run(cli *CLI) error {
 	logging.Logger.Debug("Allow dangerously skip permissions default from settings",
 		"value", allowDangerouslySkipPermissionsDefault)
 
+	// Extract debug claude default from settings
+	debugClaudeDefault := false
+	if cli.settings != nil && cli.settings.DebugClaude != nil {
+		debugClaudeDefault = *cli.settings.DebugClaude
+	}
+	logging.Logger.Debug("Debug Claude default from settings",
+		"value", debugClaudeDefault)
+
 	// Validate key bindings if configured
 	var keysConfig config.KeyBindingsConfig
 	if cli.settings != nil && cli.settings.Keys != nil {
@@ -298,6 +306,7 @@ func (r *RunCmd) Run(cli *CLI) error {
 			r.ShowTokenChart,
 			r.TmuxStatusPosition,
 			allowDangerouslySkipPermissionsDefault,
+			debugClaudeDefault,
 			tipsConfig,
 			keysConfig,
 			cli.Container.GitService,

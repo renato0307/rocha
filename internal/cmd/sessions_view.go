@@ -54,6 +54,7 @@ func (s *SessionsViewCmd) printTable(session *domain.Session) error {
 		fmt.Printf("Claude Dir: <default>\n")
 	}
 	fmt.Printf("Allow Dangerously Skip Permissions: %t\n", session.AllowDangerouslySkipPermissions)
+	fmt.Printf("Debug Claude: %t\n", session.DebugClaude)
 	if session.InitialPrompt != "" {
 		fmt.Printf("Initial Prompt: %s\n", session.InitialPrompt)
 	}

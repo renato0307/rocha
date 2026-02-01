@@ -34,6 +34,7 @@ const (
 
 type Model struct {
 	allowDangerouslySkipPermissionsDefault bool                         // Default value from settings for new sessions
+	debugClaudeDefault                     bool                         // Default value from settings for new sessions
 	devMode                                bool                         // Development mode (shows version info in dialogs)
 	editor                                 string                       // Editor to open sessions in
 	errorManager                           *ErrorManager                // Error display and auto-clearing
@@ -76,6 +77,7 @@ func NewModel(
 	showTokenChart bool,
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
+	debugClaudeDefault bool,
 	tipsConfig TipsConfig,
 	keysConfig config.KeyBindingsConfig,
 	gitService *services.GitService,
@@ -121,6 +123,7 @@ func NewModel(
 		tmuxStatusPosition,
 		devMode,
 		allowDangerouslySkipPermissionsDefault,
+		debugClaudeDefault,
 		sessionService,
 		shellService,
 	)
@@ -133,6 +136,7 @@ func NewModel(
 
 	return &Model{
 		allowDangerouslySkipPermissionsDefault: allowDangerouslySkipPermissionsDefault,
+		debugClaudeDefault:                     debugClaudeDefault,
 		devMode:                                devMode,
 		editor:                                 editor,
 		errorManager:                           errorManager,
@@ -502,8 +506,9 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 	case ActionShowNewSessionDialog:
 		logging.Logger.Debug("Creating new session dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
+			"debug_claude_default", m.debugClaudeDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, m.debugClaudeDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()
@@ -511,8 +516,9 @@ func (m *Model) handleActionResult(result ActionResult, fallbackCmd tea.Cmd) (te
 	case ActionShowNewSessionFromDialog:
 		logging.Logger.Debug("Creating new session from template dialog",
 			"allow_dangerously_skip_permissions_default", m.allowDangerouslySkipPermissionsDefault,
+			"debug_claude_default", m.debugClaudeDefault,
 			"default_repo_source", result.DefaultRepoSource)
-		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, result.DefaultRepoSource)
+		contentForm := NewSessionForm(m.gitService, m.sessionService, m.sessionState, m.tmuxStatusPosition, m.allowDangerouslySkipPermissionsDefault, m.debugClaudeDefault, result.DefaultRepoSource)
 		m.sessionForm = NewDialog("Create Session (from same repo)", contentForm, m.devMode)
 		m.state = result.NewState
 		return m, m.sessionForm.Init()

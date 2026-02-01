@@ -91,6 +91,7 @@ const DefaultTmuxStatusPosition = "bottom"
 type Settings struct {
 	AllowDangerouslySkipPermissions *bool             `json:"allow_dangerously_skip_permissions,omitempty"`
 	Debug                           *bool             `json:"debug,omitempty"`
+	DebugClaude                     *bool             `json:"debug_claude,omitempty"`
 	Editor                          string            `json:"editor,omitempty"`
 	ErrorClearDelay                 *int              `json:"error_clear_delay,omitempty"`
 	Keys                            KeyBindingsConfig `json:"keys,omitempty"`

@@ -155,6 +155,7 @@ func (s *SessionService) CreateSession(
 		AllowDangerouslySkipPermissions: params.AllowDangerouslySkipPermissions,
 		BranchName:                      branchName,
 		ClaudeDir:                       claudeDir,
+		DebugClaude:                     params.DebugClaude,
 		DisplayName:                     sessionName,
 		ExecutionID:                     executionID,
 		InitialPrompt:                   params.InitialPrompt,

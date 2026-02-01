@@ -43,6 +43,9 @@ func NewTestGitSetup(tb testing.TB) *TestGitSetup {
 	runGitCommand(tb, clonePath, "config", "user.email", "test@example.com")
 	runGitCommand(tb, clonePath, "config", "user.name", "Test User")
 
+	// Explicitly create and checkout main branch
+	runGitCommand(tb, clonePath, "checkout", "-b", "main")
+
 	// Create initial commit so branches can be created
 	dummyFile := filepath.Join(clonePath, "README.md")
 	if err := os.WriteFile(dummyFile, []byte("# Test Repo\n"), 0644); err != nil {

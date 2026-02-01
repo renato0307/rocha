@@ -67,6 +67,30 @@ func (s *SettingsService) SetSkipPermissions(
 	return nil
 }
 
+// SetDebugClaude updates DebugClaude flag for a session
+func (s *SettingsService) SetDebugClaude(
+	ctx context.Context,
+	sessionName string,
+	debug bool,
+) error {
+	logging.Logger.Info("Setting debug Claude flag for session",
+		"session", sessionName,
+		"debug", debug)
+
+	// Update in database
+	if err := s.sessionRepo.UpdateDebugClaude(ctx, sessionName, debug); err != nil {
+		logging.Logger.Error("Failed to update debug Claude flag",
+			"session", sessionName,
+			"error", err)
+		return fmt.Errorf("failed to update debug Claude flag: %w", err)
+	}
+
+	logging.Logger.Info("Debug Claude flag updated successfully",
+		"session", sessionName,
+		"debug", debug)
+	return nil
+}
+
 // GetAvailableStatuses returns the list of configured session statuses
 func (s *SettingsService) GetAvailableStatuses() ([]string, error) {
 	logging.Logger.Debug("Getting available statuses")

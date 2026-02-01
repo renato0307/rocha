@@ -196,12 +196,22 @@ func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
 			CREATE TABLE IF NOT EXISTS session_agent_cli_flags (
 				session_name TEXT PRIMARY KEY,
 				allow_dangerously_skip_permissions INTEGER NOT NULL DEFAULT 0,
+				debug_claude INTEGER NOT NULL DEFAULT 0,
 				created_at DATETIME,
 				updated_at DATETIME,
 				FOREIGN KEY (session_name) REFERENCES sessions(name) ON UPDATE CASCADE ON DELETE CASCADE
 			)
 		`).Error; err != nil {
 			return nil, fmt.Errorf("failed to create session_agent_cli_flags table: %w", err)
+		}
+	}
+
+	// Migrate existing session_agent_cli_flags table to add debug_claude column
+	if migrator.HasTable(&SessionAgentCLIFlagsModel{}) {
+		if !migrator.HasColumn(&SessionAgentCLIFlagsModel{}, "debug_claude") {
+			if err := migrator.AddColumn(&SessionAgentCLIFlagsModel{}, "debug_claude"); err != nil {
+				return nil, fmt.Errorf("failed to migrate debug_claude column: %w", err)
+			}
 		}
 	}
 
@@ -278,11 +288,11 @@ func (r *SQLiteRepository) Get(ctx context.Context, name string) (*domain.Sessio
 		statusPtr = &status.Status
 	}
 
-	result := sessionModelToDomain(session, flag.IsFlagged, statusPtr, comment.Comment, archive.IsArchived, agentCLIFlags.AllowDangerouslySkipPermissions)
+	result := sessionModelToDomain(session, flag.IsFlagged, statusPtr, comment.Comment, archive.IsArchived, agentCLIFlags.AllowDangerouslySkipPermissions, agentCLIFlags.DebugClaude)
 
 	// Add nested session if found
 	if nestedSession.Name != "" {
-		nested := sessionModelToDomain(nestedSession, false, nil, "", false, nestedAgentCLIFlags.AllowDangerouslySkipPermissions)
+		nested := sessionModelToDomain(nestedSession, false, nil, "", false, nestedAgentCLIFlags.AllowDangerouslySkipPermissions, nestedAgentCLIFlags.DebugClaude)
 		result.ShellSession = &nested
 	}
 
@@ -354,17 +364,19 @@ func (r *SQLiteRepository) List(ctx context.Context, includeArchived bool) ([]do
 	}
 
 	cliMap := make(map[string]bool)
+	debugMap := make(map[string]bool)
 	for _, f := range agentCLIFlags {
 		cliMap[f.SessionName] = f.AllowDangerouslySkipPermissions
+		debugMap[f.SessionName] = f.DebugClaude
 	}
 
 	// Convert to domain
 	result := make([]domain.Session, len(sessions))
 	for i, sess := range sessions {
-		result[i] = sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name])
+		result[i] = sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name], debugMap[sess.Name])
 
 		if nested, ok := nestedMap[sess.Name]; ok {
-			nestedDomain := sessionModelToDomain(nested, false, nil, "", false, cliMap[nested.Name])
+			nestedDomain := sessionModelToDomain(nested, false, nil, "", false, cliMap[nested.Name], debugMap[nested.Name])
 			result[i].ShellSession = &nestedDomain
 		}
 	}
@@ -395,10 +407,11 @@ func (r *SQLiteRepository) Add(ctx context.Context, session domain.Session) erro
 					return fmt.Errorf("failed to create nested session: %w", err)
 				}
 
-				if session.ShellSession.AllowDangerouslySkipPermissions {
+				if session.ShellSession.AllowDangerouslySkipPermissions || session.ShellSession.DebugClaude {
 					if err := tx.Create(&SessionAgentCLIFlagsModel{
 						SessionName:                     session.ShellSession.Name,
-						AllowDangerouslySkipPermissions: true,
+						AllowDangerouslySkipPermissions: session.ShellSession.AllowDangerouslySkipPermissions,
+						DebugClaude:                     session.ShellSession.DebugClaude,
 					}).Error; err != nil {
 						return fmt.Errorf("failed to create nested session agent CLI flags: %w", err)
 					}
@@ -406,10 +419,11 @@ func (r *SQLiteRepository) Add(ctx context.Context, session domain.Session) erro
 			}
 
 			// Save agent CLI flags if enabled
-			if session.AllowDangerouslySkipPermissions {
+			if session.AllowDangerouslySkipPermissions || session.DebugClaude {
 				if err := tx.Create(&SessionAgentCLIFlagsModel{
 					SessionName:                     session.Name,
-					AllowDangerouslySkipPermissions: true,
+					AllowDangerouslySkipPermissions: session.AllowDangerouslySkipPermissions,
+					DebugClaude:                     session.DebugClaude,
 				}).Error; err != nil {
 					return fmt.Errorf("failed to create session agent CLI flags: %w", err)
 				}
@@ -552,14 +566,65 @@ func (r *SQLiteRepository) UpdateSkipPermissions(ctx context.Context, name strin
 				return fmt.Errorf("session %s not found", name)
 			}
 
-			if skip {
-				return tx.Save(&SessionAgentCLIFlagsModel{
-					SessionName:                     name,
-					AllowDangerouslySkipPermissions: true,
-				}).Error
+			var flags SessionAgentCLIFlagsModel
+			err := tx.Where("session_name = ?", name).First(&flags).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if skip {
+					return tx.Create(&SessionAgentCLIFlagsModel{
+						SessionName:                     name,
+						AllowDangerouslySkipPermissions: true,
+					}).Error
+				}
+				return nil
 			}
-			tx.Where("session_name = ?", name).Delete(&SessionAgentCLIFlagsModel{})
-			return nil
+			if err != nil {
+				return err
+			}
+
+			flags.AllowDangerouslySkipPermissions = skip
+			if !flags.AllowDangerouslySkipPermissions && !flags.DebugClaude {
+				tx.Where("session_name = ?", name).Delete(&SessionAgentCLIFlagsModel{})
+				return nil
+			}
+			return tx.Save(&flags).Error
+		})
+	}, 3)
+}
+
+// UpdateDebugClaude implements SessionStateUpdater.UpdateDebugClaude
+func (r *SQLiteRepository) UpdateDebugClaude(ctx context.Context, name string, debug bool) error {
+	return withRetry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Update timestamp
+			result := tx.Model(&SessionModel{}).Where("name = ?", name).Update("last_updated", time.Now().UTC())
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", name)
+			}
+
+			var flags SessionAgentCLIFlagsModel
+			err := tx.Where("session_name = ?", name).First(&flags).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if debug {
+					return tx.Create(&SessionAgentCLIFlagsModel{
+						SessionName: name,
+						DebugClaude: true,
+					}).Error
+				}
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			flags.DebugClaude = debug
+			if !flags.AllowDangerouslySkipPermissions && !flags.DebugClaude {
+				tx.Where("session_name = ?", name).Delete(&SessionAgentCLIFlagsModel{})
+				return nil
+			}
+			return tx.Save(&flags).Error
 		})
 	}, 3)
 }
@@ -744,6 +809,19 @@ func (r *SQLiteRepository) UpdateComment(ctx context.Context, name, comment stri
 	}, 3)
 }
 
+// saveAgentCLIFlags saves or deletes agent CLI flags for a session
+func saveAgentCLIFlags(tx *gorm.DB, sessionName string, allowSkip, debug bool) error {
+	if allowSkip || debug {
+		return tx.Save(&SessionAgentCLIFlagsModel{
+			SessionName:                     sessionName,
+			AllowDangerouslySkipPermissions: allowSkip,
+			DebugClaude:                     debug,
+		}).Error
+	}
+	tx.Where("session_name = ?", sessionName).Delete(&SessionAgentCLIFlagsModel{})
+	return nil
+}
+
 // LoadState implements SessionStateLoader.LoadState
 func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) (*domain.SessionCollection, error) {
 	var sessions []SessionModel
@@ -820,8 +898,10 @@ func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) 
 	}
 
 	cliMap := make(map[string]bool)
+	debugMap := make(map[string]bool)
 	for _, f := range agentCLIFlags {
 		cliMap[f.SessionName] = f.AllowDangerouslySkipPermissions
+		debugMap[f.SessionName] = f.DebugClaude
 	}
 
 	// Build result
@@ -833,12 +913,12 @@ func (r *SQLiteRepository) LoadState(ctx context.Context, includeArchived bool) 
 	for i, sess := range sessions {
 		collection.OrderedNames[i] = sess.Name
 
-		domainSess := sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name])
+		domainSess := sessionModelToDomain(sess, flagMap[sess.Name], statusMap[sess.Name], commentMap[sess.Name], archiveMap[sess.Name], cliMap[sess.Name], debugMap[sess.Name])
 
 		// Load nested session
 		var nestedSession SessionModel
 		if err := r.db.Where("parent_name = ?", sess.Name).First(&nestedSession).Error; err == nil {
-			nested := sessionModelToDomain(nestedSession, false, nil, "", false, cliMap[nestedSession.Name])
+			nested := sessionModelToDomain(nestedSession, false, nil, "", false, cliMap[nestedSession.Name], debugMap[nestedSession.Name])
 			domainSess.ShellSession = &nested
 		}
 
@@ -889,13 +969,8 @@ func (r *SQLiteRepository) SaveState(ctx context.Context, state *domain.SessionC
 				delete(existingNames, session.Name)
 
 				// Handle agent CLI flags
-				if session.AllowDangerouslySkipPermissions {
-					tx.Save(&SessionAgentCLIFlagsModel{
-						SessionName:                     session.Name,
-						AllowDangerouslySkipPermissions: true,
-					})
-				} else {
-					tx.Where("session_name = ?", session.Name).Delete(&SessionAgentCLIFlagsModel{})
+				if err := saveAgentCLIFlags(tx, session.Name, session.AllowDangerouslySkipPermissions, session.DebugClaude); err != nil {
+					return fmt.Errorf("failed to save agent CLI flags for %s: %w", session.Name, err)
 				}
 
 				// Handle nested session
@@ -913,13 +988,8 @@ func (r *SQLiteRepository) SaveState(ctx context.Context, state *domain.SessionC
 					}
 					delete(existingNames, session.ShellSession.Name)
 
-					if session.ShellSession.AllowDangerouslySkipPermissions {
-						tx.Save(&SessionAgentCLIFlagsModel{
-							SessionName:                     session.ShellSession.Name,
-							AllowDangerouslySkipPermissions: true,
-						})
-					} else {
-						tx.Where("session_name = ?", session.ShellSession.Name).Delete(&SessionAgentCLIFlagsModel{})
+					if err := saveAgentCLIFlags(tx, session.ShellSession.Name, session.ShellSession.AllowDangerouslySkipPermissions, session.ShellSession.DebugClaude); err != nil {
+						return fmt.Errorf("failed to save agent CLI flags for nested session %s: %w", session.ShellSession.Name, err)
 					}
 				}
 			}

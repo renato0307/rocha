@@ -63,6 +63,40 @@ func TestSessionsSet(t *testing.T) {
 			},
 		},
 		{
+			name: "set debug-claude true",
+			setup: func(t *testing.T, env *harness.TestEnvironment) {
+				result := harness.RunCommand(t, env, "sessions", "add", "debug-session")
+				harness.AssertSuccess(t, result)
+			},
+			args:         []string{"sessions", "set", "debug-session", "--variable", "debug-claude", "--value", "true"},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Updated")
+
+				// Verify the flag was set by viewing the session
+				viewResult := harness.RunCommand(t, env, "sessions", "view", "debug-session")
+				harness.AssertSuccess(t, viewResult)
+				harness.AssertStdoutContains(t, viewResult, "Debug Claude: true")
+			},
+		},
+		{
+			name: "set debug-claude false",
+			setup: func(t *testing.T, env *harness.TestEnvironment) {
+				result := harness.RunCommand(t, env, "sessions", "add", "no-debug-session")
+				harness.AssertSuccess(t, result)
+			},
+			args:         []string{"sessions", "set", "no-debug-session", "--variable", "debug-claude", "--value", "false"},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Updated")
+
+				// Verify the flag was set to false
+				viewResult := harness.RunCommand(t, env, "sessions", "view", "no-debug-session")
+				harness.AssertSuccess(t, viewResult)
+				harness.AssertStdoutContains(t, viewResult, "Debug Claude: false")
+			},
+		},
+		{
 			name:         "set on non-existent session fails",
 			args:         []string{"sessions", "set", "non-existent", "--variable", "claudedir", "--value", "/path"},
 			wantExitCode: 0, // The command doesn't fail but prints failure message

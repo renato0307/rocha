@@ -66,6 +66,19 @@ func TestSessionsAdd(t *testing.T) {
 				harness.AssertFailure(t, result)
 			},
 		},
+		{
+			name:         "add session with debug-claude flag",
+			args:         []string{"sessions", "add", "debug-session", "--debug-claude"},
+			wantExitCode: 0,
+			validate: func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult) {
+				harness.AssertStdoutContains(t, result, "Session 'debug-session' added successfully")
+
+				// Verify the debug flag was set by viewing the session
+				viewResult := harness.RunCommand(t, env, "sessions", "view", "debug-session")
+				harness.AssertSuccess(t, viewResult)
+				harness.AssertStdoutContains(t, viewResult, "Debug Claude: true")
+			},
+		},
 	}
 
 	for _, tt := range tests {

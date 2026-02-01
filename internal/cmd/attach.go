@@ -18,6 +18,7 @@ import (
 type AttachCmd struct {
 	AllowDangerouslySkipPermissions bool   `help:"Skip permission prompts in Claude (DANGEROUS - use with caution)"`
 	Branch                          string `help:"Override branch name (default: auto-detect from git)"`
+	DebugClaude                     bool   `help:"Enable debug logging in Claude Code"`
 	Repo                            string `help:"Override repository path (default: auto-detect)"`
 	SessionName                     string `help:"Override session name (default: auto-detect from branch/directory)"`
 	TmuxStatusPosition              string `help:"Tmux status bar position (top or bottom)" default:"bottom" enum:"top,bottom"`
@@ -169,6 +170,7 @@ func (a *AttachCmd) Run(cli *CLI) error {
 		sessionInfo = domain.Session{
 			AllowDangerouslySkipPermissions: a.AllowDangerouslySkipPermissions,
 			BranchName:                      branchName,
+			DebugClaude:                     a.DebugClaude,
 			DisplayName:                     sessionName,
 			ExecutionID:                     executionID,
 			LastUpdated:                     time.Now().UTC(),

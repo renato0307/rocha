@@ -5,12 +5,13 @@ import (
 )
 
 // sessionModelToDomain converts a SessionModel (GORM) to domain.Session
-func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, comment string, isArchived bool, allowSkipPerms bool) domain.Session {
+func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, comment string, isArchived bool, allowSkipPerms bool, debugClaude bool) domain.Session {
 	return domain.Session{
 		AllowDangerouslySkipPermissions: allowSkipPerms,
 		BranchName:                      m.BranchName,
 		ClaudeDir:                       m.ClaudeDir,
 		Comment:                         comment,
+		DebugClaude:                     debugClaude,
 		DisplayName:                     m.DisplayName,
 		ExecutionID:                     m.ExecutionID,
 		GitStats:                        nil, // Not persisted, populated at runtime

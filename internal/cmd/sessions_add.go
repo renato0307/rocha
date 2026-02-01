@@ -16,6 +16,7 @@ import (
 type SessionsAddCmd struct {
 	AllowDangerouslySkipPermissions bool   `help:"Skip permission prompts in Claude (DANGEROUS)"`
 	BranchName                      string `help:"Branch name" default:""`
+	DebugClaude                     bool   `help:"Enable debug logging in Claude Code"`
 	DisplayName                     string `help:"Display name for the session" default:""`
 	InitialPrompt                   string `help:"Initial prompt to send to Claude on session start" name:"prompt" short:"p" default:""`
 	Name                            string `arg:"" help:"Name of the session to add"`
@@ -51,6 +52,7 @@ func (s *SessionsAddCmd) runWithStartClaude(ctx context.Context, cli *CLI) error
 	params := services.CreateSessionParams{
 		AllowDangerouslySkipPermissions: s.AllowDangerouslySkipPermissions,
 		BranchNameOverride:              s.BranchName,
+		DebugClaude:                     s.DebugClaude,
 		InitialPrompt:                   s.InitialPrompt,
 		RepoSource:                      s.RepoSource,
 		SessionName:                     s.Name,
@@ -82,6 +84,7 @@ func (s *SessionsAddCmd) runMetadataOnly(ctx context.Context, cli *CLI) error {
 	session := domain.Session{
 		AllowDangerouslySkipPermissions: s.AllowDangerouslySkipPermissions,
 		BranchName:                      s.BranchName,
+		DebugClaude:                     s.DebugClaude,
 		DisplayName:                     displayName,
 		ExecutionID:                     uuid.New().String(),
 		InitialPrompt:                   s.InitialPrompt,

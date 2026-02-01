@@ -37,6 +37,7 @@ func (s *SessionsDuplicateCmd) Run(cli *CLI) error {
 		AllowDangerouslySkipPermissions: sourceSession.AllowDangerouslySkipPermissions,
 		BranchNameOverride:              s.Branch,
 		ClaudeDirOverride:               sourceSession.ClaudeDir,
+		DebugClaude:                     sourceSession.DebugClaude,
 		RepoSource:                      sourceSession.RepoSource,
 		SessionName:                     s.NewName,
 		TmuxStatusPosition:              cli.Container.SettingsService.GetTmuxStatusPosition(),

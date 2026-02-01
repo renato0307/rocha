@@ -30,6 +30,7 @@ type SessionFormResult struct {
 	Cancelled                       bool
 	ClaudeDir                       string // User-provided CLAUDE_CONFIG_DIR override
 	CreateWorktree                  bool
+	DebugClaude                     bool
 	Error                           error  // Error that occurred during session creation
 	InitialPrompt                   string // Initial prompt to send to Claude on session start
 	RepoSource                      string // User-provided repo path or URL
@@ -57,6 +58,7 @@ func NewSessionForm(
 	sessionState *domain.SessionCollection,
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
+	debugClaudeDefault bool,
 	defaultRepoSource string,
 ) *SessionForm {
 	s := spinner.New()
@@ -67,6 +69,7 @@ func NewSessionForm(
 		gitService: gitService,
 		result: SessionFormResult{
 			AllowDangerouslySkipPermissions: allowDangerouslySkipPermissionsDefault,
+			DebugClaude:                     debugClaudeDefault,
 			RepoSource:                      defaultRepoSource,
 		},
 		sessionService:     sessionService,
@@ -202,6 +205,15 @@ func NewSessionForm(
 			Negative("No"),
 	)
 
+	fields = append(fields,
+		huh.NewConfirm().
+			Title("Enable Claude debug logging?").
+			Description("Shows detailed debug output from Claude Code. Useful for troubleshooting.").
+			Value(&sf.result.DebugClaude).
+			Affirmative("Yes").
+			Negative("No"),
+	)
+
 	sf.form = huh.NewForm(huh.NewGroup(fields...))
 
 	return sf
@@ -279,6 +291,7 @@ func (sf *SessionForm) createSession() error {
 		AllowDangerouslySkipPermissions: sf.result.AllowDangerouslySkipPermissions,
 		BranchNameOverride:              sf.result.BranchName,
 		ClaudeDirOverride:               sf.result.ClaudeDir,
+		DebugClaude:                     sf.result.DebugClaude,
 		InitialPrompt:                   sf.result.InitialPrompt,
 		RepoSource:                      sf.result.RepoSource,
 		SessionName:                     sf.result.SessionName,

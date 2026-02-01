@@ -76,6 +76,7 @@ func (SessionArchiveModel) TableName() string { return "session_archives" }
 type SessionAgentCLIFlagsModel struct {
 	AllowDangerouslySkipPermissions bool   `gorm:"not null;default:false"`
 	CreatedAt                       time.Time
+	DebugClaude                     bool   `gorm:"not null;default:false"`
 	SessionName                     string `gorm:"primaryKey"`
 	UpdatedAt                       time.Time
 }

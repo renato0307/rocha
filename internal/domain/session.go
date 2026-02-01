@@ -30,6 +30,7 @@ type Session struct {
 	BranchName                      string
 	ClaudeDir                       string
 	Comment                         string
+	DebugClaude                     bool
 	DisplayName                     string
 	ExecutionID                     string
 	GitStats                        *GitStats

@@ -46,6 +46,14 @@ rocha --debug --debug-file <filename>
 rocha run --dev  # Use --dev flag with run command only
 ```
 
+To debug Claude Code specifically (adds --debug to claude CLI):
+
+```bash
+rocha attach --debug-claude
+rocha sessions add my-session --start-claude --debug-claude
+rocha sessions set my-session --variable=debug-claude --value=true
+```
+
 ### Testing Builds
 
 Always use `run --dev` flag when testing built binaries to verify version info in dialog headers.

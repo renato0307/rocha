@@ -15,7 +15,7 @@ type SessionSetCmd struct {
 	KillTmux bool   `help:"Kill tmux sessions to apply changes immediately" short:"k"`
 	Name     string `arg:"" optional:"" help:"Name of the session (omit when using --all)"`
 	Value    string `help:"Value to set (empty string to clear)" required:""`
-	Variable string `help:"Variable to set" short:"v" enum:"claudedir,allow-dangerously-skip-permissions" required:""`
+	Variable string `help:"Variable to set" short:"v" enum:"claudedir,allow-dangerously-skip-permissions,debug-claude" required:""`
 }
 
 // AfterApply validates that either Name or All is provided, but not both
@@ -96,6 +96,16 @@ func (s *SessionSetCmd) createUpdater(cli *CLI) (sessionUpdater, error) {
 		}
 		return func(ctx context.Context, name string) error {
 			return cli.Container.SettingsService.SetSkipPermissions(ctx, name, skipPermissions)
+		}, nil
+
+	case "debug-claude":
+		debugClaude, err := parseBoolValue(s.Value)
+		if err != nil {
+			logging.Logger.Error("Invalid boolean value", "value", s.Value, "error", err)
+			return nil, fmt.Errorf("invalid value for debug-claude: %w (use: true/false, yes/no, 1/0)", err)
+		}
+		return func(ctx context.Context, name string) error {
+			return cli.Container.SettingsService.SetDebugClaude(ctx, name, debugClaude)
 		}, nil
 
 	default:
