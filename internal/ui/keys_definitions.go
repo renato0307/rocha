@@ -55,9 +55,9 @@ var AllKeyDefinitions = []KeyDefinition{
 
 	// Session action keys
 	{Name: "detach", Defaults: []string{"ctrl+q"}, Help: "detach from session (return to list)", TipFormat: "press %s inside a session to return to the list"},
-	{Name: "open", Defaults: []string{"enter"}, Help: "attach to session", Msg: AttachSessionMsg{}},
+	{Name: "open", Defaults: []string{"enter"}, Help: "attach to session", PaletteName: "open", Msg: AttachSessionMsg{}},
 	{Name: "open_editor", Defaults: []string{"o"}, Help: "open session in editor", PaletteName: "open editor", Msg: OpenEditorSessionMsg{}, TipFormat: "press %s to open the session's folder in your editor"},
-	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", Msg: AttachShellSessionMsg{}, TipFormat: "press %s to open a shell session alongside claude"},
+	{Name: "open_shell", Defaults: []string{"ctrl+s"}, Help: "shell (>_)", PaletteName: "open shell", Msg: AttachShellSessionMsg{}, TipFormat: "press %s to open a shell session alongside claude"},
 	{Name: "quick_open", Defaults: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}, Help: "quick open (0=10th)", TipFormat: "press %s to quickly open sessions by their number"},
 }
 
