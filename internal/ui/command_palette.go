@@ -41,7 +41,11 @@ func NewCommandPalette(session *ports.TmuxSession, sessionName string, keys KeyM
 	actions := GetPaletteActions()
 
 	ti := textinput.New()
-	ti.Placeholder = "Type to filter..."
+	ti.Prompt = "Filter: "
+	ti.PromptStyle = theme.FilterPromptStyle
+	ti.Cursor.Style = theme.FilterCursorStyle
+	ti.Placeholder = "type to filter"
+	ti.PlaceholderStyle = theme.DimmedStyle
 	ti.Focus()
 	ti.CharLimit = 50
 	ti.Width = 40
@@ -85,13 +89,13 @@ func (cp *CommandPalette) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return cp, nil
 
-		case key.Matches(msg, cp.keys.Navigation.Up.Binding):
+		case msg.Type == tea.KeyUp:
 			if cp.selectedIndex > 0 {
 				cp.selectedIndex--
 			}
 			return cp, nil
 
-		case key.Matches(msg, cp.keys.Navigation.Down.Binding):
+		case msg.Type == tea.KeyDown:
 			if cp.selectedIndex < len(cp.actions)-1 {
 				cp.selectedIndex++
 			}
@@ -112,46 +116,45 @@ func (cp *CommandPalette) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the command palette as a full-width bottom panel.
 func (cp *CommandPalette) View() string {
 	width := cp.paletteWidth()
-	// Inner content width (accounting for border and padding: 2 border + 2 padding = 4)
-	innerWidth := width - 4
-	if innerWidth < 20 {
-		innerWidth = 20
-	}
 
-	// Header with session name
+	// Header with session name (use inline styles to keep on same line)
 	var header string
+	titlePart := theme.PaletteTitleStyle.Render("⌘ Command Palette")
 	if cp.sessionName != "" {
-		header = theme.PaletteHeaderStyle.Render("Session: " + cp.sessionName)
+		header = titlePart + " " + theme.DimmedStyle.Render("(selected session: "+cp.sessionName+")")
 	} else {
-		header = theme.PaletteHeaderStyle.Render("Command Palette")
+		header = titlePart
 	}
-
-	// Separator line (fits inner width)
-	separator := theme.PaletteDescStyle.Render(strings.Repeat("─", innerWidth))
 
 	// Build visible action list
 	var items []string
-	maxNameLen := cp.maxActionNameLen()
-	maxShortcutLen := cp.maxShortcutLen()
+	maxHelpLen := cp.maxHelpLen()
 	start, end := cp.visibleRange()
+	total := len(cp.actions)
+	hasMoreAbove := start > 0
+	hasMoreBelow := end < total
 
 	for i := start; i < end; i++ {
 		def := cp.actions[i]
-		name := padRight(def.PaletteName, maxNameLen)
-		shortcut := padRight(def.Defaults[0], maxShortcutLen)
-		desc := def.Help
+		helpText := padRight(capitalizeFirst(def.Help), maxHelpLen)
+		shortcut := def.Defaults[0]
 
+		// Determine prefix: selection indicator or scroll arrow
+		var prefix string
 		if i == cp.selectedIndex {
-			// Selected: full-width highlight (inner width)
-			lineContent := "> " + name + "  " + shortcut + "  " + desc
-			lineContent = padRight(lineContent, innerWidth)
-			items = append(items, theme.PaletteItemSelectedStyle.Render(lineContent))
+			prefix = "> "
+		} else if i == start && hasMoreAbove {
+			prefix = theme.ScrollIndicatorStyle.Render("↑ ")
+		} else if i == end-1 && hasMoreBelow {
+			prefix = theme.ScrollIndicatorStyle.Render("↓ ")
 		} else {
-			line := theme.PaletteItemStyle.Render("  "+name) +
-				theme.PaletteShortcutStyle.Render("  "+shortcut) +
-				theme.PaletteDescStyle.Render("  "+desc)
-			items = append(items, line)
+			prefix = "  "
 		}
+
+		line := prefix +
+			theme.PaletteItemStyle.Render(helpText) +
+			theme.PaletteShortcutStyle.Render("  "+shortcut)
+		items = append(items, line)
 	}
 
 	// If no matches
@@ -159,17 +162,22 @@ func (cp *CommandPalette) View() string {
 		items = append(items, theme.PaletteDescStyle.Render("  No matching actions"))
 	}
 
+	// Pad to fixed height
+	for len(items) < maxVisibleItems {
+		items = append(items, "")
+	}
+
 	actionList := strings.Join(items, "\n")
 
-	// Filter input line (textinput already has "> " prompt)
+	// Filter input line
 	filterLine := cp.filterInput.View()
 
-	// Combine inner content (no gap between header and separator, no footer)
-	innerContent := header +
-		separator + "\n" +
-		actionList + "\n" +
+	// Combine inner content
+	innerContent := header + "\n" +
 		"\n" +
-		filterLine
+		filterLine + "\n" +
+		"\n" +
+		actionList
 
 	// Apply border around entire palette
 	bordered := theme.PaletteBorderStyle.Width(width - 2).Render(innerContent)
@@ -195,7 +203,7 @@ func (cp *CommandPalette) filterActions() {
 
 	var filtered []KeyDefinition
 	for _, def := range cp.allActions {
-		if fuzzyMatch(query, def.PaletteName) || fuzzyMatch(query, def.Help) {
+		if fuzzyMatch(query, def.Help) {
 			filtered = append(filtered, def)
 		}
 	}
@@ -221,23 +229,13 @@ func fuzzyMatch(query, target string) bool {
 	return qi == len(queryRunes)
 }
 
-// maxActionNameLen returns the maximum palette name length for alignment.
-func (cp *CommandPalette) maxActionNameLen() int {
+// maxHelpLen returns the maximum help text length for alignment.
+// Uses allActions to keep alignment stable during filtering.
+func (cp *CommandPalette) maxHelpLen() int {
 	maxLen := 0
-	for _, def := range cp.actions {
-		if len(def.PaletteName) > maxLen {
-			maxLen = len(def.PaletteName)
-		}
-	}
-	return maxLen
-}
-
-// maxShortcutLen returns the maximum shortcut length for alignment.
-func (cp *CommandPalette) maxShortcutLen() int {
-	maxLen := 0
-	for _, def := range cp.actions {
-		if len(def.Defaults) > 0 && len(def.Defaults[0]) > maxLen {
-			maxLen = len(def.Defaults[0])
+	for _, def := range cp.allActions {
+		if len(def.Help) > maxLen {
+			maxLen = len(def.Help)
 		}
 	}
 	return maxLen
@@ -280,4 +278,12 @@ func padRight(s string, width int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", width-len(s))
+}
+
+// capitalizeFirst returns the string with the first letter uppercased.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

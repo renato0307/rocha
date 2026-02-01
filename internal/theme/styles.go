@@ -140,9 +140,12 @@ var (
 	DimmedStyle = lipgloss.NewStyle().
 			Foreground(ColorDimmed)
 
+	ScrollIndicatorStyle = lipgloss.NewStyle().
+				Foreground(ColorScrollIndicator)
+
 	PaletteBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorPrimary).
+				Border(lipgloss.Border{Top: "─", Bottom: "─"}).
+				BorderForeground(ColorMuted).
 				Padding(0, 1)
 
 	PaletteDescSelectedStyle = lipgloss.NewStyle().
@@ -155,6 +158,12 @@ var (
 	PaletteFilterStyle = lipgloss.NewStyle().
 				Foreground(ColorSubtle)
 
+	FilterPromptStyle = lipgloss.NewStyle().
+				Foreground(ColorHintKey)
+
+	FilterCursorStyle = lipgloss.NewStyle().
+				Foreground(ColorSpinner)
+
 	PaletteFooterStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted).
 				Padding(1, 0, 0, 0)
@@ -163,6 +172,10 @@ var (
 				Foreground(ColorSecondary).
 				Bold(true).
 				Padding(0, 0, 1, 0)
+
+	PaletteTitleStyle = lipgloss.NewStyle().
+				Foreground(ColorSecondary).
+				Bold(true)
 
 	PaletteItemSelectedStyle = lipgloss.NewStyle().
 					Foreground(ColorHighlight).

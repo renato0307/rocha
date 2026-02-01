@@ -27,6 +27,7 @@ const (
 	ColorMuted           Color = "241" // Gray - secondary text
 	ColorNormal          Color = "250" // Default text
 	ColorPaletteSelected Color = "62"  // Purple - selected item background
+	ColorScrollIndicator Color = "236" // Very dark gray - scroll arrows
 	ColorSubtle          Color = "245" // Light gray - labels
 	ColorVersion         Color = "240" // Dark gray
 )
