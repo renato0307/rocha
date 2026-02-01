@@ -81,7 +81,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s stop --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s stop --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -92,7 +92,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s prompt --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s prompt --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -103,7 +103,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s start --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s start --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -114,7 +114,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s permission-request --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s permission-request --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -125,7 +125,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s end --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s end --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -137,7 +137,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s notification --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s notification --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -149,7 +149,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s working --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s working --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -160,7 +160,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s tool-failure --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s tool-failure --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -171,7 +171,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s subagent-start --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s subagent-start --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -182,7 +182,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s subagent-stop --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s subagent-stop --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -193,7 +193,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s pre-compact --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s pre-compact --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
@@ -204,7 +204,7 @@ func (s *StartClaudeCmd) Run(cli *CLI) error {
 					"hooks": []map[string]interface{}{
 						{
 							"type":    "command",
-							"command": fmt.Sprintf("%s notify %s setup --execution-id=%s", rochaBin, sessionName, executionID),
+							"command": fmt.Sprintf("%s notify handle %s setup --execution-id=%s", rochaBin, sessionName, executionID),
 						},
 					},
 				},
