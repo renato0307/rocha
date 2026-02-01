@@ -17,6 +17,7 @@ rocha run --dev
 ## Dev guidelines
 
 - When you add a shortcut, always add to the help screen too.
+- Always provide FULL ABSOLUTE PATHS when showing commands to run (e.g., `/home/renato/.rocha/worktrees/.../bin/rocha-xxx run --dev`, not `./bin/rocha-xxx run --dev`).
 
 ## When you finish:
 

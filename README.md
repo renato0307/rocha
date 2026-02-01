@@ -38,6 +38,7 @@ This directory contains:
 - `settings.json` - Configuration settings
 
 ## What You Can Do
+- **Command palette** - Quick searchable access to all actions with Shift+O
 - **Switch between Claude sessions** - Keep multiple conversations organized
 - **Shell sessions** - Open a separate shell (⌨) for each Claude session
 - **Rename sessions** - Give your sessions meaningful names
@@ -90,6 +91,7 @@ For example:
 ## Key Bindings
 
 - `?` - show all key bindings
+- `Shift+O` - open command palette for quick action access
 - `n` - new session
 - `Ctrl+Q` - return to session list (when inside a session)
 

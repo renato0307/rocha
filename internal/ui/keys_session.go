@@ -36,7 +36,7 @@ func newSessionManagementKeys(defaults map[string][]string, customKeys config.Ke
 	return SessionManagementKeys{
 		Archive:     buildBinding("archive", defaults, customKeys),
 		Kill:        buildBinding("kill", defaults, customKeys),
-		New:         buildBinding("new", defaults, customKeys),
+		New:         buildBinding("new_session", defaults, customKeys),
 		NewFromRepo: buildBinding("new_from_repo", defaults, customKeys),
 		Rename:      buildBinding("rename", defaults, customKeys),
 	}

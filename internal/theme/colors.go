@@ -21,12 +21,15 @@ const (
 
 // UI semantic colors
 const (
-	ColorError     Color = "196" // Bright red
-	ColorHighlight Color = "255" // White - emphasis
-	ColorMuted     Color = "241" // Gray - secondary text
-	ColorNormal    Color = "250" // Default text
-	ColorSubtle    Color = "245" // Light gray - labels
-	ColorVersion   Color = "240" // Dark gray
+	ColorDimmed          Color = "240" // Dark gray - dimmed background content
+	ColorError           Color = "196" // Bright red
+	ColorHighlight       Color = "255" // White - emphasis
+	ColorMuted           Color = "241" // Gray - secondary text
+	ColorNormal          Color = "250" // Default text
+	ColorPaletteSelected Color = "62"  // Purple - selected item background
+	ColorScrollIndicator Color = "236" // Very dark gray - scroll arrows
+	ColorSubtle          Color = "245" // Light gray - labels
+	ColorVersion         Color = "240" // Dark gray
 )
 
 // Accent colors

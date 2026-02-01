@@ -9,7 +9,7 @@ Tmux-based session manager for Claude Code CLI written in Go. Enables developers
 - **internal/domain/** - Domain entities and session state constants
 - **internal/ports/** - Interface definitions (TmuxClient, SessionRepository, GitRepository, EditorOpener, SoundPlayer)
 - **internal/services/** - Application services (session, git, shell, settings, notification, migration)
-- **internal/ui/** - Bubble Tea TUI components (SessionList, SessionForm, Model, KeyMaps)
+- **internal/ui/** - Bubble Tea TUI components (SessionList, SessionForm, Model, KeyMaps, CommandPalette, ActionDispatcher)
 - **internal/config/** - Settings, paths, and Claude directory management
 - **internal/logging/** - Structured logging (slog)
 - **internal/adapters/tmux/** - Tmux abstraction layer (Client interface)

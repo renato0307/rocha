@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -22,18 +23,20 @@ type uiState int
 
 const (
 	stateList uiState = iota
-	stateCreatingSession
+	stateCommandPalette
+	stateCommentingSession
 	stateConfirmingArchive
 	stateConfirmingWorktreeRemoval
+	stateCreatingSession
 	stateHelp
 	stateRenamingSession
 	stateSendingText
 	stateSettingStatus
-	stateCommentingSession
 )
 
 type Model struct {
 	allowDangerouslySkipPermissionsDefault bool                         // Default value from settings for new sessions
+	commandPalette                         *CommandPalette              // Command palette overlay
 	devMode                                bool                         // Development mode (shows version info in dialogs)
 	editor                                 string                       // Editor to open sessions in
 	errorManager                           *ErrorManager                // Error display and auto-clearing
@@ -144,12 +147,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateList:
 		return m.updateList(msg)
-	case stateCreatingSession:
-		return m.updateCreatingSession(msg)
+	case stateCommandPalette:
+		return m.updateCommandPalette(msg)
+	case stateCommentingSession:
+		return m.updateCommentingSession(msg)
 	case stateConfirmingArchive:
 		return m.updateConfirmingArchive(msg)
 	case stateConfirmingWorktreeRemoval:
 		return m.updateConfirmingWorktreeRemoval(msg)
+	case stateCreatingSession:
+		return m.updateCreatingSession(msg)
 	case stateHelp:
 		return m.updateHelp(msg)
 	case stateRenamingSession:
@@ -158,8 +165,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSendingText(msg)
 	case stateSettingStatus:
 		return m.updateSettingStatus(msg)
-	case stateCommentingSession:
-		return m.updateCommentingSession(msg)
 	}
 	return m, nil
 }
@@ -177,7 +182,9 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Send initial WindowSizeMsg so viewport can initialize
 		initCmd := m.helpScreen.Init()
 		updatedDialog, sizeCmd := m.helpScreen.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		m.helpScreen = updatedDialog.(*Dialog)
+		if d, ok := updatedDialog.(*Dialog); ok {
+			m.helpScreen = d
+		}
 		return m, tea.Batch(initCmd, sizeCmd)
 	case AttachSessionMsg:
 		return m, m.sessionOps.AttachToSession(msg.Session.Name)
@@ -321,6 +328,47 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TestErrorMsg:
 		m.errorManager.SetError(fmt.Errorf("this is a very long test error message to verify that the error display truncation functionality works correctly and ensures that error text wraps properly across multiple lines and eventually gets truncated with ellipsis if it exceeds the maximum allowed length of three lines which should be enforced by the formatErrorForDisplay function"))
 		return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+
+	// Command palette messages
+	case ShowCommandPaletteMsg:
+		// Get selected session info for the palette header
+		var session *ports.TmuxSession
+		var sessionName string
+		if item, ok := m.sessionList.list.SelectedItem().(SessionItem); ok {
+			session = item.Session
+			sessionName = item.DisplayName
+		}
+
+		m.commandPalette = NewCommandPalette(session, sessionName, m.keys)
+		m.state = stateCommandPalette
+
+		// Send initial window size
+		initCmd := m.commandPalette.Init()
+		_, sizeCmd := m.commandPalette.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, tea.Batch(initCmd, sizeCmd)
+
+	case ToggleTimestampsMsg:
+		// Cycle timestamps (same logic as existing key handler)
+		switch m.timestampMode {
+		case TimestampRelative:
+			m.timestampMode = TimestampAbsolute
+		case TimestampAbsolute:
+			m.timestampMode = TimestampHidden
+		case TimestampHidden:
+			m.timestampMode = TimestampRelative
+		}
+		m.sessionList.timestampMode = m.timestampMode
+		refreshCmd := m.sessionList.RefreshFromState()
+		return m, tea.Batch(refreshCmd, m.sessionList.Init())
+
+	case ToggleTokenChartMsg:
+		m.tokenChart.Toggle()
+		m.recalculateListHeight()
+		return m, m.sessionList.Init()
+
+	case CycleStatusMsg:
+		// Delegate to session list's cycleSessionStatus
+		return m, m.sessionList.cycleSessionStatus(msg.SessionName)
 	}
 
 	// Handle clear error message
@@ -395,10 +443,56 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) updateCommandPalette(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Forward window size to palette
+	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = sizeMsg.Width
+		m.height = sizeMsg.Height
+	}
+
+	// Delegate to palette
+	updated, cmd := m.commandPalette.Update(msg)
+	if cp, ok := updated.(*CommandPalette); ok {
+		m.commandPalette = cp
+	}
+
+	// Check if palette completed
+	if m.commandPalette.Completed {
+		result := m.commandPalette.Result
+		m.state = stateList
+		m.commandPalette = nil
+
+		if result.Cancelled || result.Action == nil {
+			return m, m.sessionList.Init()
+		}
+
+		// Get selected session for dispatcher
+		var session *ports.TmuxSession
+		if item, ok := m.sessionList.list.SelectedItem().(SessionItem); ok {
+			session = item.Session
+		}
+
+		// Dispatch the action
+		dispatcher := NewActionDispatcher(session)
+		actionMsg := dispatcher.Dispatch(*result.Action)
+
+		if actionMsg != nil {
+			// Process the action message through updateList
+			return m.updateList(actionMsg)
+		}
+
+		return m, m.sessionList.Init()
+	}
+
+	return m, cmd
+}
+
 func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionForm.Update(msg)
-	m.sessionForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionForm.Content().(*SessionForm); ok && content.Completed {
@@ -433,7 +527,9 @@ func (m *Model) updateCreatingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionRenameForm.Update(msg)
-	m.sessionRenameForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionRenameForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionRenameForm.Content().(*SessionRenameForm); ok && content.Completed {
@@ -465,7 +561,9 @@ func (m *Model) updateRenamingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionStatusForm.Update(msg)
-	m.sessionStatusForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionStatusForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionStatusForm.Content().(*SessionStatusForm); ok && content.Completed {
@@ -497,7 +595,9 @@ func (m *Model) updateSettingStatus(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sessionCommentForm.Update(msg)
-	m.sessionCommentForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sessionCommentForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sessionCommentForm.Content().(*SessionCommentForm); ok && content.Completed {
@@ -529,7 +629,9 @@ func (m *Model) updateCommentingSession(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateSendingText(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.sendTextForm.Update(msg)
-	m.sendTextForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.sendTextForm = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.sendTextForm.Content().(*SendTextForm); ok && content.Completed {
@@ -647,7 +749,9 @@ func (m *Model) recalculateListHeight() {
 func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate to dialog (it handles cancel internally)
 	updated, cmd := m.helpScreen.Update(msg)
-	m.helpScreen = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.helpScreen = d
+	}
 
 	// Check if dialog completed
 	if content, ok := m.helpScreen.Content().(*HelpScreen); ok && content.Completed {
@@ -682,7 +786,9 @@ func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Forward message to Dialog
 	updated, cmd := m.worktreeRemovalForm.Update(msg)
-	m.worktreeRemovalForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.worktreeRemovalForm = d
+	}
 
 	// Access wrapped huh.Form to check completion
 	if form, ok := m.worktreeRemovalForm.Content().(*huh.Form); ok {
@@ -728,7 +834,9 @@ func (m *Model) updateConfirmingWorktreeRemoval(msg tea.Msg) (tea.Model, tea.Cmd
 
 	// Forward message to Dialog
 	updated, cmd := m.worktreeRemovalForm.Update(msg)
-	m.worktreeRemovalForm = updated.(*Dialog)
+	if d, ok := updated.(*Dialog); ok {
+		m.worktreeRemovalForm = d
+	}
 
 	// Access wrapped huh.Form to check completion
 	if form, ok := m.worktreeRemovalForm.Content().(*huh.Form); ok {
@@ -832,9 +940,22 @@ func (m *Model) View() string {
 		}
 
 		return view
-	case stateCreatingSession:
-		if m.sessionForm != nil {
-			return m.sessionForm.View()
+	case stateCommandPalette:
+		if m.commandPalette != nil {
+			// Render dimmed background
+			background := m.sessionList.View()
+			if m.tokenChart.IsVisible() {
+				background += "\n" + m.tokenChart.View() + "\n"
+			}
+			dimmed := applyDimOverlay(background)
+
+			// Render palette centered
+			palette := m.commandPalette.View()
+			return compositeOverlay(dimmed, palette, m.height)
+		}
+	case stateCommentingSession:
+		if m.sessionCommentForm != nil {
+			return m.sessionCommentForm.View()
 		}
 	case stateConfirmingArchive:
 		if m.worktreeRemovalForm != nil {
@@ -844,6 +965,10 @@ func (m *Model) View() string {
 		if m.worktreeRemovalForm != nil {
 			return m.worktreeRemovalForm.View()
 		}
+	case stateCreatingSession:
+		if m.sessionForm != nil {
+			return m.sessionForm.View()
+		}
 	case stateHelp:
 		if m.helpScreen != nil {
 			return m.helpScreen.View()
@@ -852,18 +977,81 @@ func (m *Model) View() string {
 		if m.sessionRenameForm != nil {
 			return m.sessionRenameForm.View()
 		}
-	case stateSettingStatus:
-		if m.sessionStatusForm != nil {
-			return m.sessionStatusForm.View()
-		}
-	case stateCommentingSession:
-		if m.sessionCommentForm != nil {
-			return m.sessionCommentForm.View()
-		}
 	case stateSendingText:
 		if m.sendTextForm != nil {
 			return m.sendTextForm.View()
 		}
+	case stateSettingStatus:
+		if m.sessionStatusForm != nil {
+			return m.sessionStatusForm.View()
+		}
 	}
 	return ""
+}
+
+// applyDimOverlay applies a dimmed style to all lines of the background.
+func applyDimOverlay(background string) string {
+	lines := strings.Split(background, "\n")
+	for i, line := range lines {
+		// Strip existing ANSI codes and apply dim style
+		lines[i] = theme.DimmedStyle.Render(stripAnsi(line))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// stripAnsi removes ANSI escape codes from a string.
+func stripAnsi(s string) string {
+	// Simple regex-free approach: skip escape sequences
+	var result strings.Builder
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
+}
+
+// compositeOverlay overlays the palette on top of the dimmed background.
+// This simulates transparency by showing dimmed content around the palette.
+// The palette is positioned at the bottom of the screen, full width.
+func compositeOverlay(background, palette string, height int) string {
+	bgLines := strings.Split(background, "\n")
+	paletteLines := strings.Split(palette, "\n")
+
+	paletteHeight := len(paletteLines)
+
+	// Position at bottom, full width
+	topOffset := height - paletteHeight
+	if topOffset < 0 {
+		topOffset = 0
+	}
+
+	// Ensure background has enough lines
+	for len(bgLines) < height {
+		bgLines = append(bgLines, "")
+	}
+
+	// Dim lines above the palette
+	for i := 0; i < topOffset && i < len(bgLines); i++ {
+		bgLines[i] = theme.DimmedStyle.Render(stripAnsi(bgLines[i]))
+	}
+
+	// Replace bottom lines with palette (full width, no compositing needed)
+	for i, paletteLine := range paletteLines {
+		bgLineIdx := topOffset + i
+		if bgLineIdx < len(bgLines) {
+			bgLines[bgLineIdx] = paletteLine
+		}
+	}
+
+	return strings.Join(bgLines, "\n")
 }
