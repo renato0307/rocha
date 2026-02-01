@@ -75,6 +75,11 @@ func (s *GitService) GetBranchName(path string) string {
 	return s.gitRepo.GetBranchName(path)
 }
 
+// FetchAllPRs fetches all PRs for a repository in one call
+func (s *GitService) FetchAllPRs(ctx context.Context, repoPath string) (map[string]*domain.PRInfo, error) {
+	return s.gitRepo.FetchAllPRs(ctx, repoPath)
+}
+
 // FetchPRInfo fetches PR information for a branch
 func (s *GitService) FetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error) {
 	return s.gitRepo.FetchPRInfo(ctx, worktreePath, branchName)
