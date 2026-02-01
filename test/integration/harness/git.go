@@ -51,6 +51,9 @@ func NewTestGitSetup(tb testing.TB) *TestGitSetup {
 	runGitCommand(tb, clonePath, "add", "README.md")
 	runGitCommand(tb, clonePath, "commit", "-m", "Initial commit")
 
+	// Ensure branch is named "main" (git might default to "master")
+	runGitCommand(tb, clonePath, "branch", "-M", "main")
+
 	// Push initial commit to origin
 	runGitCommand(tb, clonePath, "push", "-u", "origin", "main")
 
@@ -119,6 +122,11 @@ func (g *TestGitSetup) GetClonePath() string {
 // GetBareRepoPath returns the path to the bare repository (origin).
 func (g *TestGitSetup) GetBareRepoPath() string {
 	return g.BareRepoPath
+}
+
+// RunGitCommand executes a git command in the specified directory (exported for tests).
+func RunGitCommand(tb testing.TB, dir string, args ...string) {
+	runGitCommand(tb, dir, args...)
 }
 
 // runGitCommand executes a git command in the specified directory.
