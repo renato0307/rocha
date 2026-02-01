@@ -125,6 +125,11 @@ func (r *CLIRepository) FetchGitStats(ctx context.Context, worktreePath string) 
 
 // PRInfoProvider methods
 
+// FetchAllPRs implements PRInfoProvider.FetchAllPRs
+func (r *CLIRepository) FetchAllPRs(ctx context.Context, repoPath string) (map[string]*domain.PRInfo, error) {
+	return fetchAllPRs(ctx, repoPath)
+}
+
 // FetchPRInfo implements PRInfoProvider.FetchPRInfo
 func (r *CLIRepository) FetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error) {
 	return fetchPRInfo(ctx, worktreePath, branchName)

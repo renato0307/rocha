@@ -20,6 +20,14 @@ type ghPRResponse struct {
 	URL    string `json:"url"`
 }
 
+// ghPRListResponse represents a single PR from gh pr list output
+type ghPRListResponse struct {
+	HeadRefName string `json:"headRefName"`
+	Number      int    `json:"number"`
+	State       string `json:"state"`
+	URL         string `json:"url"`
+}
+
 // fetchPRInfo fetches PR information for a branch using gh CLI.
 // Returns (nil, nil) if gh CLI is not installed.
 // Returns (PRInfo with Number=0, nil) if no PR exists for the branch.
@@ -72,6 +80,54 @@ func fetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.
 		State:     resp.State,
 		URL:       resp.URL,
 	}, nil
+}
+
+// fetchAllPRs fetches all PRs for a repository in one call.
+// Returns map[branchName]*PRInfo where branchName is the head branch of the PR.
+// Returns (nil, nil) if gh CLI is not installed.
+func fetchAllPRs(ctx context.Context, repoPath string) (map[string]*domain.PRInfo, error) {
+	logging.Logger.Debug("Fetching all PRs for repo", "path", repoPath)
+
+	// Check if gh is available
+	if _, err := exec.LookPath("gh"); err != nil {
+		logging.Logger.Debug("gh CLI not found, skipping PR fetch")
+		return nil, nil
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(ctx, prInfoFetchTimeout)
+	defer cancel()
+
+	// Run gh pr list for all PRs in the repo
+	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--state", "all", "--json", "number,headRefName,state,url", "--limit", "100")
+	cmd.Dir = repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		logging.Logger.Debug("gh pr list failed", "error", err)
+		return nil, fmt.Errorf("gh pr list failed: %w", err)
+	}
+
+	var prList []ghPRListResponse
+	if err := json.Unmarshal(output, &prList); err != nil {
+		logging.Logger.Debug("Failed to parse gh pr list output", "error", err, "output", string(output))
+		return nil, fmt.Errorf("failed to parse gh response: %w", err)
+	}
+
+	// Build map by branch name
+	result := make(map[string]*domain.PRInfo, len(prList))
+	checkedAt := time.Now().UTC()
+	for _, pr := range prList {
+		result[pr.HeadRefName] = &domain.PRInfo{
+			CheckedAt: checkedAt,
+			Number:    pr.Number,
+			State:     pr.State,
+			URL:       pr.URL,
+		}
+	}
+
+	logging.Logger.Debug("Fetched all PRs", "repo", repoPath, "count", len(result))
+	return result, nil
 }
 
 // openPRInBrowser opens the PR URL in the default browser using gh CLI

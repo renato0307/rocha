@@ -49,6 +49,7 @@ type GitStatsProvider interface {
 
 // PRInfoProvider provides PR information for UI
 type PRInfoProvider interface {
+	FetchAllPRs(ctx context.Context, repoPath string) (map[string]*domain.PRInfo, error)
 	FetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error)
 	OpenPRInBrowser(worktreePath string) error
 }

@@ -30,7 +30,46 @@ go test ./internal/services/... -run TestCreateSession
 
 ## Test Patterns
 
-Follow the established patterns from existing tests:
+### Table-Driven Tests (Preferred)
+
+Use table-driven tests for functions with multiple scenarios:
+
+```go
+func TestFunctionName(t *testing.T) {
+    tests := []struct {
+        name      string
+        input     string
+        expected  int
+        assertErr assert.ErrorAssertionFunc
+    }{
+        {
+            name:      "valid input",
+            input:     "hello",
+            expected:  5,
+            assertErr: assert.NoError,
+        },
+        {
+            name:      "empty input returns error",
+            input:     "",
+            expected:  0,
+            assertErr: assert.Error,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := FunctionName(tt.input)
+
+            tt.assertErr(t, err)
+            assert.Equal(t, tt.expected, result)
+        })
+    }
+}
+```
+
+### Single Scenario Tests
+
+For tests with mocks or complex setup:
 
 ```go
 func TestFunctionName_Scenario(t *testing.T) {

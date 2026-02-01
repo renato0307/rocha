@@ -142,8 +142,18 @@ func NewModel(
 }
 
 func (m *Model) Init() tea.Cmd {
-	// Delegate to session list component (starts auto-refresh polling)
-	return m.sessionList.Init()
+	cmds := []tea.Cmd{m.sessionList.Init()}
+
+	// Batch fetch PR info for all sessions on startup
+	if m.showPRNumber {
+		requests := GroupSessionsByRepo(m.sessionState.Sessions)
+		if len(requests) > 0 {
+			logging.Logger.Debug("Triggering batch PR fetch on init", "repos", len(requests))
+			cmds = append(cmds, StartBatchPRInfoFetcher(m.gitService, requests))
+		}
+	}
+
+	return tea.Batch(cmds...)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -397,6 +407,24 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		logging.Logger.Debug("PR info fetch failed", "session", msg.SessionName, "error", msg.Err)
 		return m, nil
 
+	case BatchPRInfoReadyMsg:
+		// Batch PR info fetched - update all sessions
+		logging.Logger.Debug("Received batch PR info", "count", len(msg.Results))
+		for sessionName, prInfo := range msg.Results {
+			if sessionInfo, exists := m.sessionState.Sessions[sessionName]; exists {
+				sessionInfo.PRInfo = prInfo
+				m.sessionState.Sessions[sessionName] = sessionInfo
+
+				// Persist to database
+				if err := m.sessionService.UpdatePRInfo(context.Background(), sessionName, prInfo); err != nil {
+					logging.Logger.Error("Failed to persist PR info", "error", err, "session", sessionName)
+				}
+			}
+		}
+		// Single UI refresh after all updates
+		refreshCmd := m.sessionList.RefreshFromState()
+		return m, tea.Batch(refreshCmd, m.sessionList.Init())
+
 	case OpenPRMsg:
 		// Open PR in browser for session
 		sessionInfo, exists := m.sessionState.Sessions[msg.SessionName]
@@ -432,24 +460,17 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle detach message - session list auto-refreshes via polling
-	if detachMsg, ok := msg.(detachedMsg); ok {
+	if _, ok := msg.(detachedMsg); ok {
 		m.state = stateList
 		refreshCmd := m.sessionList.RefreshFromState()
 
-		// Trigger PR fetch for detached session if enabled
+		// Trigger batch PR fetch for all sessions if enabled
 		var prFetchCmd tea.Cmd
-		if m.showPRNumber && detachMsg.SessionName != "" {
-			if sessionInfo, exists := m.sessionState.Sessions[detachMsg.SessionName]; exists {
-				if sessionInfo.WorktreePath != "" && sessionInfo.BranchName != "" {
-					logging.Logger.Debug("Triggering PR fetch on detach",
-						"session", detachMsg.SessionName,
-						"branch", sessionInfo.BranchName)
-					prFetchCmd = StartPRInfoFetcher(m.gitService, PRInfoRequest{
-						BranchName:   sessionInfo.BranchName,
-						SessionName:  detachMsg.SessionName,
-						WorktreePath: sessionInfo.WorktreePath,
-					})
-				}
+		if m.showPRNumber {
+			requests := GroupSessionsByRepo(m.sessionState.Sessions)
+			if len(requests) > 0 {
+				logging.Logger.Debug("Triggering batch PR fetch on detach", "repos", len(requests))
+				prFetchCmd = StartBatchPRInfoFetcher(m.gitService, requests)
 			}
 		}
 
