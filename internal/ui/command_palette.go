@@ -38,8 +38,7 @@ type CommandPaletteResult struct {
 // sessionName is the display name to show in the header.
 // keys provides the key bindings for navigation.
 func NewCommandPalette(session *ports.TmuxSession, sessionName string, keys KeyMap) *CommandPalette {
-	hasSession := session != nil
-	actions := GetPaletteActions(hasSession)
+	actions := GetPaletteActions()
 
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter..."

@@ -18,16 +18,6 @@ type KeyDefinition struct {
 	TipFormat   string
 }
 
-// RequiresSession returns true if this key's action requires a session.
-// Inferred from whether the Msg implements SessionAwareMsg.
-func (k KeyDefinition) RequiresSession() bool {
-	if k.Msg == nil {
-		return false
-	}
-	_, ok := k.Msg.(SessionAwareMsg)
-	return ok
-}
-
 // AllKeyDefinitions contains all configurable key bindings.
 // This is the single source of truth for key names, defaults, help text, and tips.
 // If PaletteName is set, the key appears in the command palette.
@@ -128,14 +118,10 @@ func IsValidKeyName(name string) bool {
 }
 
 // GetPaletteActions returns key definitions that should appear in the command palette.
-// If hasSession is false, actions requiring a session are excluded.
-func GetPaletteActions(hasSession bool) []KeyDefinition {
+func GetPaletteActions() []KeyDefinition {
 	var actions []KeyDefinition
 	for _, def := range AllKeyDefinitions {
 		if def.PaletteName == "" {
-			continue
-		}
-		if def.RequiresSession() && !hasSession {
 			continue
 		}
 		actions = append(actions, def)
