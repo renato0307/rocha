@@ -64,4 +64,5 @@ After adding new packages/components, update ARCHITECTURE.md diagrams (minimize 
 - **tmux** (required) - Terminal multiplexer
 - **git** (required) - Version control for worktrees
 - **claude** (auto-bootstrapped) - Claude Code CLI
+- **gh** (optional) - GitHub CLI for PR information and browser opening
 - **editor** (optional) - VS Code or any text editor

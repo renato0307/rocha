@@ -4,13 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/renato0307/rocha/internal/logging"
+	"github.com/renato0307/rocha/internal/theme"
 )
-
-// Muted orange for "PR" prefix (ANSI 166 = dark orange)
-var prLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("166"))
 
 type SessionsOpenPRCmd struct {
 	Name string `arg:"" help:"Session name"`
@@ -49,8 +45,8 @@ func (s *SessionsOpenPRCmd) Run(cli *CLI) error {
 		return fmt.Errorf("failed to open PR: %w", err)
 	}
 
-	// Print styled output: "PR" in muted orange, "#number" in default
-	fmt.Printf("%s #%d\n", prLabelStyle.Render("PR"), prInfo.Number)
+	// Print styled output: "PR" in yellow, "#number" in default
+	fmt.Printf("%s #%d\n", theme.PRLabelStyle.Render("PR"), prInfo.Number)
 
 	return nil
 }

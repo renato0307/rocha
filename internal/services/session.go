@@ -424,7 +424,11 @@ func (s *SessionService) UpdateStatus(ctx context.Context, name string, status *
 
 // UpdatePRInfo updates the PR info for a session
 func (s *SessionService) UpdatePRInfo(ctx context.Context, name string, prInfo *domain.PRInfo) error {
-	logging.Logger.Debug("Updating session PR info", "name", name, "number", prInfo.Number)
+	var number int
+	if prInfo != nil {
+		number = prInfo.Number
+	}
+	logging.Logger.Debug("Updating session PR info", "name", name, "number", number)
 	return s.sessionRepo.UpdatePRInfo(ctx, name, prInfo)
 }
 

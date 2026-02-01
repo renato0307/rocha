@@ -11,6 +11,8 @@ import (
 	"github.com/renato0307/rocha/internal/logging"
 )
 
+const prInfoFetchTimeout = 5 * time.Second
+
 // ghPRResponse represents the JSON response from gh pr view
 type ghPRResponse struct {
 	Number int    `json:"number"`
@@ -18,7 +20,9 @@ type ghPRResponse struct {
 	URL    string `json:"url"`
 }
 
-// fetchPRInfo fetches PR information for a branch using gh CLI
+// fetchPRInfo fetches PR information for a branch using gh CLI.
+// Returns (nil, nil) if gh CLI is not installed.
+// Returns (PRInfo with Number=0, nil) if no PR exists for the branch.
 func fetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.PRInfo, error) {
 	logging.Logger.Debug("Fetching PR info", "path", worktreePath, "branch", branchName)
 
@@ -29,7 +33,7 @@ func fetchPRInfo(ctx context.Context, worktreePath, branchName string) (*domain.
 	}
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, prInfoFetchTimeout)
 	defer cancel()
 
 	// Run gh pr view for the branch
