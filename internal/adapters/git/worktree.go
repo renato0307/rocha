@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/renato0307/rocha/internal/config"
 	"github.com/renato0307/rocha/internal/logging"
 )
 
@@ -195,31 +196,70 @@ func removeWorktree(repoPath, worktreePath string) error {
 	return nil
 }
 
-// listWorktrees lists all worktrees for the given repository
-func listWorktrees(repoPath string) ([]string, error) {
-	logging.Logger.Debug("Listing worktrees", "repo_path", repoPath)
+// worktreeInfo holds parsed information about a git worktree
+type worktreeInfo struct {
+	branch string
+	path   string
+}
 
+// parseWorktreeList parses git worktree list --porcelain output
+// Returns a slice of worktreeInfo with path and branch for each worktree
+func parseWorktreeList(output string) []worktreeInfo {
+	var worktrees []worktreeInfo
+	var current worktreeInfo
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			// Start of a new worktree entry
+			if current.path != "" {
+				worktrees = append(worktrees, current)
+			}
+			current = worktreeInfo{path: strings.TrimPrefix(line, "worktree ")}
+		case strings.HasPrefix(line, "branch "):
+			current.branch = strings.TrimPrefix(line, "branch ")
+		}
+	}
+
+	// Don't forget the last entry
+	if current.path != "" {
+		worktrees = append(worktrees, current)
+	}
+
+	return worktrees
+}
+
+// fetchWorktreeList executes git worktree list and returns parsed results
+func fetchWorktreeList(repoPath string) ([]worktreeInfo, error) {
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = repoPath
 
 	output, err := cmd.Output()
 	if err != nil {
-		logging.Logger.Error("Failed to list worktrees", "error", err)
 		return nil, fmt.Errorf("failed to list worktrees: %w", err)
 	}
 
-	// Parse the porcelain output
-	var worktrees []string
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "worktree ") {
-			path := strings.TrimPrefix(line, "worktree ")
-			worktrees = append(worktrees, path)
-		}
+	return parseWorktreeList(string(output)), nil
+}
+
+// listWorktrees lists all worktrees for the given repository
+func listWorktrees(repoPath string) ([]string, error) {
+	logging.Logger.Debug("Listing worktrees", "repo_path", repoPath)
+
+	worktrees, err := fetchWorktreeList(repoPath)
+	if err != nil {
+		logging.Logger.Error("Failed to list worktrees", "error", err)
+		return nil, err
 	}
 
-	logging.Logger.Debug("Found worktrees", "count", len(worktrees))
-	return worktrees, nil
+	paths := make([]string, len(worktrees))
+	for i, wt := range worktrees {
+		paths[i] = wt.path
+	}
+
+	logging.Logger.Debug("Found worktrees", "count", len(paths))
+	return paths, nil
 }
 
 // getBranchName returns the current branch name for the given path
@@ -357,8 +397,41 @@ func buildWorktreePath(base, repoInfo, sessionName string) string {
 	return filepath.Join(base, sanitizedSession)
 }
 
+// getWorktreeForBranch finds an existing worktree for a branch
+// Returns the worktree path if found, empty string if not
+// Excludes the main repository directory (.main) from search results
+func getWorktreeForBranch(repoPath, branchName string) (string, error) {
+	logging.Logger.Debug("Looking for existing worktree for branch",
+		"repo_path", repoPath, "branch", branchName)
+
+	worktrees, err := fetchWorktreeList(repoPath)
+	if err != nil {
+		logging.Logger.Error("Failed to list worktrees", "error", err)
+		return "", err
+	}
+
+	expectedBranchRef := fmt.Sprintf("refs/heads/%s", branchName)
+
+	for _, wt := range worktrees {
+		// Skip the main repository directory - we only want actual worktrees
+		if strings.HasSuffix(wt.path, "/"+config.MainRepoDir) {
+			logging.Logger.Debug("Skipping main repository directory", "path", wt.path)
+			continue
+		}
+
+		if wt.branch == expectedBranchRef {
+			logging.Logger.Info("Found existing worktree for branch",
+				"branch", branchName, "worktree", wt.path)
+			return wt.path, nil
+		}
+	}
+
+	logging.Logger.Debug("No existing worktree found for branch", "branch", branchName)
+	return "", nil
+}
+
 // repairWorktrees repairs git worktree references after moving
-// Must be run from the .main directory with paths to all moved worktrees
+// Must be run from the main repository directory (config.MainRepoDir) with paths to all moved worktrees
 // This is necessary when both the main repository and worktrees have been moved
 func repairWorktrees(mainRepoPath string, worktreePaths []string) error {
 	logging.Logger.Info("Repairing worktree references",
@@ -377,7 +450,7 @@ func repairWorktrees(mainRepoPath string, worktreePaths []string) error {
 	logging.Logger.Debug("Running git worktree repair", "args", args)
 
 	cmd := exec.Command("git", args...)
-	cmd.Dir = mainRepoPath // Run from .main directory
+	cmd.Dir = mainRepoPath // Run from main repository directory
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

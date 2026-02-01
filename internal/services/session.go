@@ -128,12 +128,27 @@ func (s *SessionService) CreateSession(
 			logging.Logger.Info("Auto-generated branch name from session name", "branch", branchName)
 		}
 
-		worktreeBase := config.GetWorktreePath()
-		worktreePath = s.gitRepo.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)
-		logging.Logger.Info("Creating worktree", "path", worktreePath, "branch", branchName)
+		// Check if a worktree already exists for this branch
+		existingWorktree, err := s.gitRepo.GetWorktreeForBranch(repoPath, branchName)
+		if err != nil {
+			logging.Logger.Warn("Failed to check for existing worktree", "error", err)
+			// Continue with worktree creation attempt
+		}
 
-		if err := s.gitRepo.CreateWorktree(repoPath, worktreePath, branchName); err != nil {
-			return nil, fmt.Errorf("failed to create worktree: %w", err)
+		if existingWorktree != "" {
+			// Reuse existing worktree
+			worktreePath = existingWorktree
+			logging.Logger.Info("Reusing existing worktree for branch",
+				"branch", branchName, "path", worktreePath)
+		} else {
+			// Create new worktree
+			worktreeBase := config.GetWorktreePath()
+			worktreePath = s.gitRepo.BuildWorktreePath(worktreeBase, repoInfo, tmuxName)
+			logging.Logger.Info("Creating worktree", "path", worktreePath, "branch", branchName)
+
+			if err := s.gitRepo.CreateWorktree(repoPath, worktreePath, branchName); err != nil {
+				return nil, fmt.Errorf("failed to create worktree: %w", err)
+			}
 		}
 	} else if createWorktree && repoPath == "" {
 		logging.Logger.Warn("Cannot create worktree: not in a git repository")

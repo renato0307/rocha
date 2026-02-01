@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 )
 
+// MainRepoDir is the directory name used for the main repository clone
+const MainRepoDir = ".main"
+
 // GetRochaHome returns ROCHA_HOME or ~/.rocha default
 func GetRochaHome() string {
 	rochaHome := os.Getenv("ROCHA_HOME")

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/renato0307/rocha/internal/config"
 	"github.com/renato0307/rocha/internal/domain"
 	"github.com/renato0307/rocha/internal/logging"
 	"github.com/renato0307/rocha/internal/ports"
@@ -202,21 +203,21 @@ func (s *MigrationService) moveRepository(
 
 	logging.Logger.Info("Found sessions for repository", "repo", params.RepoInfo, "count", len(repoSessions))
 
-	// Extract shared .main path from first session
+	// Extract shared main repository path from first session
 	mainRepoPath := repoSessions[0].RepoPath
 	if mainRepoPath == "" {
 		logging.Logger.Warn("No RepoPath found for repository sessions", "repo", params.RepoInfo)
-		fmt.Printf("⚠ Warning: No .main directory found for repository %s\n", params.RepoInfo)
+		fmt.Printf("⚠ Warning: No %s directory found for repository %s\n", config.MainRepoDir, params.RepoInfo)
 	}
 
-	// Validate all sessions share the same .main path
+	// Validate all sessions share the same main repository path
 	for _, sess := range repoSessions {
 		if sess.RepoPath != mainRepoPath {
 			logging.Logger.Error("Sessions have different RepoPath values",
 				"repo", params.RepoInfo,
 				"expected", mainRepoPath,
 				"found", sess.RepoPath)
-			return nil, fmt.Errorf("sessions in repository %s have different .main paths", params.RepoInfo)
+			return nil, fmt.Errorf("sessions in repository %s have different main repository paths", params.RepoInfo)
 		}
 	}
 
@@ -240,25 +241,25 @@ func (s *MigrationService) moveRepository(
 		}
 	}
 
-	// Move .main directory if it exists
+	// Move main repository directory if it exists
 	if mainRepoPath != "" {
 		sourceMainPath := mainRepoPath
 		destMainPath := strings.Replace(mainRepoPath, params.SourceRochaHome, params.DestRochaHome, 1)
 
-		logging.Logger.Info("Moving .main directory", "from", sourceMainPath, "to", destMainPath)
-		fmt.Printf("Moving .main directory...\n")
+		logging.Logger.Info("Moving main repository directory", "from", sourceMainPath, "to", destMainPath)
+		fmt.Printf("Moving main repository directory...\n")
 
 		if err := s.moveMainDirectory(sourceMainPath, destMainPath); err != nil {
-			logging.Logger.Error("Failed to move .main directory", "error", err)
-			return nil, fmt.Errorf("failed to move .main directory: %w", err)
+			logging.Logger.Error("Failed to move main repository directory", "error", err)
+			return nil, fmt.Errorf("failed to move main repository directory: %w", err)
 		}
-		fmt.Printf("✓ Moved .main directory\n")
+		fmt.Printf("✓ Moved main repository directory\n")
 
 		// Update mainRepoPath to point to new location
 		mainRepoPath = destMainPath
 	}
 
-	// Move all worktrees and collect paths for repair
+	// Move all session worktrees and collect paths for repair
 	var movedWorktreePaths []string
 	for i := range repoSessions {
 		// Update session paths
@@ -402,7 +403,7 @@ func (s *MigrationService) updateSessionPaths(sess *domain.Session, sourceRochaH
 		sess.WorktreePath = strings.Replace(sess.WorktreePath, sourceRochaHome, destRochaHome, 1)
 	}
 
-	// Update RepoPath (.main directory path)
+	// Update RepoPath (main repository directory path)
 	if sess.RepoPath != "" {
 		sess.RepoPath = strings.Replace(sess.RepoPath, sourceRochaHome, destRochaHome, 1)
 	}
@@ -418,38 +419,38 @@ func (s *MigrationService) updateSessionPaths(sess *domain.Session, sourceRochaH
 	}
 }
 
-// moveMainDirectory moves a .main directory from source to destination
+// moveMainDirectory moves a main repository directory from source to destination
 func (s *MigrationService) moveMainDirectory(sourcePath, destPath string) error {
-	logging.Logger.Info("Moving .main directory", "from", sourcePath, "to", destPath)
+	logging.Logger.Info("Moving main repository directory", "from", sourcePath, "to", destPath)
 
 	// Check if source exists
 	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-		logging.Logger.Warn("Source .main directory does not exist", "path", sourcePath)
-		return fmt.Errorf("source .main directory does not exist: %s", sourcePath)
+		logging.Logger.Warn("Source main repository directory does not exist", "path", sourcePath)
+		return fmt.Errorf("source main repository directory does not exist: %s", sourcePath)
 	}
 
 	// Check if destination already exists
 	if _, err := os.Stat(destPath); err == nil {
 		// Destination exists - check if it's the same repo
-		logging.Logger.Debug("Destination .main already exists, checking if same repo", "path", destPath)
+		logging.Logger.Debug("Destination main repository directory already exists, checking if same repo", "path", destPath)
 
 		sourceRemote := s.gitRepo.GetRemoteURL(sourcePath)
 		destRemote := s.gitRepo.GetRemoteURL(destPath)
 
 		if sourceRemote == "" || destRemote == "" {
 			logging.Logger.Warn("Could not get remote URL for comparison", "sourceRemote", sourceRemote, "destRemote", destRemote)
-			return fmt.Errorf(".main directory already exists at destination: %s", destPath)
+			return fmt.Errorf("main repository directory already exists at destination: %s", destPath)
 		}
 
 		// Normalize URLs for comparison
 		if !s.isSameRepo(sourceRemote, destRemote) {
-			logging.Logger.Error("Destination .main is different repository", "sourceRemote", sourceRemote, "destRemote", destRemote)
-			return fmt.Errorf(".main directory at destination is a different repository.\nSource: %s\nDestination: %s", sourceRemote, destRemote)
+			logging.Logger.Error("Destination main repository is different repository", "sourceRemote", sourceRemote, "destRemote", destRemote)
+			return fmt.Errorf("main repository directory at destination is a different repository.\nSource: %s\nDestination: %s", sourceRemote, destRemote)
 		}
 
-		// Same repo - use existing .main, don't move
-		logging.Logger.Info("Destination .main is same repository, using existing", "path", destPath)
-		fmt.Printf("✓ Using existing .main at destination (same repository)\n")
+		// Same repo - use existing main repository, don't move
+		logging.Logger.Info("Destination main repository is same repository, using existing", "path", destPath)
+		fmt.Printf("✓ Using existing main repository at destination (same repository)\n")
 		return nil
 	}
 
@@ -461,21 +462,21 @@ func (s *MigrationService) moveMainDirectory(sourcePath, destPath string) error 
 	// Try atomic rename first (works if same filesystem)
 	err := os.Rename(sourcePath, destPath)
 	if err == nil {
-		logging.Logger.Info(".main directory moved using atomic rename", "from", sourcePath, "to", destPath)
+		logging.Logger.Info("Main repository directory moved using atomic rename", "from", sourcePath, "to", destPath)
 		return nil
 	}
 
 	// If rename fails, fall back to copy + delete (for cross-filesystem moves)
 	if err := s.copyDirectory(sourcePath, destPath); err != nil {
-		return fmt.Errorf("failed to copy .main directory: %w", err)
+		return fmt.Errorf("failed to copy main repository directory: %w", err)
 	}
 
 	// Remove source after successful copy
 	if err := os.RemoveAll(sourcePath); err != nil {
-		return fmt.Errorf("failed to remove source .main directory after copy: %w", err)
+		return fmt.Errorf("failed to remove source main repository directory after copy: %w", err)
 	}
 
-	logging.Logger.Info(".main directory moved using copy+delete", "from", sourcePath, "to", destPath)
+	logging.Logger.Info("Main repository directory moved using copy+delete", "from", sourcePath, "to", destPath)
 	return nil
 }
 
