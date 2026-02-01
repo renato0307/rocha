@@ -495,6 +495,12 @@ func (s *SessionService) UpdateState(ctx context.Context, name string, state dom
 	return s.sessionRepo.UpdateState(ctx, name, state, executionID)
 }
 
+// UpdateExecutionID updates only the execution ID of a session without changing its state
+func (s *SessionService) UpdateExecutionID(ctx context.Context, name, executionID string) error {
+	logging.Logger.Debug("Updating session execution ID", "name", name, "executionID", executionID)
+	return s.sessionRepo.UpdateExecutionID(ctx, name, executionID)
+}
+
 // ResolveClaudeDir resolves the Claude directory for a given repo
 func (s *SessionService) ResolveClaudeDir(repoInfo, userOverride string) string {
 	return s.claudeDirResolver.Resolve(repoInfo, userOverride)

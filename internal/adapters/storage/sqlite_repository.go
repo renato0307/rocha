@@ -499,6 +499,25 @@ func (r *SQLiteRepository) UpdateState(ctx context.Context, name string, state d
 	}, 3)
 }
 
+// UpdateExecutionID implements SessionStateUpdater.UpdateExecutionID
+func (r *SQLiteRepository) UpdateExecutionID(ctx context.Context, name, executionID string) error {
+	return withRetry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			updates := map[string]any{
+				"execution_id": executionID,
+			}
+			result := tx.Model(&SessionModel{}).Where("name = ?", name).Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return fmt.Errorf("session %s not found", name)
+			}
+			return nil
+		})
+	}, 3)
+}
+
 // UpdateClaudeDir implements SessionStateUpdater.UpdateClaudeDir
 func (r *SQLiteRepository) UpdateClaudeDir(ctx context.Context, name, claudeDir string) error {
 	return withRetry(func() error {

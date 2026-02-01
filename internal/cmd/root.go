@@ -241,10 +241,10 @@ func (r *RunCmd) Run(cli *CLI) error {
 		}
 		logging.Logger.Info("Syncing with running tmux sessions", "count", len(runningNames))
 
-		// Update execution ID for running sessions without changing last_updated timestamp
+		// Update execution ID for running sessions
 		for _, sessionName := range runningNames {
 			if _, exists := st.Sessions[sessionName]; exists {
-				if err := cli.Container.SessionService.UpdateState(context.Background(), sessionName, domain.StateIdle, executionID); err != nil {
+				if err := cli.Container.SessionService.UpdateExecutionID(context.Background(), sessionName, executionID); err != nil {
 					logging.Logger.Error("Failed to update execution ID", "error", err, "session", sessionName)
 				} else {
 					logging.Logger.Debug("Updated session execution ID", "session", sessionName)
