@@ -101,6 +101,69 @@ func (_c *MockSessionStateUpdater_UpdateClaudeDir_Call) RunAndReturn(run func(ct
 	return _c
 }
 
+// UpdateExecutionID provides a mock function for the type MockSessionStateUpdater
+func (_mock *MockSessionStateUpdater) UpdateExecutionID(ctx context.Context, name string, executionID string) error {
+	ret := _mock.Called(ctx, name, executionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateExecutionID")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, name, executionID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSessionStateUpdater_UpdateExecutionID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateExecutionID'
+type MockSessionStateUpdater_UpdateExecutionID_Call struct {
+	*mock.Call
+}
+
+// UpdateExecutionID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name string
+//   - executionID string
+func (_e *MockSessionStateUpdater_Expecter) UpdateExecutionID(ctx interface{}, name interface{}, executionID interface{}) *MockSessionStateUpdater_UpdateExecutionID_Call {
+	return &MockSessionStateUpdater_UpdateExecutionID_Call{Call: _e.mock.On("UpdateExecutionID", ctx, name, executionID)}
+}
+
+func (_c *MockSessionStateUpdater_UpdateExecutionID_Call) Run(run func(ctx context.Context, name string, executionID string)) *MockSessionStateUpdater_UpdateExecutionID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSessionStateUpdater_UpdateExecutionID_Call) Return(err error) *MockSessionStateUpdater_UpdateExecutionID_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSessionStateUpdater_UpdateExecutionID_Call) RunAndReturn(run func(ctx context.Context, name string, executionID string) error) *MockSessionStateUpdater_UpdateExecutionID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateRepoSource provides a mock function for the type MockSessionStateUpdater
 func (_mock *MockSessionStateUpdater) UpdateRepoSource(ctx context.Context, name string, repoSource string) error {
 	ret := _mock.Called(ctx, name, repoSource)
