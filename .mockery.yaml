@@ -12,9 +12,12 @@ packages:
       ProcessInspector: {}
       SessionReader: {}
       SessionRepository: {}
+      SessionStateUpdater: {}
       SessionWriter: {}
+      SoundPlayer: {}
       TmuxClient: {}
       TmuxSessionLifecycle: {}
+      TokenUsageReader: {}
   github.com/renato0307/rocha/internal/services:
     interfaces:
       ClaudeDirResolver: {}
