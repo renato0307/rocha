@@ -362,3 +362,67 @@ func TestRenameSession_DatabaseRenameErrorRollbackFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to rename in database")
 }
+
+func TestUpdatePRInfo(t *testing.T) {
+	tests := []struct {
+		name        string
+		sessionName string
+		prInfo      *domain.PRInfo
+		repoErr     error
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "happy path with PR info",
+			sessionName: "test-session",
+			prInfo: &domain.PRInfo{
+				Number: 123,
+				State:  "OPEN",
+				URL:    "https://github.com/test/repo/pull/123",
+			},
+			repoErr: nil,
+			wantErr: false,
+		},
+		{
+			name:        "nil PR info does not panic",
+			sessionName: "test-session",
+			prInfo:      nil,
+			repoErr:     nil,
+			wantErr:     false,
+		},
+		{
+			name:        "repository error propagates",
+			sessionName: "test-session",
+			prInfo: &domain.PRInfo{
+				Number: 123,
+				State:  "OPEN",
+			},
+			repoErr:     errors.New("db error"),
+			wantErr:     true,
+			errContains: "db error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gitRepo := portsmocks.NewMockGitRepository(t)
+			tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+			sessionRepo := portsmocks.NewMockSessionRepository(t)
+			claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+			processInspector := portsmocks.NewMockProcessInspector(t)
+
+			sessionRepo.EXPECT().UpdatePRInfo(mock.Anything, tt.sessionName, tt.prInfo).Return(tt.repoErr)
+
+			service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+			err := service.UpdatePRInfo(context.Background(), tt.sessionName, tt.prInfo)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
