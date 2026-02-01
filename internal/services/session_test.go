@@ -124,3 +124,241 @@ func TestCreateSession_ContinuesOnWorktreeLookupError(t *testing.T) {
 	require.NoError(t, err, "should continue even when worktree lookup fails")
 	assert.Equal(t, newWorktreePath, result.WorktreePath)
 }
+
+func TestDeleteSession_HappyPath(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	session := &domain.Session{
+		Name:         "test-session",
+		WorktreePath: "/path/to/worktree",
+		RepoPath:     "/path/to/repo",
+	}
+
+	sessionRepo.EXPECT().Get(mock.Anything, "test-session").Return(session, nil)
+	tmuxClient.EXPECT().KillSession("test-session").Return(nil)
+	sessionRepo.EXPECT().Delete(mock.Anything, "test-session").Return(nil)
+	gitRepo.EXPECT().RemoveWorktree("/path/to/repo", "/path/to/worktree").Return(nil)
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.DeleteSession(context.Background(), "test-session", DeleteSessionOptions{
+		KillTmux:       true,
+		RemoveWorktree: true,
+	})
+
+	require.NoError(t, err)
+}
+
+func TestDeleteSession_WithShellSession(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	shellSession := &domain.Session{Name: "test-session-shell"}
+	session := &domain.Session{
+		Name:         "test-session",
+		ShellSession: shellSession,
+		WorktreePath: "/path/to/worktree",
+		RepoPath:     "/path/to/repo",
+	}
+
+	sessionRepo.EXPECT().Get(mock.Anything, "test-session").Return(session, nil)
+	tmuxClient.EXPECT().KillSession("test-session-shell").Return(nil)
+	tmuxClient.EXPECT().KillSession("test-session").Return(nil)
+	sessionRepo.EXPECT().Delete(mock.Anything, "test-session").Return(nil)
+	gitRepo.EXPECT().RemoveWorktree("/path/to/repo", "/path/to/worktree").Return(nil)
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.DeleteSession(context.Background(), "test-session", DeleteSessionOptions{
+		KillTmux:       true,
+		RemoveWorktree: true,
+	})
+
+	require.NoError(t, err)
+}
+
+func TestDeleteSession_NoWorktree(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	session := &domain.Session{
+		Name:         "test-session",
+		WorktreePath: "", // No worktree
+		RepoPath:     "",
+	}
+
+	sessionRepo.EXPECT().Get(mock.Anything, "test-session").Return(session, nil)
+	sessionRepo.EXPECT().Delete(mock.Anything, "test-session").Return(nil)
+	// RemoveWorktree should NOT be called since paths are empty
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.DeleteSession(context.Background(), "test-session", DeleteSessionOptions{
+		KillTmux:       false,
+		RemoveWorktree: true, // Requested but should be skipped
+	})
+
+	require.NoError(t, err)
+}
+
+func TestDeleteSession_GetSessionError(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	sessionRepo.EXPECT().Get(mock.Anything, "test-session").Return(nil, errors.New("not found"))
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.DeleteSession(context.Background(), "test-session", DeleteSessionOptions{})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get session")
+}
+
+func TestDeleteSession_TmuxKillFailureContinues(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	session := &domain.Session{
+		Name:         "test-session",
+		WorktreePath: "/path/to/worktree",
+		RepoPath:     "/path/to/repo",
+	}
+
+	sessionRepo.EXPECT().Get(mock.Anything, "test-session").Return(session, nil)
+	// Tmux kill fails but deletion should continue
+	tmuxClient.EXPECT().KillSession("test-session").Return(errors.New("tmux error"))
+	sessionRepo.EXPECT().Delete(mock.Anything, "test-session").Return(nil)
+	gitRepo.EXPECT().RemoveWorktree("/path/to/repo", "/path/to/worktree").Return(nil)
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.DeleteSession(context.Background(), "test-session", DeleteSessionOptions{
+		KillTmux:       true,
+		RemoveWorktree: true,
+	})
+
+	require.NoError(t, err)
+}
+
+func TestDeleteSession_DatabaseDeleteError(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	session := &domain.Session{
+		Name:         "test-session",
+		WorktreePath: "/path/to/worktree",
+		RepoPath:     "/path/to/repo",
+	}
+
+	sessionRepo.EXPECT().Get(mock.Anything, "test-session").Return(session, nil)
+	sessionRepo.EXPECT().Delete(mock.Anything, "test-session").Return(errors.New("db error"))
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.DeleteSession(context.Background(), "test-session", DeleteSessionOptions{
+		KillTmux:       false,
+		RemoveWorktree: true,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to delete session")
+}
+
+func TestRenameSession_HappyPath(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	tmuxClient.EXPECT().RenameSession("old-session", "new-session").Return(nil)
+	sessionRepo.EXPECT().Rename(mock.Anything, "old-session", "new-session", "New Session").Return(nil)
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.RenameSession(context.Background(), "old-session", "new-session", "New Session")
+
+	require.NoError(t, err)
+}
+
+func TestRenameSession_TmuxRenameError(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	tmuxClient.EXPECT().RenameSession("old-session", "new-session").Return(errors.New("tmux error"))
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.RenameSession(context.Background(), "old-session", "new-session", "New Session")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to rename tmux session")
+}
+
+func TestRenameSession_DatabaseRenameErrorWithRollback(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	// Tmux rename succeeds
+	tmuxClient.EXPECT().RenameSession("old-session", "new-session").Return(nil)
+	// Database rename fails
+	sessionRepo.EXPECT().Rename(mock.Anything, "old-session", "new-session", "New Session").Return(errors.New("db error"))
+	// Rollback tmux rename
+	tmuxClient.EXPECT().RenameSession("new-session", "old-session").Return(nil)
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.RenameSession(context.Background(), "old-session", "new-session", "New Session")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to rename in database")
+}
+
+func TestRenameSession_DatabaseRenameErrorRollbackFails(t *testing.T) {
+	gitRepo := portsmocks.NewMockGitRepository(t)
+	tmuxClient := portsmocks.NewMockTmuxSessionLifecycle(t)
+	sessionRepo := portsmocks.NewMockSessionRepository(t)
+	claudeDirResolver := servicesmocks.NewMockClaudeDirResolver(t)
+	processInspector := portsmocks.NewMockProcessInspector(t)
+
+	// Tmux rename succeeds
+	tmuxClient.EXPECT().RenameSession("old-session", "new-session").Return(nil)
+	// Database rename fails
+	sessionRepo.EXPECT().Rename(mock.Anything, "old-session", "new-session", "New Session").Return(errors.New("db error"))
+	// Rollback fails too (but error is logged, not returned)
+	tmuxClient.EXPECT().RenameSession("new-session", "old-session").Return(errors.New("rollback failed"))
+
+	service := NewSessionService(sessionRepo, gitRepo, tmuxClient, claudeDirResolver, processInspector)
+
+	err := service.RenameSession(context.Background(), "old-session", "new-session", "New Session")
+
+	// Should still return the database error, not the rollback error
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to rename in database")
+}
