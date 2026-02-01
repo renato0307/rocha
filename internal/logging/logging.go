@@ -58,7 +58,7 @@ func Initialize(debug bool, debugFile string, maxLogFiles int) (string, error) {
 		}
 	} else {
 		// Use OS-specific log directory with rotation
-		logDir, err := getLogDir()
+		logDir, err := GetLogDir()
 		if err != nil {
 			return "", fmt.Errorf("failed to get log directory: %w", err)
 		}
@@ -160,8 +160,8 @@ func rotateLogs(logDir string, maxLogFiles int) error {
 	return nil
 }
 
-// getLogDir returns the OS-specific log directory
-func getLogDir() (string, error) {
+// GetLogDir returns the OS-specific log directory
+func GetLogDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -194,7 +194,7 @@ func getLogDir() (string, error) {
 // InitHookLogger initializes a logger for a specific hook execution
 // Creates a separate log file for each hook invocation to make debugging easier
 func InitHookLogger(sessionName, eventType string) (string, error) {
-	logDir, err := getLogDir()
+	logDir, err := GetLogDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get log directory: %w", err)
 	}

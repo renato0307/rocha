@@ -19,77 +19,82 @@ func TestNotify(t *testing.T) {
 		validate     func(t *testing.T, env *harness.TestEnvironment, result harness.CommandResult)
 	}{
 		{
-			name: "notify stop event",
+			name: "notify handle stop event",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "notify-session", "--state", "working")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "notify-session", "stop"},
+			args:         []string{"notify", "handle", "notify-session", "stop"},
 			wantExitCode: 0,
 		},
 		{
-			name: "notify prompt event",
+			name: "notify handle prompt event",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "prompt-session", "--state", "idle")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "prompt-session", "prompt"},
+			args:         []string{"notify", "handle", "prompt-session", "prompt"},
 			wantExitCode: 0,
 		},
 		{
-			name: "notify working event",
+			name: "notify handle working event",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "working-session", "--state", "idle")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "working-session", "working"},
+			args:         []string{"notify", "handle", "working-session", "working"},
 			wantExitCode: 0,
 		},
 		{
-			name: "notify start event",
+			name: "notify handle start event",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "start-session", "--state", "idle")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "start-session", "start"},
+			args:         []string{"notify", "handle", "start-session", "start"},
 			wantExitCode: 0,
 		},
 		{
-			name: "notify notification event",
+			name: "notify handle notification event",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "notification-session", "--state", "working")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "notification-session", "notification"},
+			args:         []string{"notify", "handle", "notification-session", "notification"},
 			wantExitCode: 0,
 		},
 		{
-			name: "notify end event",
+			name: "notify handle end event",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "end-session", "--state", "working")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "end-session", "end"},
+			args:         []string{"notify", "handle", "end-session", "end"},
 			wantExitCode: 0,
 		},
 		{
-			name: "notify with execution-id",
+			name: "notify handle with execution-id",
 			setup: func(t *testing.T, env *harness.TestEnvironment) {
 				result := harness.RunCommand(t, env, "sessions", "add", "exec-session")
 				harness.AssertSuccess(t, result)
 			},
-			args:         []string{"notify", "exec-session", "stop", "--execution-id", "test-exec-123"},
+			args:         []string{"notify", "handle", "exec-session", "stop", "--execution-id", "test-exec-123"},
 			wantExitCode: 0,
 		},
 		{
-			name:         "notify for non-existent session succeeds silently",
-			args:         []string{"notify", "non-existent-session", "stop"},
+			name:         "notify handle for non-existent session succeeds silently",
+			args:         []string{"notify", "handle", "non-existent-session", "stop"},
 			wantExitCode: 0, // Notify doesn't fail on missing sessions
 		},
 		{
-			name:         "notify default event type is stop",
-			args:         []string{"notify", "default-session"},
+			name:         "notify handle default event type is stop",
+			args:         []string{"notify", "handle", "default-session"},
 			wantExitCode: 0,
+		},
+		{
+			name:         "notify backward compat without handle subcommand",
+			args:         []string{"notify", "compat-session", "stop"},
+			wantExitCode: 0, // Should work due to default:"withargs"
 		},
 	}
 
@@ -128,7 +133,7 @@ func TestNotifyStateTransition(t *testing.T) {
 	harness.AssertStdoutContains(t, viewResult, "State: idle")
 
 	// Send prompt event (should transition to working)
-	notifyResult := harness.RunCommand(t, env, "notify", "state-session", "prompt")
+	notifyResult := harness.RunCommand(t, env, "notify", "handle", "state-session", "prompt")
 	harness.AssertSuccess(t, notifyResult)
 
 	// Verify state changed to working
@@ -137,7 +142,7 @@ func TestNotifyStateTransition(t *testing.T) {
 	harness.AssertStdoutContains(t, viewResult, "State: working")
 
 	// Send stop event (should transition to idle - Claude finished working)
-	notifyResult = harness.RunCommand(t, env, "notify", "state-session", "stop")
+	notifyResult = harness.RunCommand(t, env, "notify", "handle", "state-session", "stop")
 	harness.AssertSuccess(t, notifyResult)
 
 	// Verify state changed to idle

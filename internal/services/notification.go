@@ -37,8 +37,10 @@ func (s *NotificationService) HandleEvent(
 	eventType string,
 	executionID string,
 ) (domain.SessionState, error) {
-	// Map event type to session state
+	// Map event type to session state and determine if it's an intermediate event
 	var sessionState domain.SessionState
+	isIntermediateEvent := false
+
 	switch eventType {
 	case "stop":
 		sessionState = domain.StateIdle // Claude finished working
@@ -51,16 +53,24 @@ func (s *NotificationService) HandleEvent(
 		sessionState = domain.StateWorking // User submitted prompt
 	case "working":
 		sessionState = domain.StateWorking // Claude is actively working
+	case "tool-complete":
+		sessionState = domain.StateWorking // Tool completed after permission granted
+		isIntermediateEvent = true
 	case "tool-failure":
 		sessionState = domain.StateWorking // Tool failed, Claude continues
+		isIntermediateEvent = true
 	case "subagent-start":
 		sessionState = domain.StateWorking // Spawning subagent
+		isIntermediateEvent = true
 	case "subagent-stop":
 		sessionState = domain.StateWorking // Subagent finished
+		isIntermediateEvent = true
 	case "pre-compact":
 		sessionState = domain.StateWorking // Context compression
+		isIntermediateEvent = true
 	case "setup":
 		sessionState = domain.StateWorking // Init/maintenance work
+		isIntermediateEvent = true
 	case "end":
 		sessionState = domain.StateExited // Claude has exited
 	default:
@@ -69,7 +79,26 @@ func (s *NotificationService) HandleEvent(
 		return "", nil
 	}
 
-	logging.Logger.Debug("Mapped event to state", "event", eventType, "state", sessionState)
+	logging.Logger.Debug("Mapped event to state", "event", eventType, "state", sessionState, "intermediate", isIntermediateEvent)
+
+	// For intermediate events, check current state to avoid overwriting terminal states
+	// This prevents race conditions where subagent-stop fires after stop
+	if isIntermediateEvent {
+		currentSession, err := s.sessionReader.Get(ctx, sessionName)
+		if err == nil {
+			currentState := currentSession.State
+			// Don't overwrite idle or exited states with intermediate events
+			if currentState == domain.StateIdle || currentState == domain.StateExited {
+				logging.Logger.Info("Skipping intermediate event - would overwrite terminal state",
+					"session", sessionName,
+					"event", eventType,
+					"current_state", currentState,
+					"would_set", sessionState)
+				return currentState, nil
+			}
+		}
+		// If we can't read current state, proceed with update (fail open)
+	}
 
 	// Update session state in repository
 	if err := s.sessionRepo.UpdateState(ctx, sessionName, sessionState, executionID); err != nil {
