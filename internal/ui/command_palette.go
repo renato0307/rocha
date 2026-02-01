@@ -7,23 +7,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/renato0307/rocha/internal/domain"
 	"github.com/renato0307/rocha/internal/ports"
 	"github.com/renato0307/rocha/internal/theme"
 )
 
-// paletteExcludedActions lists actions that shouldn't appear in the command palette.
-// These are "quick" actions with dedicated shortcuts that don't benefit from palette discovery.
-var paletteExcludedActions = map[string]bool{
-	"cycle_status": true, // Use 's' for quick cycling, 'S' for form
-	"open":         true, // Use Enter directly
-	"open_shell":   true, // Use dedicated shortcut
-}
-
 // CommandPalette is a searchable action palette overlay.
 type CommandPalette struct {
-	actions       []domain.Action    // Filtered actions
-	allActions    []domain.Action    // All available actions for context
+	actions       []KeyDefinition    // Filtered actions
+	allActions    []KeyDefinition    // All available actions for context
 	Completed     bool
 	filterInput   textinput.Model
 	height        int
@@ -38,7 +29,7 @@ type CommandPalette struct {
 
 // CommandPaletteResult contains the result of the command palette interaction.
 type CommandPaletteResult struct {
-	Action    *domain.Action
+	Action    *KeyDefinition
 	Cancelled bool
 }
 
@@ -48,7 +39,7 @@ type CommandPaletteResult struct {
 // keys provides the key bindings for navigation.
 func NewCommandPalette(session *ports.TmuxSession, sessionName string, keys KeyMap) *CommandPalette {
 	hasSession := session != nil
-	actions := filterActionsForPalette(domain.GetActionsForContext(hasSession))
+	actions := GetPaletteActions(hasSession)
 
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter..."
@@ -142,20 +133,23 @@ func (cp *CommandPalette) View() string {
 	// Build visible action list
 	var items []string
 	maxNameLen := cp.maxActionNameLen()
+	maxShortcutLen := cp.maxShortcutLen()
 	start, end := cp.visibleRange()
 
 	for i := start; i < end; i++ {
-		action := cp.actions[i]
-		name := padRight(action.DisplayName, maxNameLen)
-		desc := action.Description
+		def := cp.actions[i]
+		name := padRight(def.PaletteName, maxNameLen)
+		shortcut := padRight(def.Defaults[0], maxShortcutLen)
+		desc := def.Help
 
 		if i == cp.selectedIndex {
 			// Selected: full-width highlight (inner width)
-			lineContent := "> " + name + "  " + desc
+			lineContent := "> " + name + "  " + shortcut + "  " + desc
 			lineContent = padRight(lineContent, innerWidth)
 			items = append(items, theme.PaletteItemSelectedStyle.Render(lineContent))
 		} else {
 			line := theme.PaletteItemStyle.Render("  "+name) +
+				theme.PaletteShortcutStyle.Render("  "+shortcut) +
 				theme.PaletteDescStyle.Render("  "+desc)
 			items = append(items, line)
 		}
@@ -200,10 +194,10 @@ func (cp *CommandPalette) filterActions() {
 		return
 	}
 
-	var filtered []domain.Action
-	for _, action := range cp.allActions {
-		if fuzzyMatch(query, action.Name) || fuzzyMatch(query, action.Description) {
-			filtered = append(filtered, action)
+	var filtered []KeyDefinition
+	for _, def := range cp.allActions {
+		if fuzzyMatch(query, def.PaletteName) || fuzzyMatch(query, def.Help) {
+			filtered = append(filtered, def)
 		}
 	}
 
@@ -213,17 +207,6 @@ func (cp *CommandPalette) filterActions() {
 	if cp.selectedIndex >= len(cp.actions) {
 		cp.selectedIndex = 0
 	}
-}
-
-// filterActionsForPalette removes actions that shouldn't appear in the palette.
-func filterActionsForPalette(actions []domain.Action) []domain.Action {
-	var filtered []domain.Action
-	for _, action := range actions {
-		if !paletteExcludedActions[action.Name] {
-			filtered = append(filtered, action)
-		}
-	}
-	return filtered
 }
 
 // fuzzyMatch checks if all characters in query appear in order in target.
@@ -239,12 +222,23 @@ func fuzzyMatch(query, target string) bool {
 	return qi == len(queryRunes)
 }
 
-// maxActionNameLen returns the maximum display name length for alignment.
+// maxActionNameLen returns the maximum palette name length for alignment.
 func (cp *CommandPalette) maxActionNameLen() int {
 	maxLen := 0
-	for _, action := range cp.actions {
-		if len(action.DisplayName) > maxLen {
-			maxLen = len(action.DisplayName)
+	for _, def := range cp.actions {
+		if len(def.PaletteName) > maxLen {
+			maxLen = len(def.PaletteName)
+		}
+	}
+	return maxLen
+}
+
+// maxShortcutLen returns the maximum shortcut length for alignment.
+func (cp *CommandPalette) maxShortcutLen() int {
+	maxLen := 0
+	for _, def := range cp.actions {
+		if len(def.Defaults) > 0 && len(def.Defaults[0]) > maxLen {
+			maxLen = len(def.Defaults[0])
 		}
 	}
 	return maxLen

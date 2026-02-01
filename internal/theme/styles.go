@@ -171,4 +171,8 @@ var (
 
 	PaletteItemStyle = lipgloss.NewStyle().
 				Foreground(ColorNormal)
+
+	PaletteShortcutStyle = lipgloss.NewStyle().
+				Foreground(ColorHighlight).
+				Bold(true)
 )

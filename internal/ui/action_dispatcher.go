@@ -3,11 +3,10 @@ package ui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/renato0307/rocha/internal/domain"
 	"github.com/renato0307/rocha/internal/ports"
 )
 
-// ActionDispatcher maps domain actions to UI messages.
+// ActionDispatcher maps key definitions to UI messages.
 // This keeps the command palette decoupled from specific message types.
 type ActionDispatcher struct {
 	session *ports.TmuxSession
@@ -19,15 +18,15 @@ func NewActionDispatcher(session *ports.TmuxSession) *ActionDispatcher {
 	return &ActionDispatcher{session: session}
 }
 
-// Dispatch returns the appropriate tea.Msg for the given action.
+// Dispatch returns the appropriate tea.Msg for the given key definition.
 // Returns nil if the action cannot be dispatched (e.g., requires session but none selected).
-func (d *ActionDispatcher) Dispatch(action domain.Action) tea.Msg {
+func (d *ActionDispatcher) Dispatch(def KeyDefinition) tea.Msg {
 	// Safety check: action requires session but none selected
-	if action.RequiresSession && d.session == nil {
+	if def.RequiresSession && d.session == nil {
 		return nil
 	}
 
-	switch action.Name {
+	switch def.Name {
 	case "archive":
 		return ArchiveSessionMsg{SessionName: d.session.Name}
 	case "comment":
