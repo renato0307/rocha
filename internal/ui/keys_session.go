@@ -27,6 +27,7 @@ type SessionActionsKeys struct {
 	Detach     KeyWithTip
 	Open       KeyWithTip
 	OpenEditor KeyWithTip
+	OpenPR     KeyWithTip
 	OpenShell  KeyWithTip
 	QuickOpen  KeyWithTip
 }
@@ -59,6 +60,7 @@ func newSessionActionsKeys(defaults map[string][]string, customKeys config.KeyBi
 		Detach:     buildBinding("detach", defaults, customKeys),
 		Open:       buildBinding("open", defaults, customKeys),
 		OpenEditor: buildBinding("open_editor", defaults, customKeys),
+		OpenPR:     buildBinding("open_pr", defaults, customKeys),
 		OpenShell:  buildBinding("open_shell", defaults, customKeys),
 		QuickOpen:  buildBinding("quick_open", defaults, customKeys),
 	}

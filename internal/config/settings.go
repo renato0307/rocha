@@ -95,6 +95,7 @@ type Settings struct {
 	ErrorClearDelay                 *int              `json:"error_clear_delay,omitempty"`
 	Keys                            KeyBindingsConfig `json:"keys,omitempty"`
 	MaxLogFiles                     *int              `json:"max_log_files,omitempty"`
+	ShowPRNumber                    *bool             `json:"show_pr_number,omitempty"`
 	ShowTimestamps                  *bool             `json:"show_timestamps,omitempty"`
 	ShowTokenChart                  *bool             `json:"show_token_chart,omitempty"`
 	StatusColors                    StringArray       `json:"status_colors,omitempty"`

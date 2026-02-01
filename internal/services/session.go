@@ -422,6 +422,12 @@ func (s *SessionService) UpdateStatus(ctx context.Context, name string, status *
 	return s.sessionRepo.UpdateStatus(ctx, name, status)
 }
 
+// UpdatePRInfo updates the PR info for a session
+func (s *SessionService) UpdatePRInfo(ctx context.Context, name string, prInfo *domain.PRInfo) error {
+	logging.Logger.Debug("Updating session PR info", "name", name, "number", prInfo.Number)
+	return s.sessionRepo.UpdatePRInfo(ctx, name, prInfo)
+}
+
 // ToggleFlag toggles the flag for a session
 func (s *SessionService) ToggleFlag(ctx context.Context, name string) error {
 	logging.Logger.Debug("Toggling session flag", "name", name)

@@ -5,7 +5,7 @@ import (
 )
 
 // sessionModelToDomain converts a SessionModel (GORM) to domain.Session
-func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, comment string, isArchived bool, allowSkipPerms bool) domain.Session {
+func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, comment string, isArchived bool, allowSkipPerms bool, prInfo *domain.PRInfo) domain.Session {
 	return domain.Session{
 		AllowDangerouslySkipPermissions: allowSkipPerms,
 		BranchName:                      m.BranchName,
@@ -19,6 +19,7 @@ func sessionModelToDomain(m SessionModel, isFlagged bool, status *string, commen
 		IsFlagged:                       isFlagged,
 		LastUpdated:                     m.LastUpdated,
 		Name:                            m.Name,
+		PRInfo:                          prInfo,
 		RepoInfo:                        m.RepoInfo,
 		RepoPath:                        m.RepoPath,
 		RepoSource:                      m.RepoSource,

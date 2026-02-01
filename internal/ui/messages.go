@@ -162,3 +162,12 @@ type ToggleTimestampsMsg struct{}
 
 // ToggleTokenChartMsg requests toggling the token chart
 type ToggleTokenChartMsg struct{}
+
+// OpenPRMsg requests opening the PR in browser for a session
+type OpenPRMsg struct {
+	SessionName string
+}
+
+func (m OpenPRMsg) WithSession(s *ports.TmuxSession) tea.Msg {
+	return OpenPRMsg{SessionName: s.Name}
+}

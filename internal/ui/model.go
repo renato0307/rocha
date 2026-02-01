@@ -58,6 +58,7 @@ type Model struct {
 	sessionToArchive                       *ports.TmuxSession           // Session being archived (for worktree removal)
 	sessionToKill                          *ports.TmuxSession           // Session being killed (for worktree removal)
 	shellService                           *services.ShellService       // Shell session service
+	showPRNumber                           bool                         // Whether to show PR numbers in session list
 	state                                  uiState
 	statusConfig                           *config.StatusConfig         // Status configuration for implementation statuses
 	timestampConfig                        *config.TimestampColorConfig // Timestamp color configuration
@@ -76,6 +77,7 @@ func NewModel(
 	devMode bool,
 	showTimestamps bool,
 	showTokenChart bool,
+	showPRNumber bool,
 	tmuxStatusPosition string,
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
@@ -129,6 +131,7 @@ func NewModel(
 		sessionService:                         sessionService,
 		sessionState:                           sessionState,
 		shellService:                           shellService,
+		showPRNumber:                           showPRNumber,
 		state:                                  stateList,
 		statusConfig:                           statusConfig,
 		timestampConfig:                        timestampConfig,
@@ -369,6 +372,43 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CycleStatusMsg:
 		// Delegate to session list's cycleSessionStatus
 		return m, m.sessionList.cycleSessionStatus(msg.SessionName)
+
+	case PRInfoReadyMsg:
+		// PR info fetched - update in-memory state and persist to database
+		if sessionInfo, exists := m.sessionState.Sessions[msg.SessionName]; exists {
+			sessionInfo.PRInfo = msg.PRInfo
+			m.sessionState.Sessions[msg.SessionName] = sessionInfo
+
+			// Persist to database
+			if err := m.sessionService.UpdatePRInfo(context.Background(), msg.SessionName, msg.PRInfo); err != nil {
+				logging.Logger.Error("Failed to persist PR info", "error", err, "session", msg.SessionName)
+			} else {
+				logging.Logger.Debug("Persisted PR info", "session", msg.SessionName, "number", msg.PRInfo.Number)
+			}
+
+			// Refresh list to show PR number
+			refreshCmd := m.sessionList.RefreshFromState()
+			return m, tea.Batch(refreshCmd, m.sessionList.Init())
+		}
+		return m, nil
+
+	case PRInfoErrorMsg:
+		// PR info fetch failed - log and continue (don't show error to user)
+		logging.Logger.Debug("PR info fetch failed", "session", msg.SessionName, "error", msg.Err)
+		return m, nil
+
+	case OpenPRMsg:
+		// Open PR in browser for session
+		sessionInfo, exists := m.sessionState.Sessions[msg.SessionName]
+		if !exists || sessionInfo.WorktreePath == "" {
+			m.errorManager.SetError(fmt.Errorf("no worktree associated with session '%s'", msg.SessionName))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		}
+		if err := m.gitService.OpenPRInBrowser(sessionInfo.WorktreePath); err != nil {
+			m.errorManager.SetError(fmt.Errorf("failed to open PR: %w", err))
+			return m, tea.Batch(m.sessionList.Init(), m.errorManager.ClearAfterDelay())
+		}
+		return m, m.sessionList.Init()
 	}
 
 	// Handle clear error message
@@ -392,9 +432,30 @@ func (m *Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle detach message - session list auto-refreshes via polling
-	if _, ok := msg.(detachedMsg); ok {
+	if detachMsg, ok := msg.(detachedMsg); ok {
 		m.state = stateList
 		refreshCmd := m.sessionList.RefreshFromState()
+
+		// Trigger PR fetch for detached session if enabled
+		var prFetchCmd tea.Cmd
+		if m.showPRNumber && detachMsg.SessionName != "" {
+			if sessionInfo, exists := m.sessionState.Sessions[detachMsg.SessionName]; exists {
+				if sessionInfo.WorktreePath != "" && sessionInfo.BranchName != "" {
+					logging.Logger.Debug("Triggering PR fetch on detach",
+						"session", detachMsg.SessionName,
+						"branch", sessionInfo.BranchName)
+					prFetchCmd = StartPRInfoFetcher(m.gitService, PRInfoRequest{
+						BranchName:   sessionInfo.BranchName,
+						SessionName:  detachMsg.SessionName,
+						WorktreePath: sessionInfo.WorktreePath,
+					})
+				}
+			}
+		}
+
+		if prFetchCmd != nil {
+			return m, tea.Batch(refreshCmd, m.sessionList.Init(), prFetchCmd)
+		}
 		return m, tea.Batch(refreshCmd, m.sessionList.Init())
 	}
 
@@ -763,7 +824,9 @@ func (m *Model) updateHelp(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-type detachedMsg struct{}
+type detachedMsg struct {
+	SessionName string // Session that was detached from
+}
 
 func (m *Model) updateConfirmingArchive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle Escape or Ctrl+C to cancel

@@ -82,3 +82,17 @@ type SessionAgentCLIFlagsModel struct {
 
 // TableName specifies the table name for GORM
 func (SessionAgentCLIFlagsModel) TableName() string { return "session_agent_cli_flags" }
+
+// SessionPRInfoModel is the GORM model for PR info
+type SessionPRInfoModel struct {
+	CheckedAt   time.Time
+	CreatedAt   time.Time
+	Number      int    `gorm:"not null;default:0"`
+	SessionName string `gorm:"primaryKey"`
+	State       string `gorm:"not null;default:''"`
+	UpdatedAt   time.Time
+	URL         string `gorm:"not null;default:''"`
+}
+
+// TableName specifies the table name for GORM
+func (SessionPRInfoModel) TableName() string { return "session_pr_info" }

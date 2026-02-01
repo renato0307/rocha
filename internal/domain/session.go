@@ -38,6 +38,7 @@ type Session struct {
 	IsFlagged                       bool
 	LastUpdated                     time.Time
 	Name                            string
+	PRInfo                          *PRInfo
 	RepoInfo                        string
 	RepoPath                        string
 	RepoSource                      string

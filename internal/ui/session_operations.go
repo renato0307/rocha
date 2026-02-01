@@ -55,7 +55,7 @@ func (so *SessionOperations) AttachToSession(sessionName string) tea.Cmd {
 			return err
 		}
 		logging.Logger.Info("Detached from session", "name", sessionName)
-		return detachedMsg{}
+		return detachedMsg{SessionName: sessionName}
 	})
 }
 
