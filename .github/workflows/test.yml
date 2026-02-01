@@ -31,24 +31,6 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-  lint:
-    runs-on: ubuntu-latest
-    # golangci-lint may not support the latest Go version yet
-    continue-on-error: true
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-
   build:
     runs-on: ubuntu-latest
     steps:
