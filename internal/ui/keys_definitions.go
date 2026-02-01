@@ -27,6 +27,7 @@ var AllKeyDefinitions = []KeyDefinition{
 	{Name: "command_palette", Defaults: []string{"P"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
 	{Name: "force_quit", Defaults: []string{"ctrl+c"}, Help: "force quit"},
 	{Name: "help", Defaults: []string{"h", "?"}, Help: "show keyboard shortcuts", IsPaletteAction: true, Msg: ShowHelpMsg{}, TipFormat: "press %s to see all shortcuts"},
+	{Name: "preview_toggle", Defaults: []string{"v"}, Help: "toggle preview", IsPaletteAction: true, TipFormat: "press %s to toggle session preview panel"},
 	{Name: "quit", Defaults: []string{"q"}, Help: "exit application", IsPaletteAction: true, Msg: QuitMsg{}},
 	{Name: "timestamps", Defaults: []string{"t"}, Help: "toggle timestamps", IsPaletteAction: true, Msg: ToggleTimestampsMsg{}, TipFormat: "press %s to toggle timestamp display"},
 	{Name: "token_chart", Defaults: []string{"T"}, Help: "toggle token chart", IsPaletteAction: true, Msg: ToggleTokenChartMsg{}, TipFormat: "press %s to toggle token usage chart"},

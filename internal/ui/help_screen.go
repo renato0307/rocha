@@ -73,6 +73,7 @@ func buildHelpContent(keys *KeyMap) string {
 	// Application
 	content += "\n" + theme.HelpGroupStyle.Render("Application") + "\n"
 	content += renderBinding(keys.Application.CommandPalette.Binding)
+	content += renderBinding(keys.Application.PreviewToggle.Binding)
 	content += renderBinding(keys.Application.Timestamps.Binding)
 	content += renderBinding(keys.Application.TokenChart.Binding)
 	content += renderBinding(keys.Application.Help.Binding)

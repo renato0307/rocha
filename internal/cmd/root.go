@@ -115,6 +115,8 @@ type RunCmd struct {
 	Dev                        bool   `help:"Enable development mode (shows version info in dialogs)"`
 	Editor                     string `help:"Editor to open sessions in (overrides $ROCHA_EDITOR, $VISUAL, $EDITOR)" default:"code"`
 	ErrorClearDelay            int    `help:"Seconds before error messages auto-clear" default:"10"`
+	PreviewLayout              string `help:"Preview panel layout: vertical (stacked) or horizontal (side-by-side)" default:"vertical" enum:"vertical,horizontal"`
+	PreviewMaxLines            int    `help:"Maximum lines to capture for preview panel" default:"50"`
 	ShowTimestamps             bool   `help:"Show relative timestamps for last state changes" default:"false"`
 	ShowTokenChart             bool   `help:"Show token usage chart by default" default:"false"`
 	StatusColors               string `help:"Comma-separated ANSI color codes for statuses (e.g., '141,33,214,226,46')" default:"141,33,214,226,46"`
@@ -210,6 +212,18 @@ func (r *RunCmd) Run(cli *CLI) error {
 				r.ShowTokenChart = true
 			}
 		}
+
+		// Apply Preview settings
+		if r.PreviewLayout == "vertical" {
+			if cli.settings.PreviewLayout != "" {
+				r.PreviewLayout = cli.settings.PreviewLayout
+			}
+		}
+		if r.PreviewMaxLines == 50 {
+			if cli.settings.PreviewMaxLines != nil {
+				r.PreviewMaxLines = *cli.settings.PreviewMaxLines
+			}
+		}
 	}
 
 	logging.Logger.Info("Starting rocha TUI")
@@ -288,6 +302,10 @@ func (r *RunCmd) Run(cli *CLI) error {
 		Enabled:                r.TipsEnabled,
 		ShowIntervalSeconds:    r.TipsShowIntervalSeconds,
 	}
+	previewConfig := ui.PreviewConfig{
+		Layout:   r.PreviewLayout,
+		MaxLines: r.PreviewMaxLines,
+	}
 	p := tea.NewProgram(
 		ui.NewModel(
 			r.Editor,
@@ -301,10 +319,12 @@ func (r *RunCmd) Run(cli *CLI) error {
 			allowDangerouslySkipPermissionsDefault,
 			tipsConfig,
 			keysConfig,
+			previewConfig,
 			cli.Container.GitService,
 			cli.Container.SessionService,
 			cli.Container.ShellService,
 			cli.Container.TokenStatsService,
+			cli.Container.TmuxClient,
 		),
 		tea.WithAltScreen(),       // Use alternate screen buffer
 		tea.WithMouseCellMotion(), // Enable mouse support

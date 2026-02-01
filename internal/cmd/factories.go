@@ -30,6 +30,9 @@ type Container struct {
 	ShellService        *services.ShellService
 	TokenStatsService   *services.TokenStatsService
 
+	// Adapters exposed for UI
+	TmuxClient ports.TmuxClient
+
 	// Internal - for cleanup only
 	sessionRepo ports.SessionRepository
 }
@@ -82,6 +85,7 @@ func NewContainer() (*Container, error) {
 		SettingsService:     settingsService,
 		ShellService:        shellService,
 		TokenStatsService:   tokenStatsService,
+		TmuxClient:          tmuxClient,
 		sessionRepo:         sessionRepo,
 	}, nil
 }

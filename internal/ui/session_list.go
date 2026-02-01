@@ -24,12 +24,21 @@ import (
 )
 
 const escTimeout = 500 * time.Millisecond
+const previewPollInterval = 400 * time.Millisecond
 
 // Messages for SessionList (exported for Model integration)
 type checkStateMsg struct{}            // Triggers periodic state file check; also used by Model for token chart refresh
 type clearSessionListErrorMsg struct{} // Clear transient error after display period
 type hideTipMsg struct{}               // Time to hide the current tip
+type previewTickMsg struct{}           // Triggers preview content refresh
 type showTipMsg struct{}               // Time to show a new random tip
+
+// previewTickCmd returns a command that triggers preview content refresh
+func previewTickCmd() tea.Cmd {
+	return tea.Tick(previewPollInterval, func(time.Time) tea.Msg {
+		return previewTickMsg{}
+	})
+}
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
@@ -215,6 +224,12 @@ func (d SessionDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 	fmt.Fprint(w, line1+"\n"+line2)
 }
 
+// PreviewConfig holds preview panel configuration
+type PreviewConfig struct {
+	Layout   string // "vertical" or "horizontal"
+	MaxLines int    // Max lines to capture
+}
+
 // SessionList is a Bubble Tea component for displaying and managing sessions
 type SessionList struct {
 	currentTip         *Tip                         // Currently displayed tip (nil = hidden)
@@ -235,12 +250,19 @@ type SessionList struct {
 	timestampConfig    *config.TimestampColorConfig
 	timestampMode      TimestampMode
 	tipsConfig         TipsConfig                   // Tips display configuration
+	tmuxClient         ports.TmuxClient             // For preview capture
 	tmuxStatusPosition string
 	width              int
+
+	// Preview panel
+	previewEnabled  bool          // Whether preview is shown
+	previewLayout   string        // "vertical" or "horizontal"
+	previewMaxLines int           // Max lines to capture
+	previewPanel    *PreviewPanel // Preview panel component
 }
 
 // NewSessionList creates a new session list component
-func NewSessionList(sessionService *services.SessionService, gitService *services.GitService, editor string, statusConfig *config.StatusConfig, timestampConfig *config.TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig) *SessionList {
+func NewSessionList(sessionService *services.SessionService, gitService *services.GitService, tmuxClient ports.TmuxClient, editor string, statusConfig *config.StatusConfig, timestampConfig *config.TimestampColorConfig, devMode bool, timestampMode TimestampMode, keys KeyMap, tmuxStatusPosition string, tipsConfig TipsConfig, previewConfig PreviewConfig) *SessionList {
 	// Load session state (showArchived=false - TUI never shows archived sessions)
 	sessionState, err := sessionService.LoadState(context.Background(), false)
 	if err != nil {
@@ -278,12 +300,16 @@ func NewSessionList(sessionService *services.SessionService, gitService *service
 		gitService:         gitService,
 		keys:               keys,
 		list:               l,
+		previewLayout:      previewConfig.Layout,
+		previewMaxLines:    previewConfig.MaxLines,
+		previewPanel:       NewPreviewPanel(),
 		sessionService:     sessionService,
 		sessionState:       sessionState,
 		statusConfig:       statusConfig,
 		timestampConfig:    timestampConfig,
 		timestampMode:      timestampMode,
 		tipsConfig:         tipsConfig,
+		tmuxClient:         tmuxClient,
 		tmuxStatusPosition: tmuxStatusPosition,
 	}
 }
@@ -421,6 +447,18 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sl.err = nil
 		return sl, nil
 
+	case previewTickMsg:
+		// Only process if preview is enabled
+		if !sl.previewEnabled {
+			return sl, nil
+		}
+		logging.Logger.Debug("Preview tick",
+			"panelInitialized", sl.previewPanel.Initialized(),
+			"panelHeight", sl.previewPanel.Height())
+		content := sl.capturePreviewContent()
+		sl.previewPanel.SetContent(content)
+		return sl, previewTickCmd()
+
 	case error:
 		sl.err = msg
 		sl.currentTip = nil // Clear tip when error is set
@@ -465,6 +503,24 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, sl.keys.Application.CommandPalette.Binding):
 			return sl, func() tea.Msg { return ShowCommandPaletteMsg{} }
+
+		case key.Matches(msg, sl.keys.Application.PreviewToggle.Binding):
+			sl.previewEnabled = !sl.previewEnabled
+			if sl.previewEnabled {
+				// Recalculate sizes with preview panel
+				sl.SetSize(sl.width, sl.height, sl.listHeight)
+				logging.Logger.Debug("Preview enabled",
+					"panelInitialized", sl.previewPanel.Initialized(),
+					"panelHeight", sl.previewPanel.Height())
+				// Start preview tick loop and capture initial content
+				content := sl.capturePreviewContent()
+				sl.previewPanel.SetContent(content)
+				logging.Logger.Debug("Initial preview content captured", "contentLen", len(content))
+				return sl, previewTickCmd()
+			}
+			// Preview disabled - recalculate sizes to restore full list
+			sl.SetSize(sl.width, sl.height, sl.listHeight)
+			return sl, nil
 
 		case key.Matches(msg, sl.keys.SessionManagement.New.Binding):
 			return sl, func() tea.Msg { return NewSessionMsg{} }
@@ -635,11 +691,34 @@ func (sl *SessionList) View() string {
 
 	s += theme.HelpStyle.Render(helpText) + "\n"
 
-	// Session List
+	// Session List (with optional preview panel)
+	listView := ""
 	if len(sl.list.Items()) == 0 {
-		s += theme.HelpLabelStyle.Render("No sessions. Press ") + theme.HelpShortcutStyle.Render("n") + theme.HelpLabelStyle.Render(" to create a session.") + "\n"
+		listView = theme.HelpLabelStyle.Render("No sessions. Press ") + theme.HelpShortcutStyle.Render("n") + theme.HelpLabelStyle.Render(" to create a session.") + "\n"
+
+		// Add padding to push tip/error to bottom
+		// The list area should fill listHeight lines
+		// Empty message = 1 line + \n, padding fills the rest
+		paddingLines := sl.listHeight - 2
+		if paddingLines > 0 {
+			listView += strings.Repeat("\n", paddingLines)
+		}
 	} else {
-		s += sl.list.View()
+		listView = sl.list.View()
+	}
+
+	// Combine list and preview panel based on layout
+	if sl.previewEnabled && sl.previewPanel.Initialized() {
+		previewView := sl.previewPanel.View()
+		if sl.previewLayout == "horizontal" {
+			// Side by side
+			s += lipgloss.JoinHorizontal(lipgloss.Top, listView, previewView)
+		} else {
+			// Stacked (vertical)
+			s += listView + "\n" + previewView
+		}
+	} else {
+		s += listView
 	}
 
 	// Show SessionList error if any (transient, cleared via clearSessionListErrorMsg)
@@ -679,7 +758,23 @@ func (sl *SessionList) SetSize(width, height, listHeight int) {
 	sl.width = width
 	sl.height = height
 	sl.listHeight = listHeight
-	sl.list.SetSize(width, listHeight)
+
+	if sl.previewEnabled {
+		// Split layout based on configuration
+		if sl.previewLayout == "horizontal" {
+			// Side by side: list on left, preview on right
+			halfWidth := width / 2
+			sl.list.SetSize(halfWidth, listHeight)
+			sl.previewPanel.SetSize(width-halfWidth, listHeight)
+		} else {
+			// Stacked (vertical): list on top, preview on bottom
+			halfHeight := listHeight / 2
+			sl.list.SetSize(width, halfHeight)
+			sl.previewPanel.SetSize(width, listHeight-halfHeight)
+		}
+	} else {
+		sl.list.SetSize(width, listHeight)
+	}
 }
 
 // RefreshFromState reloads the session list from state.
@@ -1181,4 +1276,30 @@ func (sl *SessionList) cycleSessionStatus(sessionName string) tea.Cmd {
 	return func() tea.Msg {
 		return checkStateMsg{}
 	}
+}
+
+// capturePreviewContent captures the tmux pane content for the selected session
+func (sl *SessionList) capturePreviewContent() string {
+	item, ok := sl.list.SelectedItem().(SessionItem)
+	if !ok {
+		return ""
+	}
+
+	// Update preview panel with current session name
+	sl.previewPanel.SetSession(item.Session.Name)
+
+	// Calculate lines to capture based on preview panel height and max lines setting
+	linesToCapture := sl.previewMaxLines
+	if sl.previewPanel.Height() > 0 && sl.previewPanel.Height() < linesToCapture {
+		linesToCapture = sl.previewPanel.Height()
+	}
+
+	// Capture pane content (negative startLine captures from bottom)
+	content, err := sl.tmuxClient.CapturePane(item.Session.Name, -linesToCapture)
+	if err != nil {
+		logging.Logger.Debug("Failed to capture pane", "session", item.Session.Name, "error", err)
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return content
 }

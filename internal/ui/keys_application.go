@@ -13,6 +13,7 @@ type ApplicationKeys struct {
 	CommandPalette KeyWithTip
 	ForceQuit      KeyWithTip
 	Help           KeyWithTip
+	PreviewToggle  KeyWithTip
 	Quit           KeyWithTip
 	Timestamps     KeyWithTip
 	TokenChart     KeyWithTip
@@ -24,6 +25,7 @@ func newApplicationKeys(defaults map[string][]string, customKeys config.KeyBindi
 		CommandPalette: buildBinding("command_palette", defaults, customKeys),
 		ForceQuit:      buildBinding("force_quit", defaults, customKeys),
 		Help:           buildBinding("help", defaults, customKeys),
+		PreviewToggle:  buildBinding("preview_toggle", defaults, customKeys),
 		Quit:           buildBinding("quit", defaults, customKeys),
 		Timestamps:     buildBinding("timestamps", defaults, customKeys),
 		TokenChart:     buildBinding("token_chart", defaults, customKeys),

@@ -399,7 +399,9 @@ func (c *DefaultClient) SendKeys(sessionName string, keys ...string) error {
 
 // CapturePane captures the content of the tmux pane
 func (c *DefaultClient) CapturePane(sessionName string, startLine int) (string, error) {
-	cmd := exec.Command("tmux", "capture-pane", "-p", "-t", sessionName, "-S", fmt.Sprintf("%d", startLine))
+	// -p: output to stdout, -e: include escape sequences (colors/formatting)
+	// -S: start line (negative = from bottom), -E "": capture to the very end
+	cmd := exec.Command("tmux", "capture-pane", "-p", "-e", "-t", sessionName, "-S", fmt.Sprintf("%d", startLine), "-E", "")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

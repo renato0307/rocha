@@ -80,10 +80,12 @@ func NewModel(
 	allowDangerouslySkipPermissionsDefault bool,
 	tipsConfig TipsConfig,
 	keysConfig config.KeyBindingsConfig,
+	previewConfig PreviewConfig,
 	gitService *services.GitService,
 	sessionService *services.SessionService,
 	shellService *services.ShellService,
 	tokenStatsService *services.TokenStatsService,
+	tmuxClient ports.TmuxClient,
 ) *Model {
 	// Load session state - this is the source of truth
 	sessionState, stateErr := sessionService.LoadState(context.Background(), false)
@@ -109,7 +111,7 @@ func NewModel(
 	sessionOps := NewSessionOperations(errorManager, tmuxStatusPosition, sessionService, shellService)
 
 	// Create session list component
-	sessionList := NewSessionList(sessionService, gitService, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig)
+	sessionList := NewSessionList(sessionService, gitService, tmuxClient, editor, statusConfig, timestampConfig, devMode, initialMode, keys, tmuxStatusPosition, tipsConfig, previewConfig)
 
 	// Create token chart component
 	tokenChart := NewTokenChart(tokenStatsService)
