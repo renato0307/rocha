@@ -62,6 +62,11 @@ func (r *CLIRepository) ListWorktrees(repoPath string) ([]string, error) {
 	return listWorktrees(repoPath)
 }
 
+// GetWorktreeForBranch implements WorktreeManager.GetWorktreeForBranch
+func (r *CLIRepository) GetWorktreeForBranch(repoPath, branchName string) (string, error) {
+	return getWorktreeForBranch(repoPath, branchName)
+}
+
 // RepairWorktrees implements WorktreeManager.RepairWorktrees
 func (r *CLIRepository) RepairWorktrees(mainRepoPath string, worktreePaths []string) error {
 	return repairWorktrees(mainRepoPath, worktreePaths)

@@ -114,7 +114,7 @@ func (s *SessionsMoveCmd) confirmMove(sourceHome, destHome string, sessionCount 
 	logging.Logger.Debug("Prompting user for confirmation", "repo", s.Repo)
 	fmt.Println("WARNING: This operation will:")
 	fmt.Println("  - Kill tmux sessions for all sessions in the specified repository")
-	fmt.Println("  - Move .main directory and all worktrees to the new ROCHA_HOME location")
+	fmt.Println("  - Move main repository directory and all worktrees to the new ROCHA_HOME location")
 	fmt.Println("  - Repair git worktree references")
 	fmt.Printf("  - Move sessions from %s to %s\n", sourceHome, destHome)
 	fmt.Printf("\nRepository to move: %s (%d session(s))\n", s.Repo, sessionCount)

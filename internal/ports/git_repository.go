@@ -19,6 +19,7 @@ type RepoInspector interface {
 type WorktreeManager interface {
 	BuildWorktreePath(base, repoInfo, sessionName string) string
 	CreateWorktree(repoPath, worktreePath, branchName string) error
+	GetWorktreeForBranch(repoPath, branchName string) (string, error)
 	ListWorktrees(repoPath string) ([]string, error)
 	RemoveWorktree(repoPath, worktreePath string) error
 	RepairWorktrees(mainRepoPath string, worktreePaths []string) error

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/renato0307/rocha/internal/config"
 	"github.com/renato0307/rocha/internal/logging"
 )
 
@@ -140,7 +141,7 @@ func parseRepoSource(source string) (*repoSource, error) {
 
 // cloneRepository clones git repo to target path
 // If branch is specified, clones only that branch (--single-branch)
-// If branch is empty, clones all branches (for shared .main)
+// If branch is empty, clones all branches (for shared main repository)
 func cloneRepository(url, targetPath, branch string) error {
 	logging.Logger.Info("Cloning repository", "url", url, "target", targetPath, "branch", branch)
 
@@ -155,13 +156,13 @@ func cloneRepository(url, targetPath, branch string) error {
 	args := []string{"clone"}
 
 	// IMPORTANT: Only use --single-branch if branch is specified
-	// This allows .main to support multiple branches dynamically
+	// This allows the main repository to support multiple branches dynamically
 	if branch != "" {
 		args = append(args, "--branch", branch, "--single-branch")
 		logging.Logger.Debug("Cloning single branch", "branch", branch)
 	} else {
 		// Clone all branches (no --single-branch flag)
-		logging.Logger.Info("Cloning all branches for shared .main")
+		logging.Logger.Info("Cloning all branches for shared main repository")
 	}
 
 	args = append(args, url, targetPath)
@@ -228,7 +229,7 @@ func getCurrentBranch(repoPath string) (string, error) {
 
 // getOrCloneRepository ensures repo exists locally
 // Local path: validate and return
-// Remote URL: clone to {worktreeBase}/{owner}/{repo}/.main
+// Remote URL: clone to {worktreeBase}/{owner}/{repo}/{config.MainRepoDir}
 // Returns: localPath, repoSource, error
 func getOrCloneRepository(source, worktreeBase string) (string, *repoSource, error) {
 	logging.Logger.Debug("Getting or cloning repository", "source", source, "worktree_base", worktreeBase)
@@ -280,28 +281,28 @@ func getOrCloneRepository(source, worktreeBase string) (string, *repoSource, err
 	// Remote URL - clone to worktree base
 	logging.Logger.Debug("Source is remote URL", "url", source)
 
-	// Build target path: {worktreeBase}/{owner}/{repo}/.main
+	// Build target path: {worktreeBase}/{owner}/{repo}/{config.MainRepoDir}
 	if repoSource.owner == "" || repoSource.repo == "" {
 		return "", nil, fmt.Errorf("could not extract owner/repo from URL: %s", source)
 	}
 
-	targetPath := filepath.Join(worktreeBase, repoSource.owner, repoSource.repo, ".main")
+	targetPath := filepath.Join(worktreeBase, repoSource.owner, repoSource.repo, config.MainRepoDir)
 	logging.Logger.Debug("Target clone path", "path", targetPath)
 
-	// Check if .main directory already exists
+	// Check if main repository directory already exists
 	if _, err := os.Stat(targetPath); err == nil {
 		logging.Logger.Debug("Clone target already exists, verifying and checking out branch")
 
 		// Verify it's a git repo
 		isGit, repoRoot := isGitRepo(targetPath)
 		if !isGit {
-			return "", nil, fmt.Errorf(".main directory exists but is not a git repository: %s", targetPath)
+			return "", nil, fmt.Errorf("main repository directory exists but is not a git repository: %s", targetPath)
 		}
 
 		// Verify remote URL matches
 		existingURL := getRemoteURL(repoRoot)
 		if existingURL != "" && !isSameRepo(existingURL, repoSource.path) {
-			return "", nil, fmt.Errorf(".main directory exists with different remote URL.\nExisting: %s\nRequested: %s", existingURL, repoSource.path)
+			return "", nil, fmt.Errorf("main repository directory exists with different remote URL.\nExisting: %s\nRequested: %s", existingURL, repoSource.path)
 		}
 
 		// CRITICAL FIX: Checkout the requested branch before returning
@@ -316,11 +317,11 @@ func getOrCloneRepository(source, worktreeBase string) (string, *repoSource, err
 		pullCmd.Dir = repoRoot
 		pullCmd.Run() // Ignore errors (might be detached HEAD)
 
-		logging.Logger.Info("Reusing .main with correct branch", "path", repoRoot, "branch", repoSource.branch)
+		logging.Logger.Info("Reusing main repository with correct branch", "path", repoRoot, "branch", repoSource.branch)
 		return repoRoot, repoSource, nil
 	}
 
-	// Clone repository (with all branches for shared .main)
+	// Clone repository (with all branches for shared main repository)
 	// NOTE: Pass empty string for branch to clone all branches
 	if err := cloneRepository(repoSource.path, targetPath, ""); err != nil {
 		// Cleanup on failure
