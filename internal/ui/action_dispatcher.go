@@ -19,49 +19,20 @@ func NewActionDispatcher(session *ports.TmuxSession) *ActionDispatcher {
 }
 
 // Dispatch returns the appropriate tea.Msg for the given key definition.
-// Returns nil if the action cannot be dispatched (e.g., requires session but none selected).
+// Returns nil if the action cannot be dispatched.
 func (d *ActionDispatcher) Dispatch(def KeyDefinition) tea.Msg {
-	// Safety check: action requires session but none selected
+	if def.Msg == nil {
+		return nil
+	}
 	if def.RequiresSession && d.session == nil {
 		return nil
 	}
 
-	switch def.Name {
-	case "archive":
-		return ArchiveSessionMsg{SessionName: d.session.Name}
-	case "comment":
-		return CommentSessionMsg{SessionName: d.session.Name}
-	case "cycle_status":
-		return CycleStatusMsg{SessionName: d.session.Name}
-	case "flag":
-		return ToggleFlagSessionMsg{SessionName: d.session.Name}
-	case "help":
-		return ShowHelpMsg{}
-	case "kill":
-		return KillSessionMsg{SessionName: d.session.Name}
-	case "new_from_repo":
-		return NewSessionFromTemplateMsg{TemplateSessionName: d.session.Name}
-	case "new_session":
-		return NewSessionMsg{}
-	case "open":
-		return AttachSessionMsg{Session: d.session}
-	case "open_editor":
-		return OpenEditorSessionMsg{SessionName: d.session.Name}
-	case "open_shell":
-		return AttachShellSessionMsg{Session: d.session}
-	case "quit":
-		return QuitMsg{}
-	case "rename":
-		return RenameSessionMsg{SessionName: d.session.Name}
-	case "send_text":
-		return SendTextSessionMsg{SessionName: d.session.Name}
-	case "set_status":
-		return SetStatusSessionMsg{SessionName: d.session.Name}
-	case "timestamps":
-		return ToggleTimestampsMsg{}
-	case "token_chart":
-		return ToggleTokenChartMsg{}
-	default:
-		return nil
+	// If message needs session context, call WithSession
+	if sessionMsg, ok := def.Msg.(SessionAwareMsg); ok {
+		return sessionMsg.WithSession(d.session)
 	}
+
+	// Otherwise return the prototype as-is
+	return def.Msg
 }
