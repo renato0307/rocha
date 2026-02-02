@@ -24,7 +24,7 @@ type KeyDefinition struct {
 // If Msg is set, the action can be dispatched via the command palette.
 var AllKeyDefinitions = []KeyDefinition{
 	// Application keys
-	{Name: "command_palette", Defaults: []string{"P"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
+	{Name: "command_palette", Defaults: []string{"/"}, Help: "command palette", TipFormat: "press %s to open the command palette"},
 	{Name: "force_quit", Defaults: []string{"ctrl+c"}, Help: "force quit"},
 	{Name: "help", Defaults: []string{"h", "?"}, Help: "show keyboard shortcuts", IsPaletteAction: true, Msg: ShowHelpMsg{}, TipFormat: "press %s to see all shortcuts"},
 	{Name: "quit", Defaults: []string{"q"}, Help: "exit application", IsPaletteAction: true, Msg: QuitMsg{}},
@@ -34,7 +34,7 @@ var AllKeyDefinitions = []KeyDefinition{
 	// Navigation keys
 	{Name: "clear_filter", Defaults: []string{"esc"}, Help: "clear filter (press twice within 500ms)", TipFormat: "press %s twice to clear the filter"},
 	{Name: "down", Defaults: []string{"down", "j"}, Help: "select next session"},
-	{Name: "filter", Defaults: []string{"/"}, Help: "filter session list", TipFormat: "press %s to filter sessions by name or branch"},
+	{Name: "filter", Defaults: []string{"ctrl+f"}, Help: "filter session list", TipFormat: "press %s to filter sessions by name or branch"},
 	{Name: "move_down", Defaults: []string{"J", "shift+down"}, Help: "move session down"},
 	{Name: "move_up", Defaults: []string{"K", "shift+up"}, Help: "move session up", TipFormat: "press %s to reorder sessions in the list"},
 	{Name: "up", Defaults: []string{"up", "k"}, Help: "select previous session"},
