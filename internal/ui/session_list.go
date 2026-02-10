@@ -276,6 +276,9 @@ func NewSessionList(sessionService *services.SessionService, gitService *service
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false) // We'll render our own help
 
+	// Sync the bubbles list's internal filter key with our custom binding
+	l.KeyMap.Filter.SetKeys(keys.Navigation.Filter.Binding.Keys()...)
+
 	// Show a tip immediately at startup if tips are enabled
 	var initialTip *Tip
 	allTips := GetTips()
