@@ -75,8 +75,12 @@ func TestGetWorktreeForBranch_WorktreeExists(t *testing.T) {
 
 	result, err := getWorktreeForBranch(repoPath, "feature-branch")
 
+	// Resolve symlinks on both sides: macOS /var/folders is a symlink to /private/var/folders
+	expectedPath, _ := filepath.EvalSymlinks(worktreePath)
+	actualPath, _ := filepath.EvalSymlinks(result)
+
 	assert.NoError(t, err)
-	assert.Equal(t, worktreePath, result, "should return existing worktree path")
+	assert.Equal(t, expectedPath, actualPath, "should return existing worktree path")
 }
 
 func TestGetWorktreeForBranch_SkipsMainDirectory(t *testing.T) {
