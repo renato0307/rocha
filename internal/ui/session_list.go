@@ -26,10 +26,10 @@ import (
 const escTimeout = 500 * time.Millisecond
 
 // Messages for SessionList (exported for Model integration)
-type checkStateMsg struct{}            // Triggers periodic state file check; also used by Model for token chart refresh
+type checkStateMsg struct{ gen int }   // Triggers periodic state file check; also used by Model for token chart refresh
 type clearSessionListErrorMsg struct{} // Clear transient error after display period
-type hideTipMsg struct{}               // Time to hide the current tip
-type showTipMsg struct{}               // Time to show a new random tip
+type hideTipMsg struct{ gen int }      // Time to hide the current tip
+type showTipMsg struct{ gen int }      // Time to show a new random tip
 
 // SessionItem implements list.Item and list.DefaultItem
 type SessionItem struct {
@@ -238,6 +238,7 @@ type SessionList struct {
 	escPressTime       time.Time
 	fetchingGitStats   bool                         // Prevent concurrent fetches
 	gitService         *services.GitService         // Git operations service
+	pollGen            int                          // Generation counter for poll timers; guards against stale checkStateMsg
 	height             int
 	keys               KeyMap
 	list               list.Model
@@ -247,6 +248,7 @@ type SessionList struct {
 	statusConfig       *config.StatusConfig
 	timestampConfig    *config.TimestampColorConfig
 	timestampMode      TimestampMode
+	tipGen             int                          // Generation counter for tip timers; guards against stale showTipMsg/hideTipMsg
 	tipsConfig         TipsConfig                   // Tips display configuration
 	tmuxStatusPosition string
 	width              int
@@ -304,14 +306,19 @@ func NewSessionList(sessionService *services.SessionService, gitService *service
 	}
 }
 
-// Init starts the session list component, including auto-refresh polling
+// Init starts the session list component, including auto-refresh polling.
+// Each call increments the generation counters so stale timer messages from
+// previous Init() calls are silently discarded (generation counter pattern).
 func (sl *SessionList) Init() tea.Cmd {
-	cmds := []tea.Cmd{pollStateCmd()}
+	sl.pollGen++
+	cmds := []tea.Cmd{pollStateCmd(sl.pollGen)}
 
 	// Schedule hide for the initial tip (already shown at startup)
 	if sl.tipsConfig.Enabled && sl.currentTip != nil {
+		sl.tipGen++
+		gen := sl.tipGen
 		cmds = append(cmds, tea.Tick(time.Duration(sl.tipsConfig.DisplayDurationSeconds)*time.Second, func(time.Time) tea.Msg {
-			return hideTipMsg{}
+			return hideTipMsg{gen: gen}
 		}))
 	}
 
@@ -365,20 +372,25 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return sl, nil
 
 	case checkStateMsg:
+		// Discard stale messages from previous Init() generations
+		if msg.gen != sl.pollGen {
+			return sl, nil
+		}
+
 		// This message is sent by the poll timer every 2 seconds
 		// We schedule exactly ONE new poll at the end to maintain the loop
 
 		// Skip refresh when user is actively filtering to prevent flickering
 		if sl.list.FilterState() == list.Filtering {
 			// Still schedule next poll to maintain the loop
-			return sl, pollStateCmd()
+			return sl, pollStateCmd(sl.pollGen)
 		}
 
 		// Auto-refresh: Check if state has changed (showArchived=false - TUI never shows archived)
 		newState, err := sl.sessionService.LoadState(context.Background(), false)
 		if err != nil {
 			// Continue polling even on error
-			return sl, pollStateCmd()
+			return sl, pollStateCmd(sl.pollGen)
 		}
 
 		// Preserve GitStats cache from old state
@@ -403,31 +415,45 @@ func (sl *SessionList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		gitStatsCmd := sl.requestGitStatsForVisible()
 
 		// Schedule next poll to maintain the 2-second loop (exactly one poll)
-		return sl, tea.Batch(cmd, pollStateCmd(), gitStatsCmd)
+		return sl, tea.Batch(cmd, pollStateCmd(sl.pollGen), gitStatsCmd)
 
 	case showTipMsg:
+		// Discard stale messages from previous tip generations
+		if msg.gen != sl.tipGen {
+			return sl, nil
+		}
 		// Don't show tip if there's an error - reschedule for later
 		if sl.err != nil {
+			sl.tipGen++
+			gen := sl.tipGen
 			return sl, tea.Tick(time.Duration(sl.tipsConfig.ShowIntervalSeconds)*time.Second, func(time.Time) tea.Msg {
-				return showTipMsg{}
+				return showTipMsg{gen: gen}
 			})
 		}
 		// Time to show a new random tip
 		allTips := GetTips()
 		if len(allTips) > 0 {
 			sl.currentTip = &allTips[rand.Intn(len(allTips))]
+			sl.tipGen++
+			gen := sl.tipGen
 			return sl, tea.Tick(time.Duration(sl.tipsConfig.DisplayDurationSeconds)*time.Second, func(time.Time) tea.Msg {
-				return hideTipMsg{}
+				return hideTipMsg{gen: gen}
 			})
 		}
 		return sl, nil
 
 	case hideTipMsg:
+		// Discard stale messages from previous tip generations
+		if msg.gen != sl.tipGen {
+			return sl, nil
+		}
 		// Hide the current tip and schedule the next one
 		sl.currentTip = nil
 		if sl.tipsConfig.Enabled {
+			sl.tipGen++
+			gen := sl.tipGen
 			return sl, tea.Tick(time.Duration(sl.tipsConfig.ShowIntervalSeconds)*time.Second, func(time.Time) tea.Msg {
-				return showTipMsg{}
+				return showTipMsg{gen: gen}
 			})
 		}
 		return sl, nil
@@ -732,10 +758,12 @@ func (sl *SessionList) RefreshFromState() tea.Cmd {
 	return sl.list.SetItems(items)
 }
 
-// pollStateCmd returns a command that waits 2 seconds then sends checkStateMsg
-func pollStateCmd() tea.Cmd {
+// pollStateCmd returns a command that waits 2 seconds then sends checkStateMsg.
+// The gen parameter is embedded in the message so stale timers from previous
+// Init() calls are detected and discarded by the handler.
+func pollStateCmd(gen int) tea.Cmd {
 	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-		return checkStateMsg{}
+		return checkStateMsg{gen: gen}
 	})
 }
 
@@ -1209,7 +1237,8 @@ func (sl *SessionList) cycleSessionStatus(sessionName string) tea.Cmd {
 	logging.Logger.Info("Cycled session status", "session", sessionName, "from", currentStr, "to", nextStr)
 
 	// Refresh list immediately to show new status
+	gen := sl.pollGen
 	return func() tea.Msg {
-		return checkStateMsg{}
+		return checkStateMsg{gen: gen}
 	}
 }
